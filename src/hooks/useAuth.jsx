@@ -11,7 +11,7 @@ const PROFILES = {
   "QQxWhAem1adZsXiy5BvWBgvM15Y2": { name: "Camila Aquino", role: "enfermera", center: "CIPI" },
   "JRYVuMW3fidrrlQcvDc5KSm00XT2": { name: "Paola Vargas",  role: "enfermera", center: "CIPI" },
   "gHEOTAoTe8fZCR4EjetuzqA59Uu1": { name: "Danna Ramírez", role: "enfermera", center: "CITIO" },
-  "iwAUACSAqWYhol991xMDxgq30vq1": { name: "Yessica Madera", role: "enfermera", center: "CITIO" },
+  "iwAUACSAqWYhol991xMDxgq30vq1": { name: "Yessica Maderas", role: "enfermera", center: "CITIO" },
 };
 
 export function AuthProvider({ children }) {
