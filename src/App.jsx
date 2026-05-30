@@ -22,47 +22,16 @@ function PrivateRoute({ children, roles }) {
 
 function AppRoutes() {
   const { profile } = useAuth();
-
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-
-      <Route path="/" element={
-        <PrivateRoute><Layout /></PrivateRoute>
-      }>
-        {/* Jefe de enfermería */}
-        <Route index element={
-          <PrivateRoute roles={["jefe"]}>
-            <Dashboard />
-          </PrivateRoute>
-        } />
-        <Route path="monitor" element={
-          <PrivateRoute roles={["jefe"]}>
-            <Monitor />
-          </PrivateRoute>
-        } />
-        <Route path="autorizar" element={
-          <PrivateRoute roles={["jefe"]}>
-            <Autorizar />
-          </PrivateRoute>
-        } />
-
-        {/* Enfermera */}
-        <Route path="pacientes" element={
-          <PrivateRoute roles={["enfermera"]}>
-            <NurseView />
-          </PrivateRoute>
-        } />
-        <Route path="registrar" element={
-          <PrivateRoute roles={["enfermera"]}>
-            <NuevaSession />
-          </PrivateRoute>
-        } />
-
-        {/* Redirect según rol */}
-        <Route path="*" element={
-          <Navigate to={profile?.role === "enfermera" ? "/pacientes" : "/"} replace />
-        } />
+      <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+        <Route index element={<PrivateRoute roles={["jefe"]}><Dashboard /></PrivateRoute>} />
+        <Route path="monitor" element={<PrivateRoute roles={["jefe"]}><Monitor /></PrivateRoute>} />
+        <Route path="autorizar" element={<PrivateRoute roles={["jefe"]}><Autorizar /></PrivateRoute>} />
+        <Route path="pacientes" element={<PrivateRoute roles={["enfermera"]}><NurseView /></PrivateRoute>} />
+        <Route path="registrar" element={<PrivateRoute roles={["enfermera"]}><NuevaSession /></PrivateRoute>} />
+        <Route path="*" element={<Navigate to={profile?.role === "enfermera" ? "/pacientes" : "/"} replace />} />
       </Route>
     </Routes>
   );
