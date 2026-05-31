@@ -30,7 +30,7 @@ export default function NuevaSession() {
     e.preventDefault();
     setSaving(true);
     try {
-      await addDoc(collection(db, "sessions"), {
+      const docRef = await addDoc(collection(db, "sessions"), {
         ...form,
         center: profile?.center || "",
         nurseId: user.uid,
@@ -44,7 +44,11 @@ export default function NuevaSession() {
         events: {},
         medEvents: {},
       });
+      console.log("Guardado con ID:", docRef.id);
       setSaved(true);
+    } catch (error) {
+      console.error("Error al guardar:", error.code, error.message);
+      alert("Error: " + error.message);
     } finally {
       setSaving(false);
     }
