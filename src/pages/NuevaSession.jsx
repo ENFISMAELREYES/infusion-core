@@ -57,7 +57,7 @@ export default function NuevaSession() {
       );
 
       const res = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/sessions?key=${API_KEY}`,
+        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions?key=${API_KEY}`,
         {
           method: "POST",
           headers: {
