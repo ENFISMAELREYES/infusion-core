@@ -222,7 +222,7 @@ function SessionCard({ session, token, onRefresh }) {
 
 export default function NurseView() {
   const { user, profile } = useAuth();
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(null);
