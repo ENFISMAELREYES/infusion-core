@@ -10,7 +10,7 @@ const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
 
 export default function NuevaSession() {
   const { user, profile } = useAuth();
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
   const [form, setForm] = useState({ patientName:"", dob:"", diagnosis:"", physician:"", insurance:"", cycle:"" });
   const [meds, setMeds] = useState([emptyMed(1)]);
   const [saving, setSaving] = useState(false);
