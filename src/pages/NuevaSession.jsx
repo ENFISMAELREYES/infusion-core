@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useAuth } from "../hooks/useAuth";
 
@@ -21,7 +21,6 @@ export default function NuevaSession() {
   const [saved, setSaved]   = useState(false);
 
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
   const addMed = () => setMeds(m => [...m, emptyMed(m.length + 1)]);
   const removeMed = (id) => setMeds(m => m.filter(x => x.id !== id).map((x, i) => ({ ...x, order: i + 1 })));
   const setMedField = (id, k, v) => setMeds(m => m.map(x => x.id === id ? { ...x, [k]: v } : x));
@@ -33,13 +32,13 @@ export default function NuevaSession() {
       const docRef = await addDoc(collection(db, "sessions"), {
         ...form,
         center: profile?.center || "",
-        nurseId: user.uid,
+        nurseId: user?.uid || "",
         nurseName: profile?.name || "",
         date: today,
         status: "pendiente",
         authorized: false,
-        transcribedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
+        transcribedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
         meds: meds.map(m => ({ ...m, time: m.time ? parseInt(m.time) : null })),
         events: {},
         medEvents: {},
@@ -47,8 +46,8 @@ export default function NuevaSession() {
       console.log("Guardado con ID:", docRef.id);
       setSaved(true);
     } catch (error) {
-      console.error("Error al guardar:", error.code, error.message);
-      alert("Error: " + error.message);
+      console.error("Error:", error.code, error.message);
+      alert("Error al guardar: " + error.message);
     } finally {
       setSaving(false);
     }
@@ -82,17 +81,16 @@ export default function NuevaSession() {
       </div>
 
       <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-        {/* Patient data */}
         <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "20px 22px" }}>
           <div style={{ fontSize: 11, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 16 }}>Datos del paciente</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             {[
-              ["Nombre completo",  "patientName", "text",  "12"],
-              ["Fecha de nacimiento", "dob",      "date",  "12"],
-              ["Diagnóstico",      "diagnosis",   "text",  "1/-1"],
-              ["Médico tratante",  "physician",   "text",  "auto"],
-              ["Tipo de atención", "insurance",   "text",  "auto"],
-              ["Ciclo / Día",      "cycle",       "text",  "auto"],
+              ["Nombre completo",     "patientName", "text"],
+              ["Fecha de nacimiento", "dob",         "date"],
+              ["Diagnóstico",         "diagnosis",   "text"],
+              ["Médico tratante",     "physician",   "text"],
+              ["Tipo de atención",    "insurance",   "text"],
+              ["Ciclo / Día",         "cycle",       "text"],
             ].map(([label, key, type]) => (
               <div key={key} style={{ gridColumn: key === "diagnosis" ? "1/-1" : "auto" }}>
                 <label style={labelStyle}>{label}</label>
@@ -102,7 +100,6 @@ export default function NuevaSession() {
           </div>
         </section>
 
-        {/* Medications */}
         <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "20px 22px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div style={{ fontSize: 11, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>Medicamentos</div>
@@ -111,9 +108,8 @@ export default function NuevaSession() {
               background: "rgba(0,212,170,0.1)", border: "1px solid rgba(0,212,170,0.25)", color: "#00d4aa",
             }}>+ Agregar</button>
           </div>
-
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {meds.map((med, idx) => (
+            {meds.map((med) => (
               <div key={med.id} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 11, padding: "14px 16px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <span style={{ fontSize: 12, color: "#888", fontFamily: "'IBM Plex Mono', monospace" }}>#{med.order}</span>
@@ -124,8 +120,7 @@ export default function NuevaSession() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <div style={{ gridColumn: "1/-1" }}>
                     <label style={labelStyle}>Tipo</label>
-                    <select value={med.category} onChange={e => setMedField(med.id, "category", e.target.value)}
-                      style={{ ...inputStyle, cursor: "pointer" }}>
+                    <select value={med.category} onChange={e => setMedField(med.id, "category", e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
                       {CATEGORIES.map(c => <option key={c} value={c}>{CAT_LABEL[c]}</option>)}
                     </select>
                   </div>
