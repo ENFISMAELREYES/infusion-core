@@ -242,7 +242,9 @@ export default function NurseView() {
     try {
       const t = await user.getIdToken(true);
       setToken(t);
+      console.log("Buscando sesiones:", profile.center, today);
       const data = await fetchSessions(t, profile.center, today);
+      console.log("Sesiones encontradas:", data.length, data);
       setSessions(data);
     } catch (e) {
       console.error("Error:", e);
