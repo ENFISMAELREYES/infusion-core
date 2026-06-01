@@ -1,23 +1,48 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
+const PROJECT_ID = "infusion-core";
+const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
+
 const CAT_COLOR = {
   premedicacion: "#FAC775", inmunoterapia: "#5DCAA5",
   quimioterapia: "#F09595", adicional: "#AFA9EC",
 };
 
-const PROJECT_ID = "infusion-core";
-const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
-
 function nowStr() {
   return new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
 }
 
+function getToday() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+}
+
+function parseFirestoreDoc(doc) {
+  const parse = (v) => {
+    if (!v) return null;
+    if (v.stringValue !== undefined) return v.stringValue;
+    if (v.booleanValue !== undefined) return v.booleanValue;
+    if (v.integerValue !== undefined) return parseInt(v.integerValue);
+    if (v.doubleValue !== undefined) return v.doubleValue;
+    if (v.nullValue !== undefined) return null;
+    if (v.arrayValue) return (v.arrayValue.values || []).map(parse);
+    if (v.mapValue) return Object.fromEntries(
+      Object.entries(v.mapValue.fields || {}).map(([k, val]) => [k, parse(val)])
+    );
+    return null;
+  };
+  const id = doc.name.split("/").pop();
+  return { id, ...Object.fromEntries(Object.entries(doc.fields || {}).map(([k, v]) => [k, parse(v)])) };
+}
+
 async function fetchSessions(token, center, date) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery?key=${API_KEY}`;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
     body: JSON.stringify({
       structuredQuery: {
         from: [{ collectionId: "sessions" }],
@@ -34,26 +59,11 @@ async function fetchSessions(token, center, date) {
     })
   });
   const data = await res.json();
-  return data
-    .filter(d => d.document)
-    .map(d => {
-      const fields = d.document.fields || {};
-      const id = d.document.name.split("/").pop();
-      const parse = (v) => {
-        if (!v) return null;
-        if (v.stringValue !== undefined) return v.stringValue;
-        if (v.booleanValue !== undefined) return v.booleanValue;
-        if (v.integerValue !== undefined) return parseInt(v.integerValue);
-        if (v.nullValue !== undefined) return null;
-        if (v.arrayValue) return (v.arrayValue.values || []).map(parse);
-        if (v.mapValue) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, val]) => [k, parse(val)]));
-        return null;
-      };
-      return { id, ...Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, parse(v)])) };
-    });
+  if (!Array.isArray(data)) { console.error("Error fetch:", data); return []; }
+  return data.filter(d => d.document).map(d => parseFirestoreDoc(d.document));
 }
 
-async function updateSession(token, sessionId, updates) {
+async function patchSession(token, sessionId, updates) {
   const toFV = (val) => {
     if (typeof val === "string") return { stringValue: val };
     if (typeof val === "boolean") return { booleanValue: val };
@@ -63,12 +73,10 @@ async function updateSession(token, sessionId, updates) {
     if (typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k, v]) => [k, toFV(v)])) } };
     return { stringValue: String(val) };
   };
-
   const fields = Object.fromEntries(Object.entries(updates).map(([k, v]) => [k, toFV(v)]));
-  const updateMask = Object.keys(updates).map(k => `updateMask.fieldPaths=${k}`).join("&");
-
+  const mask = Object.keys(updates).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${updateMask}&key=${API_KEY}`,
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -106,17 +114,16 @@ function SessionCard({ session, token, onRefresh }) {
   const medEvents = session.medEvents || {};
 
   const recordEvent = async (key) => {
-    const updates = {
-      [`events.${key}`]: nowStr(),
-      ...(key === "ingreso" ? { status: "en_curso" } : {}),
-      ...(key === "retiro" ? { status: "completado" } : {}),
-    };
-    await updateSession(token, session.id, updates);
+    const t = nowStr();
+    const updates = { [`events.${key}`]: t };
+    if (key === "ingreso") updates.status = "en_curso";
+    if (key === "retiro") updates.status = "completado";
+    await patchSession(token, session.id, updates);
     onRefresh();
   };
 
   const recordMedEvent = async (medId, key) => {
-    await updateSession(token, session.id, { [`medEvents.${medId}.${key}`]: nowStr() });
+    await patchSession(token, session.id, { [`medEvents.${medId}.${key}`]: nowStr() });
     onRefresh();
   };
 
@@ -222,26 +229,26 @@ function SessionCard({ session, token, onRefresh }) {
 
 export default function NurseView() {
   const { user, profile } = useAuth();
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(null);
+  const today = getToday();
 
-  const loadSessions = async () => {
+  const load = async () => {
     if (!user || !profile?.center) return;
     try {
-      const t = await user.getIdToken();
+      const t = await user.getIdToken(true);
       setToken(t);
       const data = await fetchSessions(t, profile.center, today);
       setSessions(data);
     } catch (e) {
-      console.error("Error cargando sesiones:", e);
+      console.error("Error:", e);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { loadSessions(); }, [profile?.center]);
+  useEffect(() => { load(); }, [profile?.center]);
 
   const inCourse = sessions.filter(s => s.status === "en_curso").length;
   const waiting = sessions.filter(s => !s.events?.ingreso).length;
@@ -267,7 +274,7 @@ export default function NurseView() {
           No hay sesiones asignadas hoy.
         </div>
       ) : (
-        sessions.map(s => <SessionCard key={s.id} session={s} token={token} onRefresh={loadSessions} />)
+        sessions.map(s => <SessionCard key={s.id} session={s} token={token} onRefresh={load} />)
       )}
     </div>
   );
