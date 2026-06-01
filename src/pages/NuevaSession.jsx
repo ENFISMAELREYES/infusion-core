@@ -11,7 +11,10 @@ const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
 export default function NuevaSession() {
   const { user, profile } = useAuth();
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const [form, setForm] = useState({ patientName:"", dob:"", diagnosis:"", physician:"", insurance:"", cycle:"" });
+  const [form, setForm] = useState({
+    patientName: "", dob: "", diagnosis: "", physician: "",
+    insurance: "", cycle: "", applicationDate: today,
+  });
   const [meds, setMeds] = useState([emptyMed(1)]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -43,7 +46,7 @@ export default function NuevaSession() {
         center: profile?.center || "",
         nurseId: user?.uid || "",
         nurseName: profile?.name || "",
-        date: today,
+        date: form.applicationDate || today,
         status: "pendiente",
         authorized: false,
         createdAt: new Date().toISOString(),
@@ -117,7 +120,7 @@ export default function NuevaSession() {
         <section style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
           <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:16 }}>Datos del paciente</div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-            {[["Nombre completo","patientName","text"],["Fecha de nacimiento","dob","date"],["Diagnóstico","diagnosis","text"],["Médico tratante","physician","text"],["Tipo de atención","insurance","text"],["Ciclo / Día","cycle","text"]].map(([label, key, type]) => (
+            {[["Nombre completo","patientName","text"],["Fecha de nacimiento","dob","date"],["Diagnóstico","diagnosis","text"],["Médico tratante","physician","text"],["Tipo de atención","insurance","text"],["Ciclo / Día","cycle","text"],["Fecha de aplicación","applicationDate","date"]].map(([label, key, type]) => (
               <div key={key} style={{ gridColumn: key === "diagnosis" ? "1/-1" : "auto" }}>
                 <label style={labelStyle}>{label}</label>
                 <input type={type} required value={form[key]} onChange={e => setField(key, e.target.value)} style={inputStyle} />
