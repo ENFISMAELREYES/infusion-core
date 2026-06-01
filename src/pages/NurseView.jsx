@@ -234,8 +234,11 @@ export default function NurseView() {
   const [token, setToken] = useState(null);
   const today = getToday();
 
-  const load = async () => {
-    if (!user || !profile?.center) return;
+ const load = async () => {
+    if (!user || !profile?.center) {
+      setLoading(false);
+      return;
+    }
     try {
       const t = await user.getIdToken(true);
       setToken(t);
@@ -248,7 +251,9 @@ export default function NurseView() {
     }
   };
 
-  useEffect(() => { load(); }, [profile?.center]);
+  useEffect(() => { 
+  if (user && profile) load(); 
+}, [user, profile?.center]);
 
   const inCourse = sessions.filter(s => s.status === "en_curso").length;
   const waiting = sessions.filter(s => !s.events?.ingreso).length;
