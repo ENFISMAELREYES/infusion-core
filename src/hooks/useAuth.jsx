@@ -25,18 +25,18 @@ export function AuthProvider({ children }) {
         setUser(firebaseUser);
         console.log("Usuario logueado:", firebaseUser.uid);
         // Intentar Firestore, usar respaldo si falla
-        try {
-          const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-          if (snap.exists()) {
-            setProfile(snap.data());
-          } else {
-          const p = PROFILES[firebaseUser.uid] || null;
-console.log("Perfil asignado:", p);
-setProfile(p);
-          }
-        } catch (e) {
-          // Si Firestore falla, usar perfil local
-          setProfile(PROFILES[firebaseUser.uid] || null);
+       try {
+  const snap = await getDoc(doc(db, "users", firebaseUser.uid));
+  const firestoreProfile = snap.exists() ? snap.data() : null;
+  const hardcodedProfile = PROFILES[firebaseUser.uid] || null;
+  // Combinar — hardcoded como respaldo si falta center
+  const finalProfile = (firestoreProfile?.center) ? firestoreProfile : hardcodedProfile;
+  console.log("Perfil final:", finalProfile);
+  setProfile(finalProfile);
+} catch (e) {
+  console.log("Firestore falló, usando hardcoded");
+  setProfile(PROFILES[firebaseUser.uid] || null);
+}
         }
       } else {
         setUser(null);
