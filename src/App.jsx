@@ -16,17 +16,31 @@ function PrivateRoute({ children, roles }) {
     </div>
   );
   if (!user) return <Navigate to="/login" replace />;
-  if (roles && !roles.includes(profile?.role)) return <Navigate to="/" replace />;
+  if (roles && !roles.includes(profile?.role)) {
+    if (profile?.role === "enfermera") return <Navigate to="/pacientes" replace />;
+    return <Navigate to="/" replace />;
+  }
   return children;
 }
 
 function AppRoutes() {
-  const { profile } = useAuth();
+  const { profile, loading } = useAuth();
+
+  if (loading) return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#080a0f", color:"#555", fontSize:14 }}>
+      Cargando...
+    </div>
+  );
+
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-        <Route index element={<PrivateRoute roles={["jefe"]}><Dashboard /></PrivateRoute>} />
+        <Route index element={
+          profile?.role === "enfermera"
+            ? <Navigate to="/pacientes" replace />
+            : <PrivateRoute roles={["jefe"]}><Dashboard /></PrivateRoute>
+        } />
         <Route path="monitor" element={<PrivateRoute roles={["jefe"]}><Monitor /></PrivateRoute>} />
         <Route path="autorizar" element={<PrivateRoute roles={["jefe"]}><Autorizar /></PrivateRoute>} />
         <Route path="pacientes" element={<PrivateRoute roles={["enfermera"]}><NurseView /></PrivateRoute>} />
