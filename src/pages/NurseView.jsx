@@ -182,9 +182,9 @@ const recordEvent = async (key) => {
     }
   };
 
-  const completedMeds = (session.meds || []).filter(m => medEvents[m.id]?.fin).length;
-  const totalTimed = (session.meds || []).filter(m => m.time).length;
-  const pct = totalTimed ? Math.round((completedMeds / totalTimed) * 100) : 0;
+  const completedMeds = (session.meds || []).filter(m => medEvents[`med_${m.id}`]?.fin).length;
+const totalTimed = (session.meds || []).filter(m => m.time).length;
+const pct = totalTimed ? Math.round((completedMeds / totalTimed) * 100) : 0;
 
   const canStartMed = (med) => {
     if (!session.authorized || !events.ingreso) return false;
