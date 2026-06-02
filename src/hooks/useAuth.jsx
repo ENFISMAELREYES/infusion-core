@@ -20,16 +20,19 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+   const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
+        console.log("Usuario logueado:", firebaseUser.uid);
         // Intentar Firestore, usar respaldo si falla
         try {
           const snap = await getDoc(doc(db, "users", firebaseUser.uid));
           if (snap.exists()) {
             setProfile(snap.data());
           } else {
-            setProfile(PROFILES[firebaseUser.uid] || null);
+          const p = PROFILES[firebaseUser.uid] || null;
+console.log("Perfil asignado:", p);
+setProfile(p);
           }
         } catch (e) {
           // Si Firestore falla, usar perfil local
