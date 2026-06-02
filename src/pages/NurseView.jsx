@@ -98,7 +98,7 @@ function TimeBtn({ label, time, onRecord, disabled }) {
         {time && <div style={{ fontSize: 14, color: "#1D9E75", fontFamily: "'IBM Plex Mono', monospace", marginTop: 2, fontWeight: 600 }}>{time}</div>}
       </div>
       {!time && !disabled && (
-        <button onClick={onRecord} style={{
+        <button onClick={() => { console.log("Botón presionado"); onRecord(); }} style={{
           background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)",
           color: "#ddd", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer",
         }}>Registrar</button>
