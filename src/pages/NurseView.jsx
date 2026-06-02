@@ -233,6 +233,7 @@ export default function NurseView() {
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(null);
   const today = getToday();
+  console.log("NurseView render - profile:", profile, "user:", !!user);
 
  const load = async () => {
     if (!user || !profile?.center) {
