@@ -73,16 +73,55 @@ async function patchSession(token, sessionId, updates) {
     if (typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k, v]) => [k, toFV(v)])) } };
     return { stringValue: String(val) };
   };
-  const fields = Object.fromEntries(Object.entries(updates).map(([k, v]) => [k, toFV(v)]));
-  const mask = Object.keys(updates).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
-  await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-      body: JSON.stringify({ fields }),
+
+  // Separar campos simples de campos con punto (campos anidados)
+  const simpleUpdates = {};
+  const nestedUpdates = {};
+  
+  Object.entries(updates).forEach(([k, v]) => {
+    if (k.includes(".")) {
+      nestedUpdates[k] = v;
+    } else {
+      simpleUpdates[k] = v;
     }
-  );
+  });
+
+  // Primero actualizar campos simples
+  if (Object.keys(simpleUpdates).length > 0) {
+    const fields = Object.fromEntries(Object.entries(simpleUpdates).map(([k, v]) => [k, toFV(v)]));
+    const mask = Object.keys(simpleUpdates).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+    await fetch(
+      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ fields }),
+      }
+    );
+  }
+
+  // Luego actualizar campos anidados uno por uno
+  for (const [path, value] of Object.entries(nestedUpdates)) {
+    const parts = path.split(".");
+    const mask = `updateMask.fieldPaths=${encodeURIComponent(path)}`;
+    
+    // Construir objeto anidado
+    let fields = {};
+    if (parts.length === 2) {
+      fields[parts[0]] = { mapValue: { fields: { [parts[1]]: toFV(value) } } };
+    } else if (parts.length === 3) {
+      fields[parts[0]] = { mapValue: { fields: { [parts[1]]: { mapValue: { fields: { [parts[2]]: toFV(value) } } } } } };
+    }
+    
+    await fetch(
+      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ fields }),
+      }
+    );
+  }
 }
 
 function TimeBtn({ label, time, onRecord, disabled }) {
