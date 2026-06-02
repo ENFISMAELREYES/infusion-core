@@ -5,7 +5,7 @@ import { auth } from "../firebase/config";
 const AuthContext = createContext(null);
 
 const PROFILES = {
-  "xGme3zlkjb0aYXkRUd6XSzScOB43": { name: "Ismael Reyes",    role: "jefe",      center: "CITIO" },
+  "xGme3zlkjbOaYXkRUd6XSzScOB43": { name: "Ismael Reyes",    role: "jefe",      center: "CITIO" },
   "QQxWhAem1adZsXiy5BvWBgvM15Y2": { name: "Camila Aquino",   role: "enfermera", center: "CIPI"  },
   "JRYVuMW3fidrrlQcvDc5KSm00XT2": { name: "Paola Vargas",    role: "enfermera", center: "CIPI"  },
   "gHEOTAoTe8fZCR4EjetuzqA59Uu1": { name: "Danna Ramírez",   role: "enfermera", center: "CITIO" },
