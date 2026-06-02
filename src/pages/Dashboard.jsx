@@ -133,7 +133,7 @@ export default function Dashboard() {
           {sessions.map(s => {
             const sm = STATUS_META[s.status] || STATUS_META.pendiente;
             return (
-              <div key={s.id} onClick={() => navigate(`/autorizar`)}
+              <div key={s.id} onClick={() => navigate(`/monitor`)}
                 style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: "16px 20px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16, transition: "background 0.15s" }}
                 onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
                 onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
