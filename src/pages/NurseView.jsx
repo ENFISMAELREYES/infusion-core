@@ -113,14 +113,18 @@ function SessionCard({ session, token, onRefresh, user }) {
   const events = session.events || {};
   const medEvents = session.medEvents || {};
 
- const recordEvent = async (key) => {
+const recordEvent = async (key) => {
     try {
+      console.log("recordEvent iniciado:", key, session.id);
       const freshToken = await user.getIdToken(true);
+      console.log("Token obtenido");
       const t = nowStr();
       const updates = { [`events.${key}`]: t };
       if (key === "ingreso") updates.status = "en_curso";
       if (key === "retiro") updates.status = "completado";
-      await patchSession(freshToken, session.id, updates);
+      console.log("Enviando patch:", updates);
+      const result = await patchSession(freshToken, session.id, updates);
+      console.log("Patch completado:", result);
       onRefresh();
     } catch(e) {
       console.error("Error registrando evento:", e);
