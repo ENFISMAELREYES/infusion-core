@@ -171,10 +171,10 @@ const recordEvent = async (key) => {
     }
   };
 
-  const recordMedEvent = async (medId, key) => {
+ const recordMedEvent = async (medId, key) => {
     try {
       const freshToken = await user.getIdToken(true);
-      await patchSession(freshToken, session.id, { [`medEvents.${medId}.${key}`]: nowStr() });
+      await patchSession(freshToken, session.id, { [`medEvents.med_${medId}.${key}`]: nowStr() });
       onRefresh();
     } catch(e) {
       console.error("Error registrando med evento:", e);
@@ -228,7 +228,7 @@ const recordEvent = async (key) => {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {(session.meds || []).map(med => {
-              const ev = medEvents[med.id] || {};
+             const ev = medEvents[`med_${med.id}`] || {};
               const color = CAT_COLOR[med.category] || "#888";
               const started = !!ev.inicio, ended = !!ev.fin;
               const canStart = canStartMed(med);
