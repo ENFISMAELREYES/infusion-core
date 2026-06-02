@@ -253,9 +253,9 @@ export default function NurseView() {
     }
   };
 
-  useEffect(() => { 
-  if (user && profile) load(); 
-}, [user, profile?.center]);
+ useEffect(() => { 
+  load(); 
+}, [profile?.center]);
 
   const inCourse = sessions.filter(s => s.status === "en_curso").length;
   const waiting = sessions.filter(s => !s.events?.ingreso).length;
