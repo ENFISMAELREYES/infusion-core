@@ -190,7 +190,7 @@ const recordEvent = async (key) => {
     if (!session.authorized || !events.ingreso) return false;
     const prev = (session.meds || []).find(m => m.order === med.order - 1);
     if (!prev || !prev.time) return true;
-    return !!(medEvents[prev.id]?.fin);
+    return !!(medEvents[`med_${prev.id}`]?.fin);
   };
 
   const statusColor = !session.authorized ? "#ffb347" : !events.ingreso ? "#888" : events.retiro ? "#4fc3f7" : "#1D9E75";
