@@ -19,25 +19,13 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-   const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+ useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        console.log("Usuario logueado:", firebaseUser.uid);
-        // Intentar Firestore, usar respaldo si falla
-       try {
-  const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-  const firestoreProfile = snap.exists() ? snap.data() : null;
-  const hardcodedProfile = PROFILES[firebaseUser.uid] || null;
-  // Combinar — hardcoded como respaldo si falta center
-  const finalProfile = (firestoreProfile?.center) ? firestoreProfile : hardcodedProfile;
-  console.log("Perfil final:", finalProfile);
-  setProfile(finalProfile);
-} catch (e) {
-  console.log("Firestore falló, usando hardcoded");
-  setProfile(PROFILES[firebaseUser.uid] || null);
-}
-        }
+        const p = PROFILES[firebaseUser.uid] || null;
+        console.log("Perfil:", p);
+        setProfile(p);
       } else {
         setUser(null);
         setProfile(null);
