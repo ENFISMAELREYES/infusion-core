@@ -108,7 +108,7 @@ function TimeBtn({ label, time, onRecord, disabled }) {
   );
 }
 
-function SessionCard({ session, token, onRefresh }) {
+function SessionCard({ session, token, onRefresh, user }) {
   const [open, setOpen] = useState(false);
   const events = session.events || {};
   const medEvents = session.medEvents || {};
@@ -129,8 +129,14 @@ function SessionCard({ session, token, onRefresh }) {
   };
 
   const recordMedEvent = async (medId, key) => {
-    await patchSession(token, session.id, { [`medEvents.${medId}.${key}`]: nowStr() });
-    onRefresh();
+    try {
+      const freshToken = await user.getIdToken(true);
+      await patchSession(freshToken, session.id, { [`medEvents.${medId}.${key}`]: nowStr() });
+      onRefresh();
+    } catch(e) {
+      console.error("Error registrando med evento:", e);
+      alert("Error: " + e.message);
+    }
   };
 
   const completedMeds = (session.meds || []).filter(m => medEvents[m.id]?.fin).length;
@@ -290,7 +296,7 @@ export default function NurseView() {
           No hay sesiones asignadas hoy.
         </div>
       ) : (
-        sessions.map(s => <SessionCard key={s.id} session={s} token={token} onRefresh={load} />)
+        sessions.map(s => <SessionCard key={s.id} session={s} token={token} onRefresh={load} user={user} />)
       )}
     </div>
   );
