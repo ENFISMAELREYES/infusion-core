@@ -253,8 +253,10 @@ export default function NurseView() {
     }
   };
 
- useEffect(() => { 
-  load(); 
+ useEffect(() => {
+  if (profile?.center) {
+    load();
+  }
 }, [profile?.center]);
 
   const inCourse = sessions.filter(s => s.status === "en_curso").length;
