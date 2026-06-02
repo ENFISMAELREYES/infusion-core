@@ -275,7 +275,8 @@ export default function NurseView() {
   const inCourse = sessions.filter(s => s.status === "en_curso").length;
   const waiting = sessions.filter(s => !s.events?.ingreso).length;
   const done = sessions.filter(s => s.status === "completado").length;
-
+  
+console.log("Token actual:", token ? "existe" : "null", "User:", user ? "existe" : "null");
   return (
     <div style={{ padding: "24px 28px", maxWidth: 800, margin: "0 auto" }}>
       <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
