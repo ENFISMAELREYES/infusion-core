@@ -5,11 +5,14 @@ import { auth } from "../firebase/config";
 const AuthContext = createContext(null);
 
 const PROFILES = {
-  "xGme3zlkjbOaYXkRUd6XSzScOB43": { name: "Ismael Reyes",    role: "jefe",      center: "CITIO" },
-  "QQxWhAem1adZsXiy5BvWBgvM15Y2": { name: "Camila Aquino",   role: "enfermera", center: "CIPI"  },
-  "JRYVuMW3fidrrlQcvDc5KSm00XT2": { name: "Paola Vargas",    role: "enfermera", center: "CIPI"  },
-  "gHEOTAoTe8fZCR4EjetuzqA59Uu1": { name: "Danna Ramírez",   role: "enfermera", center: "CITIO" },
-  "iwAUACSAqWYhol991xMDxgq30vq1": { name: "Yessica Maderas", role: "enfermera", center: "CITIO" },
+ const PROFILES = {
+  "xGme3zlkjbOaYXkRUd6XSzScOB43": { name: "Ismael Reyes",        role: "jefe",          center: "CITIO" },
+  "QQxWhAem1adZsXiy5BvWBgvM15Y2": { name: "Camila Aquino",       role: "enfermera",     center: "CIPI"  },
+  "JRYVuMW3fidrrlQcvDc5KSm00XT2": { name: "Paola Vargas",        role: "enfermera",     center: "CIPI"  },
+  "gHEOTAoTe8fZCR4EjetuzqA59Uu1": { name: "Danna Ramírez",       role: "enfermera",     center: "CITIO" },
+  "iwAUACSAqWYhol991xMDxgq30vq1": { name: "Yessica Maderas",     role: "enfermera",     center: "CITIO" },
+  "IC2Tegxjijc6icyaGXZUSjAFrxR2": { name: "Carlos Sorroza",      role: "visualizador",  center: "CIPI"  },
+  "0lah1NsefnR5GSpjfTX7D1qc4rh1": { name: "Jonathan Martínez",   role: "visualizador",  center: "CITIO" },
 };
 
 export function AuthProvider({ children }) {
