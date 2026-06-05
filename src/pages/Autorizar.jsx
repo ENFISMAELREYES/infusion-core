@@ -61,13 +61,13 @@ async function authorizeSession(token, sessionId, meds, globalNote, corrected, u
   };
 
   const fields = {
-    authorized:      { booleanValue: true },
-    authorizedBy:    { stringValue: userId },
-    authorizedAt:    { stringValue: new Date().toISOString() },
-    hasCorrestions:  { booleanValue: corrected },
-    globalNote:      { stringValue: globalNote },
-    status:          { stringValue: "pendiente" },
-    meds:            toFV(meds),
+    authorized:     { booleanValue: true },
+    authorizedBy:   { stringValue: userId },
+    authorizedAt:   { stringValue: new Date().toISOString() },
+    hasCorrestions: { booleanValue: corrected },
+    globalNote:     { stringValue: globalNote },
+    status:         { stringValue: "pendiente" },
+    meds:           toFV(meds),
   };
 
   const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
@@ -90,15 +90,31 @@ const CAT_COLOR = {
 };
 const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional" };
 
+function calcWash(med, draft) {
+  const washTime     = draft.washTime !== undefined ? draft.washTime : (med.category === "premedicacion" ? 5 : 15);
+  const washSolution = draft.washSolution || (med.diluent?.includes("SG") ? "SG" : "SF");
+  const volMatch     = med.diluent?.match(/(\d+)/);
+  const vol          = volMatch ? parseInt(volMatch[1]) : null;
+  const speed        = (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
+  return { washTime, washSolution, washSpeed: speed };
+}
+
 function MedRow({ med, onApprove, onCorrect }) {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState({ diluent:"", time:"", order:"", general:"" });
-  const hasCorrection = Object.values(draft).some(v => v.trim());
+  const [draft, setDraft] = useState({ diluent:"", time:"", order:"", general:"", washSolution:"", washTime: undefined });
+  const hasCorrection = ["diluent","time","order","general"].some(k => draft[k]?.trim());
   const cs = CAT_COLOR[med.category] || CAT_COLOR.adicional;
 
+  const defaultWashTime     = med.category === "premedicacion" ? 5 : 15;
+  const defaultWashSolution = med.diluent?.includes("SG") ? "SG" : "SF";
+  const volMatch            = med.diluent?.match(/(\d+)/);
+  const vol                 = volMatch ? parseInt(volMatch[1]) : null;
+  const speed               = (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
+
   const save = () => {
-    if (hasCorrection) onCorrect(med.id, draft);
-    else onApprove(med.id);
+    const wash = calcWash(med, draft);
+    if (hasCorrection) onCorrect(med.id, { ...draft, ...wash });
+    else onApprove(med.id, wash);
     setOpen(false);
   };
 
@@ -124,9 +140,11 @@ function MedRow({ med, onApprove, onCorrect }) {
       {open && (
         <div style={{ padding:"0 16px 16px", borderTop:"1px solid rgba(255,255,255,0.05)" }}>
           <div style={{ paddingTop:14, display:"flex", flexDirection:"column", gap:12 }}>
+
+            {/* Correcciones */}
             {[["Corrección de dilución","diluent",med.diluent,"ej: 250 ml SF"],
               ["Corrección de tiempo","time",med.time ? `${med.time} min` : "—","ej: 60 min"],
-              ["Cambio de orden","order",`Posición ${med.order}`,"ej: mover a posición 2"]].map(([label,key,current,ph]) => (
+              ["Cambio de orden","order",`Posición ${med.order}`,"ej: 2"]].map(([label,key,current,ph]) => (
               <div key={key}>
                 <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>{label}</label>
                 <div style={{ fontSize:12, color:"#555", fontFamily:"'IBM Plex Mono', monospace", marginBottom:5 }}>Actual: {current}</div>
@@ -134,13 +152,47 @@ function MedRow({ med, onApprove, onCorrect }) {
                   style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none", fontFamily:"'IBM Plex Mono', monospace" }} />
               </div>
             ))}
+
             <div>
               <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Nota adicional</label>
               <textarea rows={2} placeholder="Indicaciones específicas..." value={draft.general} onChange={e => setDraft(d => ({ ...d, general: e.target.value }))}
                 style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none", resize:"vertical" }} />
             </div>
+
+            {/* Lavado */}
+            {med.category !== "adicional" && (
+              <div style={{ padding:"12px 14px", borderRadius:10, background:"rgba(79,195,247,0.06)", border:"1px solid rgba(79,195,247,0.2)" }}>
+                <div style={{ fontSize:11, color:"#4fc3f7", fontWeight:600, marginBottom:10, letterSpacing:1, textTransform:"uppercase" }}>💧 Lavado después de este medicamento</div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+                  <div>
+                    <label style={{ fontSize:10, color:"#666", letterSpacing:1, textTransform:"uppercase", display:"block", marginBottom:5 }}>Solución</label>
+                    <select value={draft.washSolution || defaultWashSolution}
+                      onChange={e => setDraft(d => ({ ...d, washSolution: e.target.value }))}
+                      style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }}>
+                      <option value="SF">SF</option>
+                      <option value="SG">SG</option>
+                      <option value="CS">CS</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:10, color:"#666", letterSpacing:1, textTransform:"uppercase", display:"block", marginBottom:5 }}>Tiempo (min)</label>
+                    <input type="number" min="1"
+                      value={draft.washTime !== undefined ? draft.washTime : defaultWashTime}
+                      onChange={e => setDraft(d => ({ ...d, washTime: parseInt(e.target.value) }))}
+                      style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize:10, color:"#666", letterSpacing:1, textTransform:"uppercase", display:"block", marginBottom:5 }}>Velocidad</label>
+                    <div style={{ padding:"8px 10px", background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)", borderRadius:8, fontSize:12, color:"#4fc3f7", fontFamily:"'IBM Plex Mono', monospace" }}>
+                      {speed ? `${speed} ml/hr` : "—"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div style={{ display:"flex", gap:10 }}>
-              <button onClick={() => { onApprove(med.id); setOpen(false); }} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, background:"rgba(29,158,117,0.12)", border:"1px solid rgba(29,158,117,0.35)", color:"#1D9E75", cursor:"pointer" }}>✓ Aprobar sin cambios</button>
+              <button onClick={() => { onApprove(med.id, calcWash(med, draft)); setOpen(false); }} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, background:"rgba(29,158,117,0.12)", border:"1px solid rgba(29,158,117,0.35)", color:"#1D9E75", cursor:"pointer" }}>✓ Aprobar sin cambios</button>
               <button onClick={save} disabled={!hasCorrection} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, background: hasCorrection ? "rgba(186,117,23,0.15)" : "rgba(255,255,255,0.04)", border:`1px solid ${hasCorrection ? "rgba(186,117,23,0.4)" : "rgba(255,255,255,0.06)"}`, color: hasCorrection ? "#EF9F27" : "#444", cursor: hasCorrection ? "pointer" : "not-allowed" }}>⚠ Guardar corrección</button>
             </div>
           </div>
@@ -182,8 +234,8 @@ export default function Autorizar() {
     }
   }, [selected?.id]);
 
-  const approveMed = (id) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus:"approved" } }));
-  const correctMed = (id, corr) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus:"corrected", correction:corr } }));
+  const approveMed = (id, washData) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus:"approved", ...washData } }));
+  const correctMed = (id, corr) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus:"corrected", correction:corr, washTime:corr.washTime, washSolution:corr.washSolution, washSpeed:corr.washSpeed } }));
 
   const meds        = Object.values(medStates);
   const pending     = meds.filter(m => m.reviewStatus === "pending").length;
@@ -195,11 +247,23 @@ export default function Autorizar() {
     setSaving(true);
     try {
       const token = await user.getIdToken(true);
-      const updatedMeds = meds.map(m => ({
+
+      const correctedMeds = meds.map(m => ({
         ...m,
         ...(m.correction?.diluent ? { diluent: m.correction.diluent } : {}),
         ...(m.correction?.time    ? { time: parseInt(m.correction.time) || m.time } : {}),
+        ...(m.correction?.order   ? { order: parseInt(m.correction.order) } : {}),
+        wash: {
+          time:     m.washTime     ?? (m.category === "premedicacion" ? 5 : 15),
+          solution: m.washSolution ?? (m.diluent?.includes("SG") ? "SG" : "SF"),
+          speed:    m.washSpeed    ?? null,
+        }
       }));
+
+      const updatedMeds = [...correctedMeds]
+        .sort((a, b) => a.order - b.order)
+        .map((m, i) => ({ ...m, order: i + 1 }));
+
       await authorizeSession(token, selected.id, updatedMeds, globalNote, corrected > 0, user.uid);
       setDone(true);
       setSessions(p => p.filter(s => s.id !== selected.id));
@@ -214,7 +278,6 @@ export default function Autorizar() {
 
   return (
     <div style={{ display:"flex", height:"100vh", overflow:"hidden" }}>
-      {/* Lista izquierda */}
       <div style={{ width:280, flexShrink:0, borderRight:"1px solid rgba(255,255,255,0.06)", overflowY:"auto", padding:"24px 16px" }}>
         <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:14 }}>Pendientes de autorizar</div>
         {sessions.length === 0 ? (
@@ -228,7 +291,6 @@ export default function Autorizar() {
         ))}
       </div>
 
-      {/* Panel derecho */}
       <div style={{ flex:1, overflowY:"auto", padding:"28px 32px" }}>
         {done && (
           <div style={{ textAlign:"center", padding:"60px 0" }}>
