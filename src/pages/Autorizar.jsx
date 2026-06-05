@@ -20,6 +20,7 @@ function parseDoc(doc) {
     if (v.mapValue) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, val]) => [k, parse(val)]));
     return null;
   };
+  
   const id = doc.name.split("/").pop();
   return { id, ...Object.fromEntries(Object.entries(doc.fields || {}).map(([k, v]) => [k, parse(v)])) };
 }
