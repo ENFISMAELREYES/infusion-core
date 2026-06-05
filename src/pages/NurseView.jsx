@@ -163,14 +163,14 @@ function WashCard({ wash, washEvents, medId, onStart, onEnd, canStart }) {
           }}>▶ Iniciar lavado</button>
         )}
         {started && !ended && (
-          <>
-            <div style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, textAlign: "center", background: "rgba(79,195,247,0.07)", border: "1px solid rgba(79,195,247,0.18)", color: "#4fc3f7" }}>▶ {ev.inicio}</div>
-            <button onClick={onEnd} style={{
-              flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
-              background: "rgba(29,158,117,0.12)", border: "1px solid rgba(29,158,117,0.3)", color: "#1D9E75",
-            }}>■ Terminar lavado</button>
-          </>
-        )}
+  <>
+    <div style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, textAlign: "center", background: "rgba(29,158,117,0.07)", border: "1px solid rgba(29,158,117,0.18)", color: "#1D9E75" }}>
+      ▶ {ev.inicio}
+      <ElapsedTimer startTime={ev.inicio} />
+    </div>
+    <button onClick={() => recordMedEvent(med.id, "fin")} style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", background: "rgba(79,195,247,0.12)", border: "1px solid rgba(79,195,247,0.3)", color: "#4fc3f7" }}>■ Terminar</button>
+  </>
+)}
         {ended && (
           <div style={{ flex: 1, display: "flex", gap: 8 }}>
             <div style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, textAlign: "center", background: "rgba(79,195,247,0.05)", border: "1px solid rgba(79,195,247,0.15)", color: "#4fc3f7" }}>▶ {ev.inicio}</div>
@@ -181,7 +181,37 @@ function WashCard({ wash, washEvents, medId, onStart, onEnd, canStart }) {
     </div>
   );
 }
+function ElapsedTimer({ startTime }) {
+  const [elapsed, setElapsed] = useState("");
 
+  useEffect(() => {
+    const calc = () => {
+      if (!startTime) return;
+      const [time, period] = startTime.split(" ");
+      const [h, m] = time.split(":").map(Number);
+      let hours = h;
+      if (period === "p.m." && h !== 12) hours += 12;
+      if (period === "a.m." && h === 12) hours = 0;
+      const start = new Date();
+      start.setHours(hours, m, 0, 0);
+      const now = new Date();
+      const diff = Math.floor((now - start) / 1000);
+      if (diff < 0) return;
+      const mins = Math.floor(diff / 60);
+      const secs = diff % 60;
+      setElapsed(`${mins}m ${secs}s`);
+    };
+    calc();
+    const id = setInterval(calc, 1000);
+    return () => clearInterval(id);
+  }, [startTime]);
+
+  return (
+    <div style={{ fontSize: 10, color: "#00d4aa", marginTop: 2, fontFamily: "'IBM Plex Mono', monospace" }}>
+      ⏱ {elapsed}
+    </div>
+  );
+}
 function SessionCard({ session, token, onRefresh, user }) {
   const [open, setOpen] = useState(false);
   const events    = session.events    || {};
