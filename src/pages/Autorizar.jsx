@@ -93,12 +93,16 @@ const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia
 function calcWash(med, draft) {
   const washTime     = draft.washTime !== undefined ? draft.washTime : (med.category === "premedicacion" ? 5 : 15);
   const washSolution = draft.washSolution || (med.diluent?.includes("SG") ? "SG" : "SF");
-  const volMatch     = med.diluent?.match(/(\d+)/);
-  const vol          = volMatch ? parseInt(volMatch[1]) : null;
-  const speed        = (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
+  let speed;
+  if (med.category === "premedicacion") {
+    speed = 60; // Fijo para premedicación
+  } else {
+    const volMatch = med.diluent?.match(/(\d+)/);
+    const vol      = volMatch ? parseInt(volMatch[1]) : null;
+    speed          = (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
+  }
   return { washTime, washSolution, washSpeed: speed };
 }
-
 function MedRow({ med, onApprove, onCorrect }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState({ diluent:"", time:"", order:"", general:"", washSolution:"", washTime: undefined });
@@ -109,8 +113,7 @@ function MedRow({ med, onApprove, onCorrect }) {
   const defaultWashSolution = med.diluent?.includes("SG") ? "SG" : "SF";
   const volMatch            = med.diluent?.match(/(\d+)/);
   const vol                 = volMatch ? parseInt(volMatch[1]) : null;
-  const speed               = (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
-
+ const speed = med.category === "premedicacion" ? 60 : (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
   const save = () => {
     const wash = calcWash(med, draft);
     if (hasCorrection) onCorrect(med.id, { ...draft, ...wash });
