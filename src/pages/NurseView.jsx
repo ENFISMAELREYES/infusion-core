@@ -39,10 +39,7 @@ async function fetchSessions(token, center, date) {
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`
-    },
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
     body: JSON.stringify({
       structuredQuery: {
         from: [{ collectionId: "sessions" }],
@@ -74,52 +71,35 @@ async function patchSession(token, sessionId, updates) {
     return { stringValue: String(val) };
   };
 
-  // Separar campos simples de campos con punto (campos anidados)
   const simpleUpdates = {};
   const nestedUpdates = {};
-  
+
   Object.entries(updates).forEach(([k, v]) => {
-    if (k.includes(".")) {
-      nestedUpdates[k] = v;
-    } else {
-      simpleUpdates[k] = v;
-    }
+    if (k.includes(".")) nestedUpdates[k] = v;
+    else simpleUpdates[k] = v;
   });
 
-  // Primero actualizar campos simples
   if (Object.keys(simpleUpdates).length > 0) {
     const fields = Object.fromEntries(Object.entries(simpleUpdates).map(([k, v]) => [k, toFV(v)]));
     const mask = Object.keys(simpleUpdates).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
     await fetch(
       `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ fields }),
-      }
+      { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) }
     );
   }
 
-  // Luego actualizar campos anidados uno por uno
   for (const [path, value] of Object.entries(nestedUpdates)) {
     const parts = path.split(".");
     const mask = `updateMask.fieldPaths=${encodeURIComponent(path)}`;
-    
-    // Construir objeto anidado
     let fields = {};
     if (parts.length === 2) {
       fields[parts[0]] = { mapValue: { fields: { [parts[1]]: toFV(value) } } };
     } else if (parts.length === 3) {
       fields[parts[0]] = { mapValue: { fields: { [parts[1]]: { mapValue: { fields: { [parts[2]]: toFV(value) } } } } } };
     }
-    
     await fetch(
       `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ fields }),
-      }
+      { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) }
     );
   }
 }
@@ -147,50 +127,115 @@ function TimeBtn({ label, time, onRecord, disabled }) {
   );
 }
 
+function WashCard({ wash, washEvents, medId, onStart, onEnd, canStart }) {
+  if (!wash) return null;
+  const ev = washEvents?.[`wash_${medId}`] || {};
+  const started = !!ev.inicio;
+  const ended   = !!ev.fin;
+
+  return (
+    <div style={{
+      margin: "4px 0", borderRadius: 10, overflow: "hidden",
+      border: `1px solid ${ended ? "rgba(79,195,247,0.25)" : started ? "rgba(0,212,170,0.25)" : "rgba(79,195,247,0.2)"}`,
+      background: ended ? "rgba(79,195,247,0.05)" : "rgba(79,195,247,0.03)",
+    }}>
+      <div style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 16 }}>💧</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, color: "#4fc3f7", fontWeight: 600 }}>
+            Lavado — {wash.solution} · {wash.time} min · {wash.speed ? `${wash.speed} ml/hr` : "—"}
+          </div>
+          <div style={{ fontSize: 11, color: "#555", marginTop: 1 }}>
+            {ended ? "Lavado completado" : started ? "Lavado en curso" : "Iniciar lavado antes del siguiente medicamento"}
+          </div>
+        </div>
+        <span style={{ fontSize: 14 }}>{ended ? "✓" : started ? "⏳" : "○"}</span>
+      </div>
+
+      <div style={{ padding: "0 14px 10px", display: "flex", gap: 8 }}>
+        {!started && (
+          <button onClick={onStart} disabled={!canStart} style={{
+            flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+            cursor: canStart ? "pointer" : "not-allowed",
+            background: canStart ? "rgba(79,195,247,0.12)" : "rgba(255,255,255,0.03)",
+            border: `1px solid ${canStart ? "rgba(79,195,247,0.3)" : "rgba(255,255,255,0.06)"}`,
+            color: canStart ? "#4fc3f7" : "#444",
+          }}>▶ Iniciar lavado</button>
+        )}
+        {started && !ended && (
+          <>
+            <div style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, textAlign: "center", background: "rgba(79,195,247,0.07)", border: "1px solid rgba(79,195,247,0.18)", color: "#4fc3f7" }}>▶ {ev.inicio}</div>
+            <button onClick={onEnd} style={{
+              flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              background: "rgba(29,158,117,0.12)", border: "1px solid rgba(29,158,117,0.3)", color: "#1D9E75",
+            }}>■ Terminar lavado</button>
+          </>
+        )}
+        {ended && (
+          <div style={{ flex: 1, display: "flex", gap: 8 }}>
+            <div style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, textAlign: "center", background: "rgba(79,195,247,0.05)", border: "1px solid rgba(79,195,247,0.15)", color: "#4fc3f7" }}>▶ {ev.inicio}</div>
+            <div style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, textAlign: "center", background: "rgba(29,158,117,0.05)", border: "1px solid rgba(29,158,117,0.15)", color: "#1D9E75" }}>■ {ev.fin}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SessionCard({ session, token, onRefresh, user }) {
   const [open, setOpen] = useState(false);
-  const events = session.events || {};
+  const events    = session.events    || {};
   const medEvents = session.medEvents || {};
+  const washEvents = session.washEvents || {};
 
-const recordEvent = async (key) => {
+  const recordEvent = async (key) => {
     try {
-      console.log("recordEvent iniciado:", key, session.id);
       const freshToken = await user.getIdToken(true);
-      console.log("Token obtenido");
       const t = nowStr();
       const updates = { [`events.${key}`]: t };
       if (key === "ingreso") updates.status = "en_curso";
-      if (key === "retiro") updates.status = "completado";
-      console.log("Enviando patch:", updates);
-      const result = await patchSession(freshToken, session.id, updates);
-      console.log("Patch completado:", result);
+      if (key === "retiro")  updates.status = "completado";
+      await patchSession(freshToken, session.id, updates);
       onRefresh();
-    } catch(e) {
-      console.error("Error registrando evento:", e);
-      alert("Error: " + e.message);
-    }
+    } catch(e) { console.error("Error:", e); alert("Error: " + e.message); }
   };
 
- const recordMedEvent = async (medId, key) => {
+  const recordMedEvent = async (medId, key) => {
     try {
       const freshToken = await user.getIdToken(true);
       await patchSession(freshToken, session.id, { [`medEvents.med_${medId}.${key}`]: nowStr() });
       onRefresh();
-    } catch(e) {
-      console.error("Error registrando med evento:", e);
-      alert("Error: " + e.message);
-    }
+    } catch(e) { console.error("Error:", e); alert("Error: " + e.message); }
+  };
+
+  const recordWashEvent = async (medId, key) => {
+    try {
+      const freshToken = await user.getIdToken(true);
+      await patchSession(freshToken, session.id, { [`washEvents.wash_${medId}.${key}`]: nowStr() });
+      onRefresh();
+    } catch(e) { console.error("Error:", e); alert("Error: " + e.message); }
   };
 
   const completedMeds = (session.meds || []).filter(m => medEvents[`med_${m.id}`]?.fin).length;
-const totalTimed = (session.meds || []).filter(m => m.time).length;
-const pct = totalTimed ? Math.round((completedMeds / totalTimed) * 100) : 0;
+  const totalTimed    = (session.meds || []).filter(m => m.time).length;
+  const pct           = totalTimed ? Math.round((completedMeds / totalTimed) * 100) : 0;
 
   const canStartMed = (med) => {
     if (!session.authorized || !events.ingreso) return false;
     const prev = (session.meds || []).find(m => m.order === med.order - 1);
-    if (!prev || !prev.time) return true;
-    return !!(medEvents[`med_${prev.id}`]?.fin);
+    if (!prev) return true;
+    if (!prev.time) return true;
+    // El medicamento anterior debe haber terminado
+    if (!medEvents[`med_${prev.id}`]?.fin) return false;
+    // Si el anterior tiene lavado, el lavado debe haber terminado
+    if (prev.wash) {
+      if (!washEvents[`wash_${prev.id}`]?.fin) return false;
+    }
+    return true;
+  };
+
+  const canStartWash = (med) => {
+    return !!medEvents[`med_${med.id}`]?.fin;
   };
 
   const statusColor = !session.authorized ? "#ffb347" : !events.ingreso ? "#888" : events.retiro ? "#4fc3f7" : "#1D9E75";
@@ -222,55 +267,86 @@ const pct = totalTimed ? Math.round((completedMeds / totalTimed) * 100) : 0;
               ⏳ Esperando autorización del Jefe de Enfermería.
             </div>
           )}
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
             <TimeBtn label="Ingreso del paciente" time={events.ingreso} onRecord={() => recordEvent("ingreso")} disabled={!session.authorized} />
-           <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={() => recordEvent("retiro")} disabled={!events.ingreso || completedMeds < totalTimed} />
+            <TimeBtn label="Retiro del paciente"  time={events.retiro}  onRecord={() => recordEvent("retiro")}  disabled={!events.ingreso || completedMeds < totalTimed} />
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {(session.meds || []).map(med => {
-             const ev = medEvents[`med_${med.id}`] || {};
-              const color = CAT_COLOR[med.category] || "#888";
+              const ev      = medEvents[`med_${med.id}`] || {};
+              const color   = CAT_COLOR[med.category] || "#888";
               const started = !!ev.inicio, ended = !!ev.fin;
               const canStart = canStartMed(med);
+
               return (
-                <div key={med.id} style={{ borderRadius: 11, overflow: "hidden", border: `1px solid ${ended ? "rgba(79,195,247,0.2)" : started ? "rgba(29,158,117,0.2)" : "rgba(255,255,255,0.07)"}`, borderLeft: `3px solid ${color}`, background: "rgba(255,255,255,0.02)" }}>
-                  <div style={{ padding: "11px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#888", fontFamily: "'IBM Plex Mono', monospace", flexShrink: 0 }}>{med.order}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 600 }}>{med.name} {med.dose}</div>
-                      <div style={{ fontSize: 11, color: "#666", marginTop: 1 }}>{med.diluent}{med.time ? ` · ${med.time} min` : ""}</div>
+                <div key={med.id}>
+                  {/* Medicamento */}
+                  <div style={{ borderRadius: 11, overflow: "hidden", border: `1px solid ${ended ? "rgba(79,195,247,0.2)" : started ? "rgba(29,158,117,0.2)" : "rgba(255,255,255,0.07)"}`, borderLeft: `3px solid ${color}`, background: "rgba(255,255,255,0.02)" }}>
+                    <div style={{ padding: "11px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#888", fontFamily: "'IBM Plex Mono', monospace", flexShrink: 0 }}>{med.order}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 600 }}>{med.name} {med.dose}</div>
+                        <div style={{ fontSize: 11, color: "#666", marginTop: 1 }}>{med.diluent}{med.time ? ` · ${med.time} min` : ""}</div>
+                      </div>
+                      <span style={{ fontSize: 14 }}>{ended ? "✓" : started ? "⏳" : "○"}</span>
                     </div>
-                    <span style={{ fontSize: 14 }}>{ended ? "✓" : started ? "⏳" : "○"}</span>
+
+                    {med.correction && (
+                      <div style={{ margin: "0 14px 8px", padding: "7px 11px", borderRadius: 8, background: "rgba(186,117,23,0.09)", border: "1px solid rgba(186,117,23,0.22)" }}>
+                        <div style={{ fontSize: 11, color: "#EF9F27", fontWeight: 600, marginBottom: 3 }}>⚠ Corrección del Jefe</div>
+                        {med.correction.diluent && <div style={{ fontSize: 11, color: "#aaa" }}>Dilución: {med.correction.diluent}</div>}
+                        {med.correction.time    && <div style={{ fontSize: 11, color: "#aaa" }}>Tiempo: {med.correction.time}</div>}
+                        {med.correction.general && <div style={{ fontSize: 11, color: "#aaa" }}>Nota: {med.correction.general}</div>}
+                      </div>
+                    )}
+
+                    {med.time && (
+                      <div style={{ padding: "0 14px 12px", display: "flex", gap: 8 }}>
+                        {!started && (
+                          <button onClick={() => recordMedEvent(med.id, "inicio")} disabled={!canStart} style={{
+                            flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                            cursor: canStart ? "pointer" : "not-allowed",
+                            background: canStart ? "rgba(29,158,117,0.12)" : "rgba(255,255,255,0.03)",
+                            border: `1px solid ${canStart ? "rgba(29,158,117,0.3)" : "rgba(255,255,255,0.06)"}`,
+                            color: canStart ? "#1D9E75" : "#444",
+                          }}>▶ Iniciar</button>
+                        )}
+                        {started && !ended && (
+                          <>
+                            <div style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, textAlign: "center", background: "rgba(29,158,117,0.07)", border: "1px solid rgba(29,158,117,0.18)", color: "#1D9E75" }}>▶ {ev.inicio}</div>
+                            <button onClick={() => recordMedEvent(med.id, "fin")} style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", background: "rgba(79,195,247,0.12)", border: "1px solid rgba(79,195,247,0.3)", color: "#4fc3f7" }}>■ Terminar</button>
+                          </>
+                        )}
+                        {ended && (
+                          <div style={{ flex: 1, display: "flex", gap: 8 }}>
+                            <div style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, textAlign: "center", background: "rgba(29,158,117,0.06)", border: "1px solid rgba(29,158,117,0.15)", color: "#1D9E75" }}>▶ {ev.inicio}</div>
+                            <div style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, textAlign: "center", background: "rgba(79,195,247,0.06)", border: "1px solid rgba(79,195,247,0.15)", color: "#4fc3f7" }}>■ {ev.fin}</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {med.correction && (
-                    <div style={{ margin: "0 14px 8px", padding: "7px 11px", borderRadius: 8, background: "rgba(186,117,23,0.09)", border: "1px solid rgba(186,117,23,0.22)" }}>
-                      <div style={{ fontSize: 11, color: "#EF9F27", fontWeight: 600, marginBottom: 3 }}>⚠ Corrección del Jefe</div>
-                      {med.correction.diluent && <div style={{ fontSize: 11, color: "#aaa" }}>Dilución: {med.correction.diluent}</div>}
-                      {med.correction.time && <div style={{ fontSize: 11, color: "#aaa" }}>Tiempo: {med.correction.time}</div>}
-                      {med.correction.general && <div style={{ fontSize: 11, color: "#aaa" }}>Nota: {med.correction.general}</div>}
-                    </div>
-                  )}
-                  {med.time && (
-                    <div style={{ padding: "0 14px 12px", display: "flex", gap: 8 }}>
-                      {!started && <button onClick={() => recordMedEvent(med.id, "inicio")} disabled={!canStart} style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: canStart ? "pointer" : "not-allowed", background: canStart ? "rgba(29,158,117,0.12)" : "rgba(255,255,255,0.03)", border: `1px solid ${canStart ? "rgba(29,158,117,0.3)" : "rgba(255,255,255,0.06)"}`, color: canStart ? "#1D9E75" : "#444" }}>▶ Iniciar</button>}
-                      {started && !ended && (
-                        <>
-                          <div style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, textAlign: "center", background: "rgba(29,158,117,0.07)", border: "1px solid rgba(29,158,117,0.18)", color: "#1D9E75" }}>▶ {ev.inicio}</div>
-                          <button onClick={() => recordMedEvent(med.id, "fin")} style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", background: "rgba(79,195,247,0.12)", border: "1px solid rgba(79,195,247,0.3)", color: "#4fc3f7" }}>■ Terminar</button>
-                        </>
-                      )}
-                      {ended && (
-                        <div style={{ flex: 1, display: "flex", gap: 8 }}>
-                          <div style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, textAlign: "center", background: "rgba(29,158,117,0.06)", border: "1px solid rgba(29,158,117,0.15)", color: "#1D9E75" }}>▶ {ev.inicio}</div>
-                          <div style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, textAlign: "center", background: "rgba(79,195,247,0.06)", border: "1px solid rgba(79,195,247,0.15)", color: "#4fc3f7" }}>■ {ev.fin}</div>
-                        </div>
-                      )}
+
+                  {/* Lavado después del medicamento */}
+                  {med.wash && med.category !== "adicional" && (
+                    <div style={{ paddingLeft: 16 }}>
+                      <WashCard
+                        wash={med.wash}
+                        washEvents={washEvents}
+                        medId={med.id}
+                        onStart={() => recordWashEvent(med.id, "inicio")}
+                        onEnd={()   => recordWashEvent(med.id, "fin")}
+                        canStart={canStartWash(med)}
+                      />
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
+
           {session.globalNote && (
             <div style={{ marginTop: 14, padding: "10px 14px", borderRadius: 10, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", fontSize: 12, color: "#888" }}>
               📋 Nota del Jefe: {session.globalNote}
@@ -284,17 +360,15 @@ const pct = totalTimed ? Math.round((completedMeds / totalTimed) * 100) : 0;
 
 export default function NurseView() {
   const { user, profile } = useAuth();
-  const [sessions, setSessions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(null);
+  const [sessions, setSessions]   = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [token, setToken]         = useState(null);
   const today = getToday();
   console.log("NurseView render - profile:", profile, "user:", !!user);
+  console.log("Token actual:", token ? "existe" : "null", "User:", user ? "existe" : "null");
 
- const load = async () => {
-    if (!user || !profile?.center) {
-      setLoading(false);
-      return;
-    }
+  const load = async () => {
+    if (!user || !profile?.center) { setLoading(false); return; }
     try {
       const t = await user.getIdToken(true);
       setToken(t);
@@ -302,24 +376,16 @@ export default function NurseView() {
       const data = await fetchSessions(t, profile.center, today);
       console.log("Sesiones encontradas:", data.length, data);
       setSessions(data);
-    } catch (e) {
-      console.error("Error:", e);
-    } finally {
-      setLoading(false);
-    }
+    } catch(e) { console.error("Error:", e); }
+    finally { setLoading(false); }
   };
 
- useEffect(() => {
-  if (profile?.center) {
-    load();
-  }
-}, [profile?.center]);
+  useEffect(() => { if (profile?.center) load(); }, [profile?.center]);
 
   const inCourse = sessions.filter(s => s.status === "en_curso").length;
-  const waiting = sessions.filter(s => !s.events?.ingreso).length;
-  const done = sessions.filter(s => s.status === "completado").length;
-  
-console.log("Token actual:", token ? "existe" : "null", "User:", user ? "existe" : "null");
+  const waiting  = sessions.filter(s => !s.events?.ingreso).length;
+  const done     = sessions.filter(s => s.status === "completado").length;
+
   return (
     <div style={{ padding: "24px 28px", maxWidth: 800, margin: "0 auto" }}>
       <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
@@ -333,6 +399,7 @@ console.log("Token actual:", token ? "existe" : "null", "User:", user ? "existe"
           ))}
         </div>
       </div>
+
       {loading ? (
         <div style={{ color: "#555", fontSize: 14, padding: 24 }}>Cargando...</div>
       ) : sessions.length === 0 ? (
