@@ -355,9 +355,10 @@ function SessionCard({ session, token, onRefresh, user }) {
                     )}
 
                     {med.time && (
-                      <div style={{ padding: "0 14px 12px", display: "flex", gap: 8 }}>
-                        {!started && (
-                          <button onClick={() => recordMedEvent(med.id, "inicio")} disabled={!canStart} style={{
+  <div style={{ padding: "0 14px 12px", display: "flex", flexDirection:"column", gap: 6 }}>
+    <div style={{ display:"flex", gap:8 }}>
+    {!started && (
+      <button onClick={() => recordMedEvent(med.id, "inicio")}
                             flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 600,
                             cursor: canStart ? "pointer" : "not-allowed",
                             background: canStart ? "rgba(29,158,117,0.12)" : "rgba(255,255,255,0.03)",
