@@ -167,89 +167,98 @@ function PatientRow({ s }) {
   })}
 </div>
         </div>
-       <div style={{ minWidth:130, textAlign:"right", flexShrink:0 }}>
+      <div style={{ minWidth:130, textAlign:"right", flexShrink:0 }}>
   <div style={{ fontSize:24, fontFamily:"'DM Serif Display', serif", color:"#fff" }}>{pct}%</div>
   <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>completado</div>
-         {s.meds && (
-  <div style={{ fontSize:10, color:"#555", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
-   {(() => {
-  const programado = s.meds.reduce((acc, m) => acc + (m.time || 0) + (m.wash?.time || 0), 0);
-  const me = s.medEvents || {};
-  const parseTime = (t) => {
-    if (!t) return null;
-    if (t.includes("a.m.") || t.includes("p.m.")) {
-      const [time, period] = t.split(" ");
-      const [h, m] = time.split(":").map(Number);
-      let hours = h;
-      if (period === "p.m." && h !== 12) hours += 12;
-      if (period === "a.m." && h === 12) hours = 0;
-      return hours * 60 + m;
-    }
-    const [h, m] = t.split(":").map(Number);
-    return h * 60 + m;
-  };
-  const real = s.meds.reduce((acc, m) => {
-    const ev = me[`med_${m.id}`] || {};
-    if (ev.inicio && ev.fin) {
-      const diff = parseTime(ev.fin) - parseTime(ev.inicio);
-      return acc + (diff > 0 ? diff : 0);
-    }
-    return acc;
-  }, 0);
-  return (
-    <div style={{ marginTop:4, fontSize:10, fontFamily:"'IBM Plex Mono', monospace" }}>
-      <div style={{ color:"#555" }}>Programado: {programado} min</div>
-      {real > 0 && <div style={{ color: real <= programado ? "#1D9E75" : "#EF9F27" }}>Real: {real} min {real < programado ? "▼" : real > programado ? "▲" : "="}</div>}
-    </div>
-  );
-})()}
-)}
+
+  {/* Tiempos programado vs real */}
+  {s.meds && (() => {
+    const programado = s.meds.reduce((acc, m) => acc + (m.time || 0) + (m.wash?.time || 0), 0);
+    const me = s.medEvents || {};
+    const pt = (t) => {
+      if (!t) return null;
+      if (t.includes("a.m.") || t.includes("p.m.")) {
+        const [time, period] = t.split(" ");
+        const [h, mm] = time.split(":").map(Number);
+        let hours = h;
+        if (period === "p.m." && h !== 12) hours += 12;
+        if (period === "a.m." && h === 12) hours = 0;
+        return hours * 60 + mm;
+      }
+      const [h, mm] = t.split(":").map(Number);
+      return h * 60 + mm;
+    };
+    const real = s.meds.reduce((acc, m) => {
+      const ev = me[`med_${m.id}`] || {};
+      if (ev.inicio && ev.fin) {
+        const d = pt(ev.fin) - pt(ev.inicio);
+        return acc + (d > 0 ? d : 0);
+      }
+      return acc;
+    }, 0);
+    return (
+      <div style={{ marginTop:4, fontSize:10, fontFamily:"'IBM Plex Mono', monospace" }}>
+        <div style={{ color:"#555" }}>Programado: {programado} min</div>
+        {real > 0 && (
+          <div style={{ color: real <= programado ? "#1D9E75" : "#EF9F27" }}>
+            Real: {real} min {real < programado ? "▼" : real > programado ? "▲" : "="}
+          </div>
+        )}
+      </div>
+    );
+  })()}
+
+  {/* Ingreso y retiro */}
   {s.events?.ingreso && (
     <div style={{ fontSize:11, color:"#777", marginTop:6 }}>▶ Ingreso: {s.events.ingreso}</div>
   )}
   {s.events?.retiro && (
     <div style={{ fontSize:11, color:"#4fc3f7" }}>■ Retiro: {s.events.retiro}</div>
   )}
+
+  {/* Estancia cuando ya se retiró */}
   {s.events?.ingreso && s.events?.retiro && (() => {
     try {
-    const parseTime = (t) => {
-  if (t.includes("a.m.") || t.includes("p.m.")) {
-    const [time, period] = t.split(" ");
-    const [h, m] = time.split(":").map(Number);
-    let hours = h;
-    if (period === "p.m." && h !== 12) hours += 12;
-    if (period === "a.m." && h === 12) hours = 0;
-    return hours * 60 + m;
-  }
-  const [h, m] = t.split(":").map(Number);
-  return h * 60 + m;
-};
-      const diff = parseTime(s.events.retiro) - parseTime(s.events.ingreso);
+      const pt = (t) => {
+        if (t.includes("a.m.") || t.includes("p.m.")) {
+          const [time, period] = t.split(" ");
+          const [h, mm] = time.split(":").map(Number);
+          let hours = h;
+          if (period === "p.m." && h !== 12) hours += 12;
+          if (period === "a.m." && h === 12) hours = 0;
+          return hours * 60 + mm;
+        }
+        const [h, mm] = t.split(":").map(Number);
+        return h * 60 + mm;
+      };
+      const diff = pt(s.events.retiro) - pt(s.events.ingreso);
       if (diff > 0) return (
         <div style={{ fontSize:11, color:"#1D9E75", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
-         ⏱ En estancia: {Math.floor(diff/60)}h {diff%60}m
+          ⏱ Estancia: {Math.floor(diff/60)}h {diff%60}m
         </div>
       );
     } catch(e) {}
     return null;
   })()}
+
+  {/* Estancia en curso */}
   {s.events?.ingreso && !s.events?.retiro && (() => {
     try {
-     const parseTime = (t) => {
-  if (t.includes("a.m.") || t.includes("p.m.")) {
-    const [time, period] = t.split(" ");
-    const [h, m] = time.split(":").map(Number);
-    let hours = h;
-    if (period === "p.m." && h !== 12) hours += 12;
-    if (period === "a.m." && h === 12) hours = 0;
-    return hours * 60 + m;
-  }
-  const [h, m] = t.split(":").map(Number);
-  return h * 60 + m;
-};
+      const pt = (t) => {
+        if (t.includes("a.m.") || t.includes("p.m.")) {
+          const [time, period] = t.split(" ");
+          const [h, mm] = time.split(":").map(Number);
+          let hours = h;
+          if (period === "p.m." && h !== 12) hours += 12;
+          if (period === "a.m." && h === 12) hours = 0;
+          return hours * 60 + mm;
+        }
+        const [h, mm] = t.split(":").map(Number);
+        return h * 60 + mm;
+      };
       const now = new Date();
       const nowMin = now.getHours() * 60 + now.getMinutes();
-      const diff = nowMin - parseTime(s.events.ingreso);
+      const diff = nowMin - pt(s.events.ingreso);
       if (diff > 0) return (
         <div style={{ fontSize:11, color:"#EF9F27", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
           ⏱ En estancia: {Math.floor(diff/60)}h {diff%60}m
