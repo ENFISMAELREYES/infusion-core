@@ -317,16 +317,18 @@ export default function Autorizar() {
     try {
       const token = await user.getIdToken(true);
       const correctedMeds = meds.map(m => ({
-        ...m,
-        ...(m.correction?.diluent ? { diluent: m.correction.diluent } : {}),
-        ...(m.correction?.time    ? { time: parseInt(m.correction.time) || m.time } : {}),
-        ...(m.correction?.order   ? { order: parseInt(m.correction.order) } : {}),
-        wash: {
-          time:     m.washTime     ?? (m.category === "premedicacion" ? 5 : 15),
-          solution: m.washSolution ?? (m.diluent?.includes("SG") ? "SG" : "SF"),
-          speed:    m.washSpeed    ?? null,
-        }
-      }));
+  ...m,
+  ...(m.correction?.diluent ? { diluent: m.correction.diluent } : {}),
+  ...(m.correction?.time    ? { time: parseInt(m.correction.time) || m.time } : {}),
+  ...(m.correction?.order   ? { order: parseInt(m.correction.order) } : {}),
+  parallelType: m.parallelType || "secuencial",
+  startOffset:  m.startOffset  ?? null,
+  wash: {
+    time:     m.washTime     ?? (m.category === "premedicacion" ? 5 : 15),
+    solution: m.washSolution ?? (m.diluent?.includes("SG") ? "SG" : "SF"),
+    speed:    m.washSpeed    ?? null,
+  }
+}));
       const updatedMeds = [...correctedMeds]
         .sort((a,b) => a.order - b.order)
         .map((m,i) => ({ ...m, order: i+1 }));
