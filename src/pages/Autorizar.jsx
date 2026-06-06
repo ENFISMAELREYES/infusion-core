@@ -308,7 +308,7 @@ export default function Autorizar() {
       const updatedMeds = [...correctedMeds]
         .sort((a,b) => a.order - b.order)
         .map((m,i) => ({ ...m, order: i+1 }));
-      await authorizeSession(token, selected.id, updatedMeds, globalNote, corrected > 0, user.uid);
+      await authorizeSession(token, selected.id, updatedMeds, globalNote, corrected > 0, user.uid, selectedDate);
       setDone(true);
       setSessions(p => p.filter(s => s.id !== selected.id));
       setSelected(null);
