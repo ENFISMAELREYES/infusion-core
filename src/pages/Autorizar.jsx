@@ -24,7 +24,7 @@ function parseDoc(doc) {
   return { id, ...Object.fromEntries(Object.entries(doc.fields || {}).map(([k, v]) => [k, parse(v)])) };
 }
 
-async function fetchPendingSessions(token, date) {
+async function fetchPendingSessions(token) {
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
   const res = await fetch(url, {
     method: "POST",
@@ -33,12 +33,20 @@ async function fetchPendingSessions(token, date) {
       structuredQuery: {
         from: [{ collectionId: "sessions" }],
         where: {
-          compositeFilter: {
-            op: "AND",
-            filters: [
-              { fieldFilter: { field: { fieldPath: "date" }, op: "EQUAL", value: { stringValue: date } } },
-              { fieldFilter: { field: { fieldPath: "authorized" }, op: "EQUAL", value: { booleanValue: false } } },
-            ]
+          fieldFilter: {
+            field: { fieldPath: "authorized" },
+            op: "EQUAL",
+            value: { booleanValue: false }
+          }
+        },
+        orderBy: [{ field: { fieldPath: "date" }, direction: "ASCENDING" }],
+      }
+    })
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data.filter(d => d.document).map(d => parseDoc(d.document));
+}
           }
         }
       }
