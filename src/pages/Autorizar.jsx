@@ -58,7 +58,7 @@ async function authorizeSession(token, sessionId, meds, globalNote, corrected, u
     if (typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k, v]) => [k, toFV(v)])) } };
     return { stringValue: String(val) };
   };
-  const fields = {
+ const fields = {
     authorized:     { booleanValue: true },
     authorizedBy:   { stringValue: userId },
     authorizedAt:   { stringValue: new Date().toISOString() },
@@ -66,6 +66,7 @@ async function authorizeSession(token, sessionId, meds, globalNote, corrected, u
     globalNote:     { stringValue: globalNote },
     status:         { stringValue: "pendiente" },
     meds:           toFV(meds),
+    date:           { stringValue: date },
   };
   const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   await fetch(
