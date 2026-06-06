@@ -6,7 +6,7 @@ const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
 
 const CATEGORIES = ["premedicacion", "inmunoterapia", "quimioterapia", "adicional"];
 const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional" };
-const emptyMed = (order) => ({ id: Date.now() + order, order, name: "", dose: "", diluent: "", time: "", category: "premedicacion" });
+const emptyMed = (order) => ({ id: Date.now() + order, order, name: "", dose: "", diluent: "", time: "", category: "premedicacion", parallelType: "secuencial", startOffset: null });
 
 function getToday() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
@@ -314,8 +314,21 @@ export default function NuevaSession() {
                   <div><label style={labelStyle}>Dosis</label><input required value={med.dose} onChange={e => setMedField(med.id, "dose", e.target.value)} placeholder="ej: 780 mg" style={inputStyle} /></div>
                   <div><label style={labelStyle}>Dilución</label><input required value={med.diluent} onChange={e => setMedField(med.id, "diluent", e.target.value)} placeholder="ej: 100 ml SF" style={inputStyle} /></div>
                   <div><label style={labelStyle}>Tiempo (minutos)</label><input type="number" min="1" value={med.time} onChange={e => setMedField(med.id, "time", e.target.value)} placeholder="ej: 30" style={inputStyle} /></div>
-                </div>
-              </div>
+                  {meds.indexOf(meds.find(m => m.id === med.id)) > 0 && (
+  <div style={{ gridColumn:"1/-1" }}>
+    <label style={labelStyle}>Inicio respecto al medicamento anterior</label>
+    <select value={med.parallelType || "secuencial"} onChange={e => setMedField(med.id, "parallelType", e.target.value)}
+      style={{ ...inputStyle, cursor:"pointer" }}>
+      <option value="secuencial">Secuencial — espera a que termine el anterior</option>
+      <option value="junto">Simultáneo — inicia al mismo tiempo</option>
+      <option value="offset">Con retraso — X minutos después de iniciar el anterior</option>
+    </select>
+    {med.parallelType === "offset" && (
+      <input type="number" min="1" value={med.startOffset || ""} onChange={e => setMedField(med.id, "startOffset", parseInt(e.target.value))}
+        placeholder="Minutos de retraso (ej: 30)" style={{ ...inputStyle, marginTop:8 }} />
+    )}
+  </div>
+)}
             ))}
           </div>
         </section>
