@@ -6,6 +6,7 @@ const NAV = {
     { to: "/",            icon: "⊞", label: "Panel general"   },
     { to: "/monitor",     icon: "◎", label: "Monitor en vivo" },
     { to: "/autorizar",   icon: "✦", label: "Autorizar"        },
+    { to: "/historial",   icon: "◷", label: "Historial"        },
     { to: "/pacientes",   icon: "♡", label: "Pacientes"        },
   ],
   enfermera: [
