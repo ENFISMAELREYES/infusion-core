@@ -104,7 +104,7 @@ function calcWash(med, draft) {
   }
   return { washTime, washSolution, washSpeed: speed };
 }
-function MedRow({ med, onApprove, onCorrect }) {
+function MedRow({ med, onApprove, onCorrect, onDelete }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState({ diluent:"", time:"", order:"", general:"", washSolution:"", washTime: undefined });
   const hasCorrection = ["diluent","time","order","general"].some(k => draft[k]?.trim());
@@ -335,7 +335,7 @@ export default function Autorizar() {
             </div>
 
             <div style={{ display:"flex", flexDirection:"column", gap:9, marginBottom:22 }}>
-              {meds.map(m => <MedRow key={m.id} med={m} onApprove={approveMed} onCorrect={correctMed} />)}
+              {meds.map(m => <MedRow key={m.id} med={m} onApprove={approveMed} onCorrect={correctMed} onDelete={(id) => setMedStates(p => { const n = {...p}; delete n[id]; return n; })} />)}
             </div>
 
             <div style={{ marginBottom:22 }}>
