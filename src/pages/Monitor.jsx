@@ -170,6 +170,11 @@ function PatientRow({ s }) {
        <div style={{ minWidth:130, textAlign:"right", flexShrink:0 }}>
   <div style={{ fontSize:24, fontFamily:"'DM Serif Display', serif", color:"#fff" }}>{pct}%</div>
   <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>completado</div>
+         {s.meds && (
+  <div style={{ fontSize:10, color:"#555", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
+    Total programado: {(s.meds.reduce((acc, m) => acc + (m.time || 0) + (m.wash?.time || 0), 0))} min
+  </div>
+)}
   {s.events?.ingreso && (
     <div style={{ fontSize:11, color:"#777", marginTop:6 }}>▶ Ingreso: {s.events.ingreso}</div>
   )}
