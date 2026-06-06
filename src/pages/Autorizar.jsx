@@ -245,6 +245,7 @@ export default function Autorizar() {
   const [globalNote, setGlobalNote] = useState("");
   const [saving, setSaving]         = useState(false);
   const [done, setDone]             = useState(false);
+  const [selectedDate, setSelectedDate] = useState("");
 
   const load = async () => {
     if (!user) return;
