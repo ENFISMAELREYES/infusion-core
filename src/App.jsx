@@ -7,6 +7,7 @@ import Autorizar from "./pages/Autorizar";
 import Monitor from "./pages/Monitor";
 import NurseView from "./pages/NurseView";
 import NuevaSession from "./pages/NuevaSession";
+import Historial from "./pages/Historial";
 
 function PrivateRoute({ children, roles }) {
   const { user, profile, loading } = useAuth();
@@ -46,6 +47,7 @@ function AppRoutes() {
         } />
         <Route path="monitor" element={<PrivateRoute roles={["jefe","visualizador"]}><Monitor /></PrivateRoute>} />
         <Route path="autorizar" element={<PrivateRoute roles={["jefe"]}><Autorizar /></PrivateRoute>} />
+        <Route path="historial" element={<PrivateRoute roles={["jefe","visualizador"]}><Historial /></PrivateRoute>} />
         <Route path="pacientes" element={<PrivateRoute roles={["enfermera"]}><NurseView /></PrivateRoute>} />
         <Route path="registrar" element={<PrivateRoute roles={["enfermera"]}><NuevaSession /></PrivateRoute>} />
         <Route path="*" element={<Navigate to={profile?.role === "enfermera" ? "/pacientes" : "/"} replace />} />
