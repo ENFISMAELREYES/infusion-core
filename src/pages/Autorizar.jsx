@@ -39,14 +39,10 @@ async function fetchPendingSessions(token) {
             value: { booleanValue: false }
           }
         },
-        orderBy: [{ field: { fieldPath: "date" }, direction: "ASCENDING" }],
+        orderBy: [{ field: { fieldPath: "date" }, direction: "ASCENDING" }]
       }
     })
   });
-  const data = await res.json();
-  if (!Array.isArray(data)) return [];
-  return data.filter(d => d.document).map(d => parseDoc(d.document));
-}
   const data = await res.json();
   if (!Array.isArray(data)) return [];
   return data.filter(d => d.document).map(d => parseDoc(d.document));
@@ -124,8 +120,6 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
 
   return (
     <div style={{ borderRadius:12, overflow:"hidden", border:`1px solid ${med.reviewStatus === "approved" ? "rgba(29,158,117,0.3)" : med.reviewStatus === "corrected" ? "rgba(186,117,23,0.35)" : isNew ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.08)"}`, borderLeft:`3px solid ${cs.border}`, background:"rgba(255,255,255,0.02)" }}>
-
-      {/* Header */}
       <div onClick={() => setOpen(o => !o)} style={{ padding:"13px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
         <span style={{ width:26, height:26, borderRadius:"50%", flexShrink:0, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{med.order}</span>
         <div style={{ flex:1 }}>
@@ -138,25 +132,22 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
           {med.diluent && <div style={{ fontSize:12, color:"#666", marginTop:2 }}>{med.diluent} · {med.time ? `${med.time} min` : "sin tiempo"}</div>}
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          {med.reviewStatus === "approved"  && !isNew && <span style={{ fontSize:11, color:"#1D9E75", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", padding:"3px 10px", borderRadius:99 }}>Aprobado</span>}
+          {med.reviewStatus === "approved" && !isNew && <span style={{ fontSize:11, color:"#1D9E75", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", padding:"3px 10px", borderRadius:99 }}>Aprobado</span>}
           {med.reviewStatus === "corrected" && <span style={{ fontSize:11, color:"#EF9F27", background:"rgba(186,117,23,0.1)", border:"1px solid rgba(186,117,23,0.25)", padding:"3px 10px", borderRadius:99 }}>Con corrección</span>}
           <button type="button" onClick={e => { e.stopPropagation(); onDelete(med.id); }} style={{ background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b", borderRadius:8, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>✕</button>
           <span style={{ color:"#555", fontSize:12 }}>{open ? "▲" : "▼"}</span>
         </div>
       </div>
 
-      {/* Panel expandido */}
       {open && (
         <div style={{ padding:"0 16px 16px", borderTop:"1px solid rgba(255,255,255,0.05)" }}>
           <div style={{ paddingTop:14, display:"flex", flexDirection:"column", gap:12 }}>
 
-            {/* Si es nuevo — campos editables */}
             {isNew && (
               <>
                 <div>
                   <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Tipo</label>
-                  <select value={med.category} onChange={e => onUpdate(med.id, "category", e.target.value)}
-                    style={{ ...inputStyle, cursor:"pointer" }}>
+                  <select value={med.category} onChange={e => onUpdate(med.id, "category", e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
                     {CATEGORIES.map(c => <option key={c} value={c}>{CAT_LABEL[c]}</option>)}
                   </select>
                 </div>
@@ -178,20 +169,14 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
                     <input type="number" min="1" value={med.time || ""} onChange={e => onUpdate(med.id, "time", parseInt(e.target.value))} placeholder="ej: 30" style={inputStyle} />
                   </div>
                 </div>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-                  <div>
-                    <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Posición en secuencia</label>
-                    <input type="number" min="1" value={med.order} onChange={e => onUpdate(med.id, "order", parseInt(e.target.value))} style={inputStyle} />
-                  </div>
+                <div>
+                  <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Posición en secuencia</label>
+                  <input type="number" min="1" value={med.order} onChange={e => onUpdate(med.id, "order", parseInt(e.target.value))} style={inputStyle} />
                 </div>
-                <button onClick={() => onApprove(med.id, calcWash(med, {}))} style={{
-                  padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer",
-                  background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff",
-                }}>✓ Confirmar medicamento</button>
+                <button onClick={() => onApprove(med.id, calcWash(med, {}))} style={{ padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff" }}>✓ Confirmar medicamento</button>
               </>
             )}
 
-            {/* Si es existente — campos de corrección */}
             {!isNew && (
               <>
                 {[["Corrección de dilución","diluent",med.diluent,"ej: 250 ml SF"],
@@ -200,27 +185,23 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
                   <div key={key}>
                     <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>{label}</label>
                     <div style={{ fontSize:12, color:"#555", fontFamily:"'IBM Plex Mono', monospace", marginBottom:5 }}>Actual: {current}</div>
-                    <input placeholder={ph} value={draft[key]} onChange={e => setDraft(d => ({ ...d, [key]: e.target.value }))}
-                      style={inputStyle} />
+                    <input placeholder={ph} value={draft[key]} onChange={e => setDraft(d => ({ ...d, [key]: e.target.value }))} style={inputStyle} />
                   </div>
                 ))}
                 <div>
                   <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Nota adicional</label>
-                  <textarea rows={2} placeholder="Indicaciones específicas..." value={draft.general} onChange={e => setDraft(d => ({ ...d, general: e.target.value }))}
-                    style={{ ...inputStyle, resize:"vertical" }} />
+                  <textarea rows={2} placeholder="Indicaciones específicas..." value={draft.general} onChange={e => setDraft(d => ({ ...d, general: e.target.value }))} style={{ ...inputStyle, resize:"vertical" }} />
                 </div>
               </>
             )}
 
-            {/* Lavado */}
             {med.category !== "adicional" && (
               <div style={{ padding:"12px 14px", borderRadius:10, background:"rgba(79,195,247,0.06)", border:"1px solid rgba(79,195,247,0.2)" }}>
                 <div style={{ fontSize:11, color:"#4fc3f7", fontWeight:600, marginBottom:10, letterSpacing:1, textTransform:"uppercase" }}>💧 Lavado después de este medicamento</div>
                 <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
                   <div>
                     <label style={{ fontSize:10, color:"#666", letterSpacing:1, textTransform:"uppercase", display:"block", marginBottom:5 }}>Solución</label>
-                    <select value={draft.washSolution || defaultWashSolution}
-                      onChange={e => setDraft(d => ({ ...d, washSolution: e.target.value }))}
+                    <select value={draft.washSolution || defaultWashSolution} onChange={e => setDraft(d => ({ ...d, washSolution: e.target.value }))}
                       style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }}>
                       <option value="SF">SF</option>
                       <option value="SG">SG</option>
@@ -229,9 +210,7 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
                   </div>
                   <div>
                     <label style={{ fontSize:10, color:"#666", letterSpacing:1, textTransform:"uppercase", display:"block", marginBottom:5 }}>Tiempo (min)</label>
-                    <input type="number" min="1"
-                      value={draft.washTime !== undefined ? draft.washTime : defaultWashTime}
-                      onChange={e => setDraft(d => ({ ...d, washTime: parseInt(e.target.value) }))}
+                    <input type="number" min="1" value={draft.washTime !== undefined ? draft.washTime : defaultWashTime} onChange={e => setDraft(d => ({ ...d, washTime: parseInt(e.target.value) }))}
                       style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
                   </div>
                   <div>
@@ -244,7 +223,6 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
               </div>
             )}
 
-            {/* Botones aprobar/corregir — solo para medicamentos existentes */}
             {!isNew && (
               <div style={{ display:"flex", gap:10 }}>
                 <button onClick={() => { onApprove(med.id, calcWash(med, draft)); setOpen(false); }} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, background:"rgba(29,158,117,0.12)", border:"1px solid rgba(29,158,117,0.35)", color:"#1D9E75", cursor:"pointer" }}>✓ Aprobar sin cambios</button>
@@ -261,18 +239,18 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
 export default function Autorizar() {
   const { user } = useAuth();
   const today = getToday();
-  const [sessions, setSessions]   = useState([]);
-  const [selected, setSelected]   = useState(null);
-  const [medStates, setMedStates] = useState({});
+  const [sessions, setSessions]     = useState([]);
+  const [selected, setSelected]     = useState(null);
+  const [medStates, setMedStates]   = useState({});
   const [globalNote, setGlobalNote] = useState("");
-  const [saving, setSaving]       = useState(false);
-  const [done, setDone]           = useState(false);
+  const [saving, setSaving]         = useState(false);
+  const [done, setDone]             = useState(false);
 
   const load = async () => {
     if (!user) return;
     try {
       const token = await user.getIdToken(true);
-      const data = await fetchPendingSessions(token);
+      const data  = await fetchPendingSessions(token);
       setSessions(data);
       if (data.length > 0 && !selected) setSelected(data[0]);
     } catch(e) { console.error(e); }
@@ -291,18 +269,17 @@ export default function Autorizar() {
   }, [selected?.id]);
 
   const approveMed = (id, washData) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus:"approved", ...washData } }));
-  const correctMed = (id, corr) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus:"corrected", correction:corr, washTime:corr.washTime, washSolution:corr.washSolution, washSpeed:corr.washSpeed } }));
-  const deleteMed  = (id) => setMedStates(p => { const n = {...p}; delete n[id]; return n; });
+  const correctMed = (id, corr)     => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus:"corrected", correction:corr, washTime:corr.washTime, washSolution:corr.washSolution, washSpeed:corr.washSpeed } }));
+  const deleteMed  = (id)           => setMedStates(p => { const n = {...p}; delete n[id]; return n; });
   const updateMed  = (id, key, val) => setMedStates(p => ({ ...p, [id]: { ...p[id], [key]: val } }));
 
   const addNewMed = () => {
     const newId = Date.now();
-    const newMed = {
-      id: newId, order: Object.keys(medStates).length + 1,
+    setMedStates(p => ({ ...p, [newId]: {
+      id: newId, order: Object.keys(p).length + 1,
       name:"", dose:"", diluent:"", time:0,
       category:"premedicacion", reviewStatus:"approved", isNew:true,
-    };
-    setMedStates(p => ({ ...p, [newId]: newMed }));
+    }}));
   };
 
   const meds        = Object.values(medStates).sort((a,b) => a.order - b.order);
@@ -341,23 +318,20 @@ export default function Autorizar() {
 
   return (
     <div style={{ display:"flex", height:"100vh", overflow:"hidden" }}>
-
-      {/* Lista izquierda */}
       <div style={{ width:280, flexShrink:0, borderRight:"1px solid rgba(255,255,255,0.06)", overflowY:"auto", padding:"24px 16px" }}>
         <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:14 }}>Pendientes de autorizar</div>
         {sessions.length === 0 ? (
-          <div style={{ fontSize:13, color:"#444", textAlign:"center", padding:"32px 0" }}>✓ Sin pendientes hoy</div>
+          <div style={{ fontSize:13, color:"#444", textAlign:"center", padding:"32px 0" }}>✓ Sin pendientes</div>
         ) : sessions.map(s => (
           <div key={s.id} onClick={() => { setSelected(s); setDone(false); }}
             style={{ padding:"13px 14px", borderRadius:10, cursor:"pointer", marginBottom:8, background: selected?.id === s.id ? "rgba(255,179,71,0.12)" : "rgba(255,255,255,0.03)", border:`1px solid ${selected?.id === s.id ? "rgba(255,179,71,0.35)" : "rgba(255,255,255,0.07)"}`, transition:"all 0.15s" }}>
             <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600, marginBottom:3 }}>{s.patientName}</div>
             <div style={{ fontSize:11, color:"#666" }}>{s.center} · {s.cycle}</div>
-<div style={{ fontSize:10, color:"#555" }}>{s.date} · {s.nurseName}</div>
+            <div style={{ fontSize:10, color:"#555", marginTop:2 }}>{s.date} · {s.nurseName}</div>
           </div>
         ))}
       </div>
 
-      {/* Panel derecho */}
       <div style={{ flex:1, overflowY:"auto", padding:"28px 32px" }}>
         {done && (
           <div style={{ textAlign:"center", padding:"60px 0" }}>
@@ -380,7 +354,7 @@ export default function Autorizar() {
             <div style={{ marginBottom:24 }}>
               <h2 style={{ fontFamily:"'DM Serif Display', serif", fontSize:22, color:"#fff", marginBottom:4 }}>{selected.patientName}</h2>
               <p style={{ fontSize:13, color:"#666" }}>{selected.diagnosis} · {selected.cycle} · {selected.physician} · {selected.center}</p>
-              <p style={{ fontSize:12, color:"#555", marginTop:4 }}>Enfermera: {selected.nurseName}</p>
+              <p style={{ fontSize:12, color:"#555", marginTop:4 }}>Enfermera: {selected.nurseName} · Fecha: {selected.date}</p>
             </div>
 
             <div style={{ marginBottom:20 }}>
@@ -396,23 +370,17 @@ export default function Autorizar() {
             <div style={{ display:"flex", flexDirection:"column", gap:9, marginBottom:16 }}>
               {meds.map(m => (
                 <MedRow key={m.id} med={m}
-                  onApprove={approveMed}
-                  onCorrect={correctMed}
-                  onDelete={deleteMed}
-                  onUpdate={updateMed}
+                  onApprove={approveMed} onCorrect={correctMed}
+                  onDelete={deleteMed} onUpdate={updateMed}
                   isNew={!!m.isNew}
                 />
               ))}
             </div>
 
-            {/* Agregar medicamento */}
-            <button onClick={addNewMed} style={{
-              width:"100%", padding:"10px", borderRadius:10, fontSize:13, fontWeight:600, cursor:"pointer",
-              background:"rgba(0,212,170,0.08)", border:"1px dashed rgba(0,212,170,0.3)",
-              color:"#00d4aa", marginBottom:16,
-            }}>+ Agregar medicamento</button>
+            <button onClick={addNewMed} style={{ width:"100%", padding:"10px", borderRadius:10, fontSize:13, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.08)", border:"1px dashed rgba(0,212,170,0.3)", color:"#00d4aa", marginBottom:16 }}>
+              + Agregar medicamento
+            </button>
 
-            {/* Nota global */}
             <div style={{ marginBottom:22 }}>
               <label style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", display:"block", marginBottom:8 }}>Nota general (opcional)</label>
               <textarea rows={2} placeholder="Indicaciones generales para toda la sesión..." value={globalNote} onChange={e => setGlobalNote(e.target.value)}
