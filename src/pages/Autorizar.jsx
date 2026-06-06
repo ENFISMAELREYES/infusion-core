@@ -277,7 +277,7 @@ export default function Autorizar() {
     if (!user) return;
     try {
       const token = await user.getIdToken(true);
-      const data  = await fetchPendingSessions(token, today);
+      const data = await fetchPendingSessions(token);
       setSessions(data);
       if (data.length > 0 && !selected) setSelected(data[0]);
     } catch(e) { console.error(e); }
@@ -357,6 +357,7 @@ export default function Autorizar() {
             style={{ padding:"13px 14px", borderRadius:10, cursor:"pointer", marginBottom:8, background: selected?.id === s.id ? "rgba(255,179,71,0.12)" : "rgba(255,255,255,0.03)", border:`1px solid ${selected?.id === s.id ? "rgba(255,179,71,0.35)" : "rgba(255,255,255,0.07)"}`, transition:"all 0.15s" }}>
             <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600, marginBottom:3 }}>{s.patientName}</div>
             <div style={{ fontSize:11, color:"#666" }}>{s.center} · {s.cycle}</div>
+<div style={{ fontSize:10, color:"#555" }}>{s.date} · {s.nurseName}</div>
           </div>
         ))}
       </div>
