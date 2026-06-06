@@ -177,7 +177,7 @@ function PatientRow({ s }) {
       const diff = parseTime(s.events.retiro) - parseTime(s.events.ingreso);
       if (diff > 0) return (
         <div style={{ fontSize:11, color:"#1D9E75", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
-          ⏱ Estancia: ${Math.floor(diff/60)}h ${diff%60}m
+         ⏱ En estancia: {Math.floor(diff/60)}h {diff%60}m
         </div>
       );
     } catch(e) {}
@@ -194,7 +194,7 @@ function PatientRow({ s }) {
       const diff = nowMin - parseTime(s.events.ingreso);
       if (diff > 0) return (
         <div style={{ fontSize:11, color:"#EF9F27", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
-          ⏱ En estancia: {diff} min
+          ⏱ En estancia: {Math.floor(diff/60)}h {diff%60}m
         </div>
       );
     } catch(e) {}
