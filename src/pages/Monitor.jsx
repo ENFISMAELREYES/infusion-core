@@ -139,13 +139,9 @@ function PatientRow({ s }) {
     {(() => {
       try {
         const parseTime = (t) => {
-          const [time, period] = t.split(" ");
-          const [h, m] = time.split(":").map(Number);
-          let hours = h;
-          if (period === "p.m." && h !== 12) hours += 12;
-          if (period === "a.m." && h === 12) hours = 0;
-          return hours * 60 + m;
-        };
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
         const diff = parseTime(ev.fin) - parseTime(ev.inicio);
         if (diff > 0) return ` (${diff} min)`;
       } catch(e) {}
@@ -174,14 +170,10 @@ function PatientRow({ s }) {
   )}
   {s.events?.ingreso && s.events?.retiro && (() => {
     try {
-      const parseTime = (t) => {
-        const [time, period] = t.split(" ");
-        const [h, m] = time.split(":").map(Number);
-        let hours = h;
-        if (period === "p.m." && h !== 12) hours += 12;
-        if (period === "a.m." && h === 12) hours = 0;
-        return hours * 60 + m;
-      };
+     const parseTime = (t) => {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
       const diff = parseTime(s.events.retiro) - parseTime(s.events.ingreso);
       if (diff > 0) return (
         <div style={{ fontSize:11, color:"#1D9E75", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
@@ -194,13 +186,9 @@ function PatientRow({ s }) {
   {s.events?.ingreso && !s.events?.retiro && (() => {
     try {
       const parseTime = (t) => {
-        const [time, period] = t.split(" ");
-        const [h, m] = time.split(":").map(Number);
-        let hours = h;
-        if (period === "p.m." && h !== 12) hours += 12;
-        if (period === "a.m." && h === 12) hours = 0;
-        return hours * 60 + m;
-      };
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
       const now = new Date();
       const nowMin = now.getHours() * 60 + now.getMinutes();
       const diff = nowMin - parseTime(s.events.ingreso);
