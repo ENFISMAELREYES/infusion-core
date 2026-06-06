@@ -170,7 +170,15 @@ function PatientRow({ s }) {
   )}
   {s.events?.ingreso && s.events?.retiro && (() => {
     try {
-     const parseTime = (t) => {
+    const parseTime = (t) => {
+  if (t.includes("a.m.") || t.includes("p.m.")) {
+    const [time, period] = t.split(" ");
+    const [h, m] = time.split(":").map(Number);
+    let hours = h;
+    if (period === "p.m." && h !== 12) hours += 12;
+    if (period === "a.m." && h === 12) hours = 0;
+    return hours * 60 + m;
+  }
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
 };
@@ -185,7 +193,15 @@ function PatientRow({ s }) {
   })()}
   {s.events?.ingreso && !s.events?.retiro && (() => {
     try {
-      const parseTime = (t) => {
+     const parseTime = (t) => {
+  if (t.includes("a.m.") || t.includes("p.m.")) {
+    const [time, period] = t.split(" ");
+    const [h, m] = time.split(":").map(Number);
+    let hours = h;
+    if (period === "p.m." && h !== 12) hours += 12;
+    if (period === "a.m." && h === 12) hours = 0;
+    return hours * 60 + m;
+  }
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
 };
