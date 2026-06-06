@@ -51,7 +51,7 @@ async function fetchPendingSessions(token) {
   if (!Array.isArray(data)) return [];
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
-^
+
 async function authorizeSession(token, sessionId, meds, globalNote, corrected, userId) {
   const toFV = (val) => {
     if (typeof val === "string") return { stringValue: val };
