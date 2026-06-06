@@ -10,7 +10,7 @@ const CAT_COLOR = {
 };
 
 function nowStr() {
-  return new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+  return new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function getToday() {
