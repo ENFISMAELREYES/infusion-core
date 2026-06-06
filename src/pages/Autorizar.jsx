@@ -20,7 +20,6 @@ function parseDoc(doc) {
     if (v.mapValue) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, val]) => [k, parse(val)]));
     return null;
   };
-  
   const id = doc.name.split("/").pop();
   return { id, ...Object.fromEntries(Object.entries(doc.fields || {}).map(([k, v]) => [k, parse(v)])) };
 }
@@ -60,7 +59,6 @@ async function authorizeSession(token, sessionId, meds, globalNote, corrected, u
     if (typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k, v]) => [k, toFV(v)])) } };
     return { stringValue: String(val) };
   };
-
   const fields = {
     authorized:     { booleanValue: true },
     authorizedBy:   { stringValue: userId },
@@ -70,33 +68,28 @@ async function authorizeSession(token, sessionId, meds, globalNote, corrected, u
     status:         { stringValue: "pendiente" },
     meds:           toFV(meds),
   };
-
   const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
-
   await fetch(
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-      body: JSON.stringify({ fields }),
-    }
+    { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
   );
 }
 
 const CAT_COLOR = {
-  premedicacion: { dark: "rgba(250,199,117,0.15)", border: "#FAC775" },
-  inmunoterapia: { dark: "rgba(93,202,165,0.15)",  border: "#5DCAA5" },
-  quimioterapia: { dark: "rgba(240,149,149,0.15)", border: "#F09595" },
-  adicional:     { dark: "rgba(175,169,236,0.15)", border: "#AFA9EC" },
+  premedicacion: { dark:"rgba(250,199,117,0.15)", border:"#FAC775" },
+  inmunoterapia: { dark:"rgba(93,202,165,0.15)",  border:"#5DCAA5" },
+  quimioterapia: { dark:"rgba(240,149,149,0.15)", border:"#F09595" },
+  adicional:     { dark:"rgba(175,169,236,0.15)", border:"#AFA9EC" },
 };
 const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional" };
+const CATEGORIES = ["premedicacion","inmunoterapia","quimioterapia","adicional"];
 
 function calcWash(med, draft) {
   const washTime     = draft.washTime !== undefined ? draft.washTime : (med.category === "premedicacion" ? 5 : 15);
   const washSolution = draft.washSolution || (med.diluent?.includes("SG") ? "SG" : "SF");
   let speed;
   if (med.category === "premedicacion") {
-    speed = 60; // Fijo para premedicación
+    speed = 60;
   } else {
     const volMatch = med.diluent?.match(/(\d+)/);
     const vol      = volMatch ? parseInt(volMatch[1]) : null;
@@ -104,9 +97,10 @@ function calcWash(med, draft) {
   }
   return { washTime, washSolution, washSpeed: speed };
 }
-function MedRow({ med, onApprove, onCorrect, onDelete }) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState({ diluent:"", time:"", order:"", general:"", washSolution:"", washTime: undefined });
+
+function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
+  const [open, setOpen] = useState(isNew || false);
+  const [draft, setDraft] = useState({ diluent:"", time:"", order:"", general:"", washSolution:"", washTime:undefined });
   const hasCorrection = ["diluent","time","order","general"].some(k => draft[k]?.trim());
   const cs = CAT_COLOR[med.category] || CAT_COLOR.adicional;
 
@@ -114,7 +108,8 @@ function MedRow({ med, onApprove, onCorrect, onDelete }) {
   const defaultWashSolution = med.diluent?.includes("SG") ? "SG" : "SF";
   const volMatch            = med.diluent?.match(/(\d+)/);
   const vol                 = volMatch ? parseInt(volMatch[1]) : null;
- const speed = med.category === "premedicacion" ? 60 : (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
+  const speed               = med.category === "premedicacion" ? 60 : (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
+
   const save = () => {
     const wash = calcWash(med, draft);
     if (hasCorrection) onCorrect(med.id, { ...draft, ...wash });
@@ -122,50 +117,97 @@ function MedRow({ med, onApprove, onCorrect, onDelete }) {
     setOpen(false);
   };
 
-  return (
-    <div style={{ borderRadius:12, overflow:"hidden", border:`1px solid ${med.reviewStatus === "approved" ? "rgba(29,158,117,0.3)" : med.reviewStatus === "corrected" ? "rgba(186,117,23,0.35)" : "rgba(255,255,255,0.08)"}`, borderLeft:`3px solid ${cs.border}`, background:"rgba(255,255,255,0.02)" }}>
-     <div onClick={() => setOpen(o => !o)} style={{ padding:"13px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
-  <span style={{ width:26, height:26, borderRadius:"50%", flexShrink:0, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{med.order}</span>
-  <div style={{ flex:1 }}>
-    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-      <span style={{ fontSize:14, color:"#f0f0f0", fontWeight:600 }}>{med.name}</span>
-      <span style={{ fontSize:12, color:"#777" }}>{med.dose}</span>
-      <span style={{ fontSize:10, fontWeight:600, padding:"2px 8px", borderRadius:99, background:cs.dark, color:cs.border, border:`1px solid ${cs.border}44` }}>{CAT_LABEL[med.category]}</span>
-    </div>
-    <div style={{ fontSize:12, color:"#666", marginTop:2 }}>{med.diluent} · {med.time ? `${med.time} min` : "sin tiempo"}</div>
-  </div>
-  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-    {med.reviewStatus === "approved"  && <span style={{ fontSize:11, color:"#1D9E75", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", padding:"3px 10px", borderRadius:99 }}>Aprobado</span>}
-    {med.reviewStatus === "corrected" && <span style={{ fontSize:11, color:"#EF9F27", background:"rgba(186,117,23,0.1)", border:"1px solid rgba(186,117,23,0.25)", padding:"3px 10px", borderRadius:99 }}>Con corrección</span>}
-    <button type="button" onClick={e => { e.stopPropagation(); onDelete(med.id); }} style={{
-      background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)",
-      color:"#ff6b6b", borderRadius:8, padding:"4px 10px", fontSize:11, cursor:"pointer",
-    }}>✕</button>
-    <span style={{ color:"#555", fontSize:12 }}>{open ? "▲" : "▼"}</span>
-  </div>
-</div>
+  const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
 
+  return (
+    <div style={{ borderRadius:12, overflow:"hidden", border:`1px solid ${med.reviewStatus === "approved" ? "rgba(29,158,117,0.3)" : med.reviewStatus === "corrected" ? "rgba(186,117,23,0.35)" : isNew ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.08)"}`, borderLeft:`3px solid ${cs.border}`, background:"rgba(255,255,255,0.02)" }}>
+
+      {/* Header */}
+      <div onClick={() => setOpen(o => !o)} style={{ padding:"13px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
+        <span style={{ width:26, height:26, borderRadius:"50%", flexShrink:0, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{med.order}</span>
+        <div style={{ flex:1 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ fontSize:14, color: isNew ? "#00d4aa" : "#f0f0f0", fontWeight:600 }}>{med.name || "Nuevo medicamento"}</span>
+            {med.dose && <span style={{ fontSize:12, color:"#777" }}>{med.dose}</span>}
+            <span style={{ fontSize:10, fontWeight:600, padding:"2px 8px", borderRadius:99, background:cs.dark, color:cs.border, border:`1px solid ${cs.border}44` }}>{CAT_LABEL[med.category]}</span>
+            {isNew && <span style={{ fontSize:10, color:"#00d4aa", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", padding:"2px 8px", borderRadius:99 }}>Nuevo</span>}
+          </div>
+          {med.diluent && <div style={{ fontSize:12, color:"#666", marginTop:2 }}>{med.diluent} · {med.time ? `${med.time} min` : "sin tiempo"}</div>}
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          {med.reviewStatus === "approved"  && !isNew && <span style={{ fontSize:11, color:"#1D9E75", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", padding:"3px 10px", borderRadius:99 }}>Aprobado</span>}
+          {med.reviewStatus === "corrected" && <span style={{ fontSize:11, color:"#EF9F27", background:"rgba(186,117,23,0.1)", border:"1px solid rgba(186,117,23,0.25)", padding:"3px 10px", borderRadius:99 }}>Con corrección</span>}
+          <button type="button" onClick={e => { e.stopPropagation(); onDelete(med.id); }} style={{ background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b", borderRadius:8, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>✕</button>
+          <span style={{ color:"#555", fontSize:12 }}>{open ? "▲" : "▼"}</span>
+        </div>
+      </div>
+
+      {/* Panel expandido */}
       {open && (
         <div style={{ padding:"0 16px 16px", borderTop:"1px solid rgba(255,255,255,0.05)" }}>
           <div style={{ paddingTop:14, display:"flex", flexDirection:"column", gap:12 }}>
 
-            {/* Correcciones */}
-            {[["Corrección de dilución","diluent",med.diluent,"ej: 250 ml SF"],
-              ["Corrección de tiempo","time",med.time ? `${med.time} min` : "—","ej: 60 min"],
-              ["Cambio de orden","order",`Posición ${med.order}`,"ej: 2"]].map(([label,key,current,ph]) => (
-              <div key={key}>
-                <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>{label}</label>
-                <div style={{ fontSize:12, color:"#555", fontFamily:"'IBM Plex Mono', monospace", marginBottom:5 }}>Actual: {current}</div>
-                <input placeholder={ph} value={draft[key]} onChange={e => setDraft(d => ({ ...d, [key]: e.target.value }))}
-                  style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none", fontFamily:"'IBM Plex Mono', monospace" }} />
-              </div>
-            ))}
+            {/* Si es nuevo — campos editables */}
+            {isNew && (
+              <>
+                <div>
+                  <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Tipo</label>
+                  <select value={med.category} onChange={e => onUpdate(med.id, "category", e.target.value)}
+                    style={{ ...inputStyle, cursor:"pointer" }}>
+                    {CATEGORIES.map(c => <option key={c} value={c}>{CAT_LABEL[c]}</option>)}
+                  </select>
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                  <div>
+                    <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Medicamento</label>
+                    <input value={med.name} onChange={e => onUpdate(med.id, "name", e.target.value)} placeholder="ej: Bevacizumab" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Dosis</label>
+                    <input value={med.dose || ""} onChange={e => onUpdate(med.id, "dose", e.target.value)} placeholder="ej: 780 mg" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Dilución</label>
+                    <input value={med.diluent || ""} onChange={e => onUpdate(med.id, "diluent", e.target.value)} placeholder="ej: 100 ml SF" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Tiempo (min)</label>
+                    <input type="number" min="1" value={med.time || ""} onChange={e => onUpdate(med.id, "time", parseInt(e.target.value))} placeholder="ej: 30" style={inputStyle} />
+                  </div>
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                  <div>
+                    <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Posición en secuencia</label>
+                    <input type="number" min="1" value={med.order} onChange={e => onUpdate(med.id, "order", parseInt(e.target.value))} style={inputStyle} />
+                  </div>
+                </div>
+                <button onClick={() => onApprove(med.id, calcWash(med, {}))} style={{
+                  padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer",
+                  background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff",
+                }}>✓ Confirmar medicamento</button>
+              </>
+            )}
 
-            <div>
-              <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Nota adicional</label>
-              <textarea rows={2} placeholder="Indicaciones específicas..." value={draft.general} onChange={e => setDraft(d => ({ ...d, general: e.target.value }))}
-                style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none", resize:"vertical" }} />
-            </div>
+            {/* Si es existente — campos de corrección */}
+            {!isNew && (
+              <>
+                {[["Corrección de dilución","diluent",med.diluent,"ej: 250 ml SF"],
+                  ["Corrección de tiempo","time",med.time ? `${med.time} min` : "—","ej: 60 min"],
+                  ["Cambio de orden","order",`Posición ${med.order}`,"ej: 2"]].map(([label,key,current,ph]) => (
+                  <div key={key}>
+                    <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>{label}</label>
+                    <div style={{ fontSize:12, color:"#555", fontFamily:"'IBM Plex Mono', monospace", marginBottom:5 }}>Actual: {current}</div>
+                    <input placeholder={ph} value={draft[key]} onChange={e => setDraft(d => ({ ...d, [key]: e.target.value }))}
+                      style={inputStyle} />
+                  </div>
+                ))}
+                <div>
+                  <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Nota adicional</label>
+                  <textarea rows={2} placeholder="Indicaciones específicas..." value={draft.general} onChange={e => setDraft(d => ({ ...d, general: e.target.value }))}
+                    style={{ ...inputStyle, resize:"vertical" }} />
+                </div>
+              </>
+            )}
 
             {/* Lavado */}
             {med.category !== "adicional" && (
@@ -199,10 +241,13 @@ function MedRow({ med, onApprove, onCorrect, onDelete }) {
               </div>
             )}
 
-            <div style={{ display:"flex", gap:10 }}>
-              <button onClick={() => { onApprove(med.id, calcWash(med, draft)); setOpen(false); }} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, background:"rgba(29,158,117,0.12)", border:"1px solid rgba(29,158,117,0.35)", color:"#1D9E75", cursor:"pointer" }}>✓ Aprobar sin cambios</button>
-              <button onClick={save} disabled={!hasCorrection} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, background: hasCorrection ? "rgba(186,117,23,0.15)" : "rgba(255,255,255,0.04)", border:`1px solid ${hasCorrection ? "rgba(186,117,23,0.4)" : "rgba(255,255,255,0.06)"}`, color: hasCorrection ? "#EF9F27" : "#444", cursor: hasCorrection ? "pointer" : "not-allowed" }}>⚠ Guardar corrección</button>
-            </div>
+            {/* Botones aprobar/corregir — solo para medicamentos existentes */}
+            {!isNew && (
+              <div style={{ display:"flex", gap:10 }}>
+                <button onClick={() => { onApprove(med.id, calcWash(med, draft)); setOpen(false); }} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, background:"rgba(29,158,117,0.12)", border:"1px solid rgba(29,158,117,0.35)", color:"#1D9E75", cursor:"pointer" }}>✓ Aprobar sin cambios</button>
+                <button onClick={save} disabled={!hasCorrection} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, background: hasCorrection ? "rgba(186,117,23,0.15)" : "rgba(255,255,255,0.04)", border:`1px solid ${hasCorrection ? "rgba(186,117,23,0.4)" : "rgba(255,255,255,0.06)"}`, color: hasCorrection ? "#EF9F27" : "#444", cursor: hasCorrection ? "pointer" : "not-allowed" }}>⚠ Guardar corrección</button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -213,18 +258,18 @@ function MedRow({ med, onApprove, onCorrect, onDelete }) {
 export default function Autorizar() {
   const { user } = useAuth();
   const today = getToday();
-  const [sessions, setSessions] = useState([]);
-  const [selected, setSelected] = useState(null);
+  const [sessions, setSessions]   = useState([]);
+  const [selected, setSelected]   = useState(null);
   const [medStates, setMedStates] = useState({});
   const [globalNote, setGlobalNote] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [done, setDone] = useState(false);
+  const [saving, setSaving]       = useState(false);
+  const [done, setDone]           = useState(false);
 
   const load = async () => {
     if (!user) return;
     try {
       const token = await user.getIdToken(true);
-      const data = await fetchPendingSessions(token, today);
+      const data  = await fetchPendingSessions(token, today);
       setSessions(data);
       if (data.length > 0 && !selected) setSelected(data[0]);
     } catch(e) { console.error(e); }
@@ -235,7 +280,7 @@ export default function Autorizar() {
   useEffect(() => {
     if (selected) {
       const init = {};
-      (selected.meds || []).forEach(m => { init[m.id] = { ...m, reviewStatus: "pending" }; });
+      (selected.meds || []).forEach(m => { init[m.id] = { ...m, reviewStatus:"pending" }; });
       setMedStates(init);
       setGlobalNote("");
       setDone(false);
@@ -244,8 +289,20 @@ export default function Autorizar() {
 
   const approveMed = (id, washData) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus:"approved", ...washData } }));
   const correctMed = (id, corr) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus:"corrected", correction:corr, washTime:corr.washTime, washSolution:corr.washSolution, washSpeed:corr.washSpeed } }));
+  const deleteMed  = (id) => setMedStates(p => { const n = {...p}; delete n[id]; return n; });
+  const updateMed  = (id, key, val) => setMedStates(p => ({ ...p, [id]: { ...p[id], [key]: val } }));
 
-  const meds        = Object.values(medStates);
+  const addNewMed = () => {
+    const newId = Date.now();
+    const newMed = {
+      id: newId, order: Object.keys(medStates).length + 1,
+      name:"", dose:"", diluent:"", time:0,
+      category:"premedicacion", reviewStatus:"approved", isNew:true,
+    };
+    setMedStates(p => ({ ...p, [newId]: newMed }));
+  };
+
+  const meds        = Object.values(medStates).sort((a,b) => a.order - b.order);
   const pending     = meds.filter(m => m.reviewStatus === "pending").length;
   const corrected   = meds.filter(m => m.reviewStatus === "corrected").length;
   const allReviewed = pending === 0;
@@ -255,7 +312,6 @@ export default function Autorizar() {
     setSaving(true);
     try {
       const token = await user.getIdToken(true);
-
       const correctedMeds = meds.map(m => ({
         ...m,
         ...(m.correction?.diluent ? { diluent: m.correction.diluent } : {}),
@@ -267,11 +323,9 @@ export default function Autorizar() {
           speed:    m.washSpeed    ?? null,
         }
       }));
-
       const updatedMeds = [...correctedMeds]
-        .sort((a, b) => a.order - b.order)
-        .map((m, i) => ({ ...m, order: i + 1 }));
-
+        .sort((a,b) => a.order - b.order)
+        .map((m,i) => ({ ...m, order: i+1 }));
       await authorizeSession(token, selected.id, updatedMeds, globalNote, corrected > 0, user.uid);
       setDone(true);
       setSessions(p => p.filter(s => s.id !== selected.id));
@@ -279,13 +333,13 @@ export default function Autorizar() {
     } catch(e) {
       console.error(e);
       alert("Error al autorizar: " + e.message);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   return (
     <div style={{ display:"flex", height:"100vh", overflow:"hidden" }}>
+
+      {/* Lista izquierda */}
       <div style={{ width:280, flexShrink:0, borderRight:"1px solid rgba(255,255,255,0.06)", overflowY:"auto", padding:"24px 16px" }}>
         <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:14 }}>Pendientes de autorizar</div>
         {sessions.length === 0 ? (
@@ -299,6 +353,7 @@ export default function Autorizar() {
         ))}
       </div>
 
+      {/* Panel derecho */}
       <div style={{ flex:1, overflowY:"auto", padding:"28px 32px" }}>
         {done && (
           <div style={{ textAlign:"center", padding:"60px 0" }}>
@@ -330,36 +385,36 @@ export default function Autorizar() {
                 <span>{meds.length - pending} / {meds.length}</span>
               </div>
               <div style={{ background:"rgba(255,255,255,0.06)", borderRadius:99, height:5, overflow:"hidden" }}>
-                <div style={{ height:"100%", borderRadius:99, transition:"width 0.4s", width:`${((meds.length - pending) / meds.length) * 100}%`, background: corrected > 0 ? "linear-gradient(90deg,#1D9E75,#EF9F27)" : "#1D9E75" }} />
+                <div style={{ height:"100%", borderRadius:99, transition:"width 0.4s", width:`${meds.length ? ((meds.length - pending) / meds.length) * 100 : 0}%`, background: corrected > 0 ? "linear-gradient(90deg,#1D9E75,#EF9F27)" : "#1D9E75" }} />
               </div>
             </div>
 
-            <div style={{ display:"flex", flexDirection:"column", gap:9, marginBottom:22 }}>
-              {meds.map(m => <MedRow key={m.id} med={m} onApprove={approveMed} onCorrect={correctMed} onDelete={(id) => setMedStates(p => { const n = {...p}; delete n[id]; return n; })} />)}
+            <div style={{ display:"flex", flexDirection:"column", gap:9, marginBottom:16 }}>
+              {meds.map(m => (
+                <MedRow key={m.id} med={m}
+                  onApprove={approveMed}
+                  onCorrect={correctMed}
+                  onDelete={deleteMed}
+                  onUpdate={updateMed}
+                  isNew={!!m.isNew}
+                />
+              ))}
             </div>
 
+            {/* Agregar medicamento */}
+            <button onClick={addNewMed} style={{
+              width:"100%", padding:"10px", borderRadius:10, fontSize:13, fontWeight:600, cursor:"pointer",
+              background:"rgba(0,212,170,0.08)", border:"1px dashed rgba(0,212,170,0.3)",
+              color:"#00d4aa", marginBottom:16,
+            }}>+ Agregar medicamento</button>
+
+            {/* Nota global */}
             <div style={{ marginBottom:22 }}>
               <label style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", display:"block", marginBottom:8 }}>Nota general (opcional)</label>
               <textarea rows={2} placeholder="Indicaciones generales para toda la sesión..." value={globalNote} onChange={e => setGlobalNote(e.target.value)}
                 style={{ width:"100%", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:"11px 14px", color:"#ddd", fontSize:13, outline:"none", resize:"vertical" }} />
             </div>
-{/* Agregar medicamento */}
-<div style={{ marginBottom:16 }}>
-  <button type="button" onClick={() => {
-    const newMed = {
-      id: Date.now(),
-      order: meds.length + 1,
-      name: "", dose: "", diluent: "", time: 0,
-      category: "premedicacion",
-      reviewStatus: "approved",
-    };
-    setMedStates(p => ({ ...p, [newMed.id]: newMed }));
-  }} style={{
-    width:"100%", padding:"10px", borderRadius:10, fontSize:13, fontWeight:600,
-    background:"rgba(0,212,170,0.08)", border:"1px dashed rgba(0,212,170,0.3)",
-    color:"#00d4aa", cursor:"pointer",
-  }}>+ Agregar medicamento</button>
-</div>
+
             <button onClick={submit} disabled={!allReviewed || saving} style={{
               width:"100%", padding:"15px", borderRadius:12, fontSize:15, fontWeight:700,
               cursor: allReviewed ? "pointer" : "not-allowed", transition:"all 0.2s",
