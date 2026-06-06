@@ -103,6 +103,28 @@ async function patchSession(token, sessionId, updates) {
     );
   }
 }
+async function updateSessionMeds(token, sessionId, meds) {
+  const toFV = (val) => {
+    if (typeof val === "string") return { stringValue: val };
+    if (typeof val === "boolean") return { booleanValue: val };
+    if (typeof val === "number") return { integerValue: String(val) };
+    if (val === null) return { nullValue: null };
+    if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
+    if (typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k, v]) => [k, toFV(v)])) } };
+    return { stringValue: String(val) };
+  };
+  await fetch(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?updateMask.fieldPaths=meds&updateMask.fieldPaths=authorized`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ fields: {
+        meds: toFV(meds),
+        authorized: { booleanValue: false },
+      }}),
+    }
+  );
+}
 
 function TimeBtn({ label, time, onRecord, disabled }) {
   return (
