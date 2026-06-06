@@ -339,7 +339,23 @@ export default function Autorizar() {
               <textarea rows={2} placeholder="Indicaciones generales para toda la sesión..." value={globalNote} onChange={e => setGlobalNote(e.target.value)}
                 style={{ width:"100%", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:10, padding:"11px 14px", color:"#ddd", fontSize:13, outline:"none", resize:"vertical" }} />
             </div>
-
+{/* Agregar medicamento */}
+<div style={{ marginBottom:16 }}>
+  <button type="button" onClick={() => {
+    const newMed = {
+      id: Date.now(),
+      order: meds.length + 1,
+      name: "", dose: "", diluent: "", time: 0,
+      category: "premedicacion",
+      reviewStatus: "approved",
+    };
+    setMedStates(p => ({ ...p, [newMed.id]: newMed }));
+  }} style={{
+    width:"100%", padding:"10px", borderRadius:10, fontSize:13, fontWeight:600,
+    background:"rgba(0,212,170,0.08)", border:"1px dashed rgba(0,212,170,0.3)",
+    color:"#00d4aa", cursor:"pointer",
+  }}>+ Agregar medicamento</button>
+</div>
             <button onClick={submit} disabled={!allReviewed || saving} style={{
               width:"100%", padding:"15px", borderRadius:12, fontSize:15, fontWeight:700,
               cursor: allReviewed ? "pointer" : "not-allowed", transition:"all 0.2s",
