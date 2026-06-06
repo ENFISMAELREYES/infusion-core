@@ -168,8 +168,8 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
             {!isNew && (
               <>
                 {[["Corrección de dilución","diluent",med.diluent,"ej: 250 ml SF"],
-                  ["Corrección de tiempo","time",med.time ? `${med.time} min` : "—","ej: 60 min"],
-                  ["Cambio de orden","order",`Posición ${med.order}`,"ej: 2"]].map(([label,key,current,ph]) => (
+  ["Corrección de tiempo","time",med.time ? `${med.time} min` : "—","ej: 60 min"],
+  ["Cambio de orden","order",`Posición ${med.order}`,"ej: 2"]].map(([label,key,current,ph]) => (
                   <div key={key}>
                     <label style={lbl}>{label}</label>
                     <div style={{ fontSize:12, color:"#555", fontFamily:"'IBM Plex Mono', monospace", marginBottom:5 }}>Actual: {current}</div>
@@ -182,7 +182,36 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
                 </div>
               </>
             )}
-
+{/* Inicio en paralelo */}
+{med.order > 1 && (
+  <div style={{ padding:"12px 14px", borderRadius:10, background:"rgba(175,169,236,0.06)", border:"1px solid rgba(175,169,236,0.2)" }}>
+    <div style={{ fontSize:11, color:"#AFA9EC", fontWeight:600, marginBottom:10, letterSpacing:1, textTransform:"uppercase" }}>⚡ Inicio en paralelo con medicamento anterior</div>
+    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+      <div>
+        <label style={{ fontSize:10, color:"#666", letterSpacing:1, textTransform:"uppercase", display:"block", marginBottom:5 }}>Tipo de inicio</label>
+        <select value={draft.parallelType || "secuencial"}
+          onChange={e => setDraft(d => ({ ...d, parallelType: e.target.value, startOffset: e.target.value === "secuencial" ? null : 0 }))}
+          style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }}>
+          <option value="secuencial">Secuencial (espera al anterior)</option>
+          <option value="junto">Simultáneo (inicia junto)</option>
+          <option value="offset">Con retraso (X min después)</option>
+        </select>
+      </div>
+      {draft.parallelType === "offset" && (
+        <div>
+          <label style={{ fontSize:10, color:"#666", letterSpacing:1, textTransform:"uppercase", display:"block", marginBottom:5 }}>Minutos después de iniciar el anterior</label>
+          <input type="number" min="1" value={draft.startOffset || ""} onChange={e => setDraft(d => ({ ...d, startOffset: parseInt(e.target.value) }))}
+            placeholder="ej: 30" style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+        </div>
+      )}
+    </div>
+    {draft.parallelType && draft.parallelType !== "secuencial" && (
+      <div style={{ fontSize:11, color:"#AFA9EC", marginTop:8 }}>
+        {draft.parallelType === "junto" ? "⚡ Iniciará al mismo tiempo que el medicamento anterior" : `⚡ Iniciará ${draft.startOffset || 0} min después de que inicie el medicamento anterior`}
+      </div>
+    )}
+  </div>
+)}
             {med.category !== "adicional" && (
               <div style={{ padding:"12px 14px", borderRadius:10, background:"rgba(79,195,247,0.06)", border:"1px solid rgba(79,195,247,0.2)" }}>
                 <div style={{ fontSize:11, color:"#4fc3f7", fontWeight:600, marginBottom:10, letterSpacing:1, textTransform:"uppercase" }}>💧 Lavado después de este medicamento</div>
