@@ -168,7 +168,7 @@ function WashCard({ wash, washEvents, medId, onStart, onEnd, canStart }) {
       ▶ {ev.inicio}
       <ElapsedTimer startTime={ev.inicio} />
     </div>
-    <button onClick={() => recordMedEvent(med.id, "fin")} style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", background: "rgba(79,195,247,0.12)", border: "1px solid rgba(79,195,247,0.3)", color: "#4fc3f7" }}>■ Terminar</button>
+    <button onClick={onEnd} style={{ flex: 1, padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", background: "rgba(79,195,247,0.12)", border: "1px solid rgba(79,195,247,0.3)", color: "#4fc3f7" }}>■ Terminar lavado</button>
   </>
 )}
         {ended && (
