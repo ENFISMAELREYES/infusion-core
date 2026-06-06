@@ -47,8 +47,6 @@ async function fetchPendingSessions(token) {
   if (!Array.isArray(data)) return [];
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
-    })
-  });
   const data = await res.json();
   if (!Array.isArray(data)) return [];
   return data.filter(d => d.document).map(d => parseDoc(d.document));
