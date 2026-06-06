@@ -163,12 +163,56 @@ function PatientRow({ s }) {
   })}
 </div>
         </div>
-        <div style={{ minWidth:100, textAlign:"right", flexShrink:0 }}>
-          <div style={{ fontSize:24, fontFamily:"'DM Serif Display', serif", color:"#fff" }}>{pct}%</div>
-          <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>completado</div>
-          {s.events?.ingreso && <div style={{ fontSize:11, color:"#777", marginTop:6 }}>▶ {s.events.ingreso}</div>}
-          {s.events?.retiro  && <div style={{ fontSize:11, color:"#4fc3f7" }}>■ {s.events.retiro}</div>}
+       <div style={{ minWidth:130, textAlign:"right", flexShrink:0 }}>
+  <div style={{ fontSize:24, fontFamily:"'DM Serif Display', serif", color:"#fff" }}>{pct}%</div>
+  <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>completado</div>
+  {s.events?.ingreso && (
+    <div style={{ fontSize:11, color:"#777", marginTop:6 }}>▶ Ingreso: {s.events.ingreso}</div>
+  )}
+  {s.events?.retiro && (
+    <div style={{ fontSize:11, color:"#4fc3f7" }}>■ Retiro: {s.events.retiro}</div>
+  )}
+  {s.events?.ingreso && s.events?.retiro && (() => {
+    try {
+      const parseTime = (t) => {
+        const [time, period] = t.split(" ");
+        const [h, m] = time.split(":").map(Number);
+        let hours = h;
+        if (period === "p.m." && h !== 12) hours += 12;
+        if (period === "a.m." && h === 12) hours = 0;
+        return hours * 60 + m;
+      };
+      const diff = parseTime(s.events.retiro) - parseTime(s.events.ingreso);
+      if (diff > 0) return (
+        <div style={{ fontSize:11, color:"#1D9E75", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
+          ⏱ Estancia: {diff} min
         </div>
+      );
+    } catch(e) {}
+    return null;
+  })()}
+  {s.events?.ingreso && !s.events?.retiro && (() => {
+    try {
+      const parseTime = (t) => {
+        const [time, period] = t.split(" ");
+        const [h, m] = time.split(":").map(Number);
+        let hours = h;
+        if (period === "p.m." && h !== 12) hours += 12;
+        if (period === "a.m." && h === 12) hours = 0;
+        return hours * 60 + m;
+      };
+      const now = new Date();
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      const diff = nowMin - parseTime(s.events.ingreso);
+      if (diff > 0) return (
+        <div style={{ fontSize:11, color:"#EF9F27", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
+          ⏱ En estancia: {diff} min
+        </div>
+      );
+    } catch(e) {}
+    return null;
+  })()}
+</div>
       </div>
       {s.events?.ingreso && (
         <div style={{ marginTop:10 }}>
