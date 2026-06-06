@@ -185,7 +185,7 @@ function PatientRow({ s }) {
       const diff = parseTime(s.events.retiro) - parseTime(s.events.ingreso);
       if (diff > 0) return (
         <div style={{ fontSize:11, color:"#1D9E75", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
-          ⏱ Estancia: {diff} min
+          ⏱ Estancia: {diff} hh:mm
         </div>
       );
     } catch(e) {}
