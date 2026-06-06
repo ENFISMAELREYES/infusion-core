@@ -100,7 +100,7 @@ function calcWash(med, draft) {
 
 function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
   const [open, setOpen]   = useState(isNew || false);
-  const [draft, setDraft] = useState({ diluent:"", time:"", order:"", general:"", washSolution:"", washTime:undefined });
+ const [draft, setDraft] = useState({ diluent:"", time:"", order:"", general:"", washSolution:"", washTime:undefined, parallelType:"secuencial", startOffset:null });
   const hasCorrection     = ["diluent","time","order","general"].some(k => draft[k]?.trim());
   const cs                = CAT_COLOR[med.category] || CAT_COLOR.adicional;
 
@@ -110,10 +110,14 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
   const vol                 = volMatch ? parseInt(volMatch[1]) : null;
   const speed               = med.category === "premedicacion" ? 60 : (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
 
-  const save = () => {
+ const save = () => {
     const wash = calcWash(med, draft);
-    if (hasCorrection) onCorrect(med.id, { ...draft, ...wash });
-    else onApprove(med.id, wash);
+    const parallelData = {
+      parallelType:  draft.parallelType  || "secuencial",
+      startOffset:   draft.parallelType === "offset" ? draft.startOffset : draft.parallelType === "junto" ? 0 : null,
+    };
+    if (hasCorrection) onCorrect(med.id, { ...draft, ...wash, ...parallelData });
+    else onApprove(med.id, { ...wash, ...parallelData });
     setOpen(false);
   };
 
