@@ -265,6 +265,7 @@ export default function Autorizar() {
       (selected.meds || []).forEach(m => { init[m.id] = { ...m, reviewStatus:"pending" }; });
       setMedStates(init);
       setGlobalNote("");
+      setSelectedDate(selected.date || today);
       setDone(false);
     }
   }, [selected?.id]);
