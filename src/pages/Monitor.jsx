@@ -119,6 +119,49 @@ function PatientRow({ s }) {
           <div style={{ fontSize:10, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:7 }}>Secuencia</div>
           <MedTimeline meds={s.meds} medEvents={s.medEvents} />
           {activeMed && <div style={{ fontSize:11, color:"#1D9E75", marginTop:5 }}>⏳ {activeMed.name} {activeMed.dose} en curso</div>}
+          <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:3 }}>
+  {(s.meds||[]).map(m => {
+    const me = s.medEvents || {};
+    const ev = me[`med_${m.id}`] || {};
+    const done = !!ev.fin, active = !!ev.inicio && !ev.fin;
+    return (
+      <div key={m.id} style={{ display:"flex", alignItems:"center", gap:8, fontSize:11 }}>
+        <span style={{ color: done ? "#1D9E75" : active ? "#00d4aa" : "#444" }}>
+          {done ? "✓" : active ? "⏳" : "○"}
+        </span>
+        <span style={{ color: done ? "#777" : active ? "#f0f0f0" : "#555", fontWeight: active ? 600 : 400 }}>
+          {m.name} {m.dose}
+        </span>
+        {active && ev.inicio && <span style={{ color:"#666", fontFamily:"'IBM Plex Mono', monospace" }}>▶ {ev.inicio}</span>}
+        {done && ev.inicio && ev.fin && (
+  <span style={{ color:"#555", fontFamily:"'IBM Plex Mono', monospace" }}>
+    {ev.inicio} → {ev.fin}
+    {(() => {
+      try {
+        const parseTime = (t) => {
+          const [time, period] = t.split(" ");
+          const [h, m] = time.split(":").map(Number);
+          let hours = h;
+          if (period === "p.m." && h !== 12) hours += 12;
+          if (period === "a.m." && h === 12) hours = 0;
+          return hours * 60 + m;
+        };
+        const diff = parseTime(ev.fin) - parseTime(ev.inicio);
+        if (diff > 0) return ` (${diff} min)`;
+      } catch(e) {}
+      return "";
+    })()}
+  </span>
+)}
+        {m.wash && done && (
+          <span style={{ color: me[`wash_${m.id}`]?.fin ? "#4fc3f7" : "#666", fontSize:10 }}>
+            💧 {me[`wash_${m.id}`]?.fin ? "lavado ✓" : "lavado pendiente"}
+          </span>
+        )}
+      </div>
+    );
+  })}
+</div>
         </div>
         <div style={{ minWidth:100, textAlign:"right", flexShrink:0 }}>
           <div style={{ fontSize:24, fontFamily:"'DM Serif Display', serif", color:"#fff" }}>{pct}%</div>
