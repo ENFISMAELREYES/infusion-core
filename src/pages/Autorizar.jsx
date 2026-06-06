@@ -354,8 +354,14 @@ export default function Autorizar() {
             <div style={{ marginBottom:24 }}>
               <h2 style={{ fontFamily:"'DM Serif Display', serif", fontSize:22, color:"#fff", marginBottom:4 }}>{selected.patientName}</h2>
               <p style={{ fontSize:13, color:"#666" }}>{selected.diagnosis} · {selected.cycle} · {selected.physician} · {selected.center}</p>
-              <p style={{ fontSize:12, color:"#555", marginTop:4 }}>Enfermera: {selected.nurseName} · Fecha: {selected.date}</p>
-            </div>
+             <div style={{ display:"flex", alignItems:"center", gap:12, marginTop:4, flexWrap:"wrap" }}>
+  <p style={{ fontSize:12, color:"#555" }}>Enfermera: {selected.nurseName}</p>
+  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+    <label style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase" }}>Fecha de aplicación:</label>
+    <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
+      style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:8, padding:"5px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+  </div>
+</div>
 
             <div style={{ marginBottom:20 }}>
               <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#555", marginBottom:7 }}>
