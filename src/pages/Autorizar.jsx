@@ -124,22 +124,26 @@ function MedRow({ med, onApprove, onCorrect }) {
 
   return (
     <div style={{ borderRadius:12, overflow:"hidden", border:`1px solid ${med.reviewStatus === "approved" ? "rgba(29,158,117,0.3)" : med.reviewStatus === "corrected" ? "rgba(186,117,23,0.35)" : "rgba(255,255,255,0.08)"}`, borderLeft:`3px solid ${cs.border}`, background:"rgba(255,255,255,0.02)" }}>
-      <div onClick={() => setOpen(o => !o)} style={{ padding:"13px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
-        <span style={{ width:26, height:26, borderRadius:"50%", flexShrink:0, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{med.order}</span>
-        <div style={{ flex:1 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-            <span style={{ fontSize:14, color:"#f0f0f0", fontWeight:600 }}>{med.name}</span>
-            <span style={{ fontSize:12, color:"#777" }}>{med.dose}</span>
-            <span style={{ fontSize:10, fontWeight:600, padding:"2px 8px", borderRadius:99, background:cs.dark, color:cs.border, border:`1px solid ${cs.border}44` }}>{CAT_LABEL[med.category]}</span>
-          </div>
-          <div style={{ fontSize:12, color:"#666", marginTop:2 }}>{med.diluent} · {med.time ? `${med.time} min` : "sin tiempo"}</div>
-        </div>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          {med.reviewStatus === "approved"  && <span style={{ fontSize:11, color:"#1D9E75", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", padding:"3px 10px", borderRadius:99 }}>Aprobado</span>}
-          {med.reviewStatus === "corrected" && <span style={{ fontSize:11, color:"#EF9F27", background:"rgba(186,117,23,0.1)", border:"1px solid rgba(186,117,23,0.25)", padding:"3px 10px", borderRadius:99 }}>Con corrección</span>}
-          <span style={{ color:"#555", fontSize:12 }}>{open ? "▲" : "▼"}</span>
-        </div>
-      </div>
+     <div onClick={() => setOpen(o => !o)} style={{ padding:"13px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
+  <span style={{ width:26, height:26, borderRadius:"50%", flexShrink:0, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{med.order}</span>
+  <div style={{ flex:1 }}>
+    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+      <span style={{ fontSize:14, color:"#f0f0f0", fontWeight:600 }}>{med.name}</span>
+      <span style={{ fontSize:12, color:"#777" }}>{med.dose}</span>
+      <span style={{ fontSize:10, fontWeight:600, padding:"2px 8px", borderRadius:99, background:cs.dark, color:cs.border, border:`1px solid ${cs.border}44` }}>{CAT_LABEL[med.category]}</span>
+    </div>
+    <div style={{ fontSize:12, color:"#666", marginTop:2 }}>{med.diluent} · {med.time ? `${med.time} min` : "sin tiempo"}</div>
+  </div>
+  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+    {med.reviewStatus === "approved"  && <span style={{ fontSize:11, color:"#1D9E75", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", padding:"3px 10px", borderRadius:99 }}>Aprobado</span>}
+    {med.reviewStatus === "corrected" && <span style={{ fontSize:11, color:"#EF9F27", background:"rgba(186,117,23,0.1)", border:"1px solid rgba(186,117,23,0.25)", padding:"3px 10px", borderRadius:99 }}>Con corrección</span>}
+    <button type="button" onClick={e => { e.stopPropagation(); onDelete(med.id); }} style={{
+      background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)",
+      color:"#ff6b6b", borderRadius:8, padding:"4px 10px", fontSize:11, cursor:"pointer",
+    }}>✕</button>
+    <span style={{ color:"#555", fontSize:12 }}>{open ? "▲" : "▼"}</span>
+  </div>
+</div>
 
       {open && (
         <div style={{ padding:"0 16px 16px", borderTop:"1px solid rgba(255,255,255,0.05)" }}>
