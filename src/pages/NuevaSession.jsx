@@ -49,12 +49,12 @@ async function fetchCatalog(token) {
   const data = await res.json();
   if (!Array.isArray(data)) return { patients: [], physicians: [], diagnoses: [] };
 
-  const sessions = data.filter(d => d.document).map(d => {
+const sessions = data.filter(d => d.document).map(d => {
     const f = d.document.fields || {};
     const g = (k) => f[k]?.stringValue || "";
-    return { patientName: g("patientName"), dob: g("dob"), diagnosis: g("diagnosis"), physician: g("physician"), insurance: g("insurance") };
+    return { patientName: g("patientName"), dob: g("dob"), diagnosis: g("diagnosis"), physician: g("physician"), insurance: g("insurance"), center: g("center") };
   });
-
+  
   // Deduplicar por similitud
   const dedupe = (items, key) => {
     const unique = [];
