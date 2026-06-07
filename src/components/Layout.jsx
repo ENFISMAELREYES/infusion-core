@@ -8,6 +8,7 @@ const NAV = {
     { to:"/autorizar", icon:"✦", label:"Autorizar"  },
     { to:"/historial", icon:"◷", label:"Historial"  },
     { to:"/catalogo",  icon:"◈", label:"Catálogo"  },
+    { to:"/reportes", icon:"📊", label:"Reportes" },
   ],
   enfermera: [
     { to:"/pacientes", icon:"◎", label:"Pacientes"  },
