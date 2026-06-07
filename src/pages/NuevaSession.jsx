@@ -314,21 +314,39 @@ export default function NuevaSession() {
                   <div><label style={labelStyle}>Dosis</label><input required value={med.dose} onChange={e => setMedField(med.id, "dose", e.target.value)} placeholder="ej: 780 mg" style={inputStyle} /></div>
                   <div><label style={labelStyle}>Dilución</label><input required value={med.diluent} onChange={e => setMedField(med.id, "diluent", e.target.value)} placeholder="ej: 100 ml SF" style={inputStyle} /></div>
                   <div><label style={labelStyle}>Tiempo (minutos)</label><input type="number" min="1" value={med.time} onChange={e => setMedField(med.id, "time", e.target.value)} placeholder="ej: 30" style={inputStyle} /></div>
-                  {meds.indexOf(meds.find(m => m.id === med.id)) > 0 && (
+                 {meds.indexOf(meds.find(m => m.id === med.id)) > 0 && (
   <div style={{ gridColumn:"1/-1" }}>
-    <label style={labelStyle}>Inicio respecto al medicamento anterior</label>
-    <select value={med.parallelType || "secuencial"} onChange={e => setMedField(med.id, "parallelType", e.target.value)}
-      style={{ ...inputStyle, cursor:"pointer" }}>
-      <option value="secuencial">Secuencial — espera a que termine el anterior</option>
-      <option value="junto">Simultáneo — inicia al mismo tiempo</option>
-      <option value="offset">Con retraso — X minutos después de iniciar el anterior</option>
-    </select>
-   {med.parallelType === "offset" && (
-                    <input type="number" min="1" value={med.startOffset || ""} onChange={e => setMedField(med.id, "startOffset", parseInt(e.target.value))}
-                      placeholder="Minutos de retraso (ej: 30)" style={{ ...inputStyle, marginTop:8 }} />
-                  )}
-                </div>
-              )}
+    <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+      <input type="checkbox" id={`parallel_${med.id}`}
+        checked={med.parallelType !== "secuencial"}
+        onChange={e => setMedField(med.id, "parallelType", e.target.checked ? "junto" : "secuencial")}
+        style={{ width:16, height:16, cursor:"pointer" }} />
+      <label htmlFor={`parallel_${med.id}`} style={{ fontSize:12, color:"#aaa", cursor:"pointer" }}>
+        ⚡ Infusión simultánea con medicamento anterior
+      </label>
+    </div>
+    {med.parallelType !== "secuencial" && (
+      <div style={{ marginTop:10, display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+        <div>
+          <label style={labelStyle}>Tipo de inicio</label>
+          <select value={med.parallelType} onChange={e => setMedField(med.id, "parallelType", e.target.value)}
+            style={{ ...inputStyle, cursor:"pointer" }}>
+            <option value="junto">Simultáneo — inicia al mismo tiempo</option>
+            <option value="offset">Con retraso — X minutos después</option>
+          </select>
+        </div>
+        {med.parallelType === "offset" && (
+          <div>
+            <label style={labelStyle}>Minutos de retraso</label>
+            <input type="number" min="1" value={med.startOffset || ""}
+              onChange={e => setMedField(med.id, "startOffset", parseInt(e.target.value))}
+              placeholder="ej: 30" style={inputStyle} />
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+)}
                 </div>
               </div>
             ))}
