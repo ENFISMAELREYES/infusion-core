@@ -83,9 +83,6 @@ function Autocomplete({ value, onChange, suggestions, onSelect, placeholder, fie
 const filtered = suggestions
     .map(s => ({ ...s, score: similarity(s[field], value) }))
     .filter(s => s.score > 0.05)
-  const filtered = suggestions
-    .map(s => ({ ...s, score: similarity(s[field], value) }))
-    .filter(s => s.score > 0.05)
     .sort((a, b) => b.score - a.score)
     .slice(0, 6);
 
