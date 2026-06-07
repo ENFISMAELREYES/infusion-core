@@ -21,6 +21,8 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+      // Pequeño delay para que Firebase restaure la sesión
+      setTimeout(() => {
       if (firebaseUser) {
         setUser(firebaseUser);
         const p = PROFILES[firebaseUser.uid] || null;
@@ -31,6 +33,7 @@ export function AuthProvider({ children }) {
         setProfile(null);
       }
       setLoading(false);
+      }, 500);
     });
     return unsub;
   }, []);
