@@ -29,7 +29,7 @@ function similarity(a, b) {
   return matches / words.length;
 }
 
-async function fetchCatalog(token) {
+async function fetchCatalog(token, center) {
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
   const res = await fetch(url, {
     method: "POST",
