@@ -258,7 +258,6 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
     </div>
   );
 }
-
 export default function Autorizar() {
   const { user } = useAuth();
   const isMobile = window.innerWidth <= 768;
