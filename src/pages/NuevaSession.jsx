@@ -79,6 +79,10 @@ function Autocomplete({ value, onChange, suggestions, onSelect, placeholder, fie
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
+  console.log("Suggestions:", suggestions.length, "Value:", value, "Field:", field);
+const filtered = suggestions
+    .map(s => ({ ...s, score: similarity(s[field], value) }))
+    .filter(s => s.score > 0.05)
   const filtered = suggestions
     .map(s => ({ ...s, score: similarity(s[field], value) }))
     .filter(s => s.score > 0.05)
