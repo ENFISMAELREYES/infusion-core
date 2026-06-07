@@ -323,12 +323,14 @@ export default function NuevaSession() {
       <option value="junto">Simultáneo — inicia al mismo tiempo</option>
       <option value="offset">Con retraso — X minutos después de iniciar el anterior</option>
     </select>
-    {med.parallelType === "offset" && (
-      <input type="number" min="1" value={med.startOffset || ""} onChange={e => setMedField(med.id, "startOffset", parseInt(e.target.value))}
-        placeholder="Minutos de retraso (ej: 30)" style={{ ...inputStyle, marginTop:8 }} />
-    )}
-  </div>
-)}
+   {med.parallelType === "offset" && (
+                    <input type="number" min="1" value={med.startOffset || ""} onChange={e => setMedField(med.id, "startOffset", parseInt(e.target.value))}
+                      placeholder="Minutos de retraso (ej: 30)" style={{ ...inputStyle, marginTop:8 }} />
+                  )}
+                </div>
+              )}
+                </div>
+              </div>
             ))}
           </div>
         </section>
