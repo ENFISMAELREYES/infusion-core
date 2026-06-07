@@ -38,10 +38,10 @@ async function fetchCatalog(token, center) {
       structuredQuery: {
         from: [{ collectionId: "sessions" }],
         select: { fields: [
-          { fieldPath: "patientName" }, { fieldPath: "dob" },
-          { fieldPath: "diagnosis" }, { fieldPath: "physician" },
-          { fieldPath: "insurance" },
-        ]},
+  { fieldPath: "patientName" }, { fieldPath: "dob" },
+  { fieldPath: "diagnosis" }, { fieldPath: "physician" },
+  { fieldPath: "insurance" }, { fieldPath: "center" },
+]},
         limit: 200,
       }
     })
