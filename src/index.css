@@ -20,3 +20,29 @@ input::placeholder, textarea::placeholder { color: #444; }
 select option { background: #1a1d24; color: #ddd; }
 
 button { font-family: inherit; cursor: pointer; }
+
+/* Responsive */
+.desktop-only { display: flex !important; }
+.mobile-only  { display: none !important; }
+
+@media (max-width: 768px) {
+  .desktop-only { display: none !important; }
+  .mobile-only  { display: flex !important; }
+
+  /* Ajustes para móvil */
+  div[style*="padding: 24px 28px"],
+  div[style*="padding:24px 28px"] {
+    padding: 16px 14px !important;
+  }
+
+  div[style*="padding: 28px 32px"],
+  div[style*="padding:28px 32px"] {
+    padding: 16px 14px !important;
+  }
+
+  /* Grid de 2 columnas → 1 columna en móvil */
+  div[style*="grid-template-columns: 1fr 1fr"],
+  div[style*="gridTemplateColumns: \"1fr 1fr\""] {
+    grid-template-columns: 1fr !important;
+  }
+}
