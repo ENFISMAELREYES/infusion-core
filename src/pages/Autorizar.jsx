@@ -125,8 +125,9 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
   const lbl = { fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 };
 
   return (
-    <div style={{ borderRadius:12, overflow:"hidden", border:`1px solid ${med.reviewStatus === "approved" ? "rgba(29,158,117,0.3)" : med.reviewStatus === "corrected" ? "rgba(186,117,23,0.35)" : isNew ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.08)"}`, borderLeft:`3px solid ${cs.border}`, background:"rgba(255,255,255,0.02)" }}>
-
+    <div style={{ display:"flex", flexDirection: isMobile ? "column" : "row", minHeight:"100vh", overflow: isMobile ? "auto" : "hidden" }}>
+      <div style={{ width: isMobile ? "100%" : 280, flexShrink:0, borderRight: isMobile ? "none" : "1px solid rgba(255,255,255,0.06)", borderBottom: isMobile ? "1px solid rgba(255,255,255,0.06)" : "none", overflowY:"auto", padding:"16px", maxHeight: isMobile ? 220 : "100vh" }}>
+      
       <div onClick={() => setOpen(o => !o)} style={{ padding:"13px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
         <span style={{ width:26, height:26, borderRadius:"50%", flexShrink:0, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{med.order}</span>
         <div style={{ flex:1 }}>
