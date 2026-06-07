@@ -137,9 +137,9 @@ export default function NuevaSession() {
   const [catalog, setCatalog] = useState({ patients: [], physicians: [], diagnoses: [] });
 
   useEffect(() => {
-    if (!user) return;
-    user.getIdToken(true).then(token => fetchCatalog(token, profile?.center)).then(setCatalog).catch(console.error);
-  }, [user]);
+    if (!user || !profile?.center) return;
+    user.getIdToken(true).then(token => fetchCatalog(token, profile.center)).then(setCatalog).catch(console.error);
+  }, [user, profile?.center]);
 
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const addMed    = () => setMeds(m => [...m, emptyMed(m.length + 1)]);
