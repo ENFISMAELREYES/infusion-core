@@ -197,8 +197,9 @@ export default function Catalogo() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [token, setToken]       = useState(null);
-  const [centerFilter, setCenterFilter] = useState("Todos");
-
+ const [centerFilter, setCenterFilter] = useState("Todos");
+const [tab, setTab] = useState("patients");
+  
   const load = async () => {
     if (!user) return;
     setLoading(true);
