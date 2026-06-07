@@ -67,11 +67,12 @@ const sessions = data.filter(d => d.document).map(d => {
     return unique;
   };
 
-  const patients  = dedupe(sessions, "patientName");
-  const physicians = [...new Set(sessions.map(s => s.physician).filter(Boolean))].map(p => ({ physician: p }));
-  const diagnoses  = [...new Set(sessions.map(s => s.diagnosis).filter(Boolean))].map(d => ({ diagnosis: d }));
+  const filtered   = center ? sessions.filter(s => s.center === center) : sessions;
+const patients   = dedupe(filtered, "patientName");
+const physicians = [...new Set(filtered.map(s => s.physician).filter(Boolean))].map(p => ({ physician: p }));
+const diagnoses  = [...new Set(filtered.map(s => s.diagnosis).filter(Boolean))].map(d => ({ diagnosis: d }));
 
-  return { patients: dedupe(patients, "patientName"), physicians: dedupe(physicians, "physician"), diagnoses: dedupe(diagnoses, "diagnosis") };
+return { patients: dedupe(patients, "patientName"), physicians: dedupe(physicians, "physician"), diagnoses: dedupe(diagnoses, "diagnosis") };
 }
 
 function Autocomplete({ value, onChange, suggestions, onSelect, placeholder, field }) {
