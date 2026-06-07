@@ -137,7 +137,7 @@ export default function NuevaSession() {
 
   useEffect(() => {
     if (!user) return;
-    user.getIdToken(true).then(token => fetchCatalog(token)).then(setCatalog).catch(console.error);
+    user.getIdToken(true).then(token => fetchCatalog(token, profile?.center)).then(setCatalog).catch(console.error);
   }, [user]);
 
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
