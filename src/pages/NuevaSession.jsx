@@ -72,6 +72,7 @@ const patients   = dedupe(filtered, "patientName");
 const physicians = [...new Set(filtered.map(s => s.physician).filter(Boolean))].map(p => ({ physician: p }));
 const diagnoses  = [...new Set(filtered.map(s => s.diagnosis).filter(Boolean))].map(d => ({ diagnosis: d }));
 console.log("Catalog loaded:", { total: sessions.length, filtered: filtered.length, center });
+  console.log("Sample centers:", sessions.slice(0,5).map(s => s.center));
 return { patients: dedupe(patients, "patientName"), physicians: dedupe(physicians, "physician"), diagnoses: dedupe(diagnoses, "diagnosis") };
 }
 
