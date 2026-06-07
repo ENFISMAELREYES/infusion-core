@@ -1,94 +1,110 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 
 const NAV = {
   jefe: [
-    { to: "/",            icon: "⊞", label: "Panel general"   },
-    { to: "/monitor",     icon: "◎", label: "Monitor en vivo" },
-    { to: "/autorizar",   icon: "✦", label: "Autorizar"        },
-    { to: "/historial",   icon: "◷", label: "Historial"        },
-    { to: "/pacientes",   icon: "♡", label: "Pacientes"        },
+    { to:"/",          icon:"⊞", label:"Panel"     },
+    { to:"/monitor",   icon:"◎", label:"Monitor"   },
+    { to:"/autorizar", icon:"✦", label:"Autorizar"  },
+    { to:"/historial", icon:"◷", label:"Historial"  },
   ],
   enfermera: [
-    { to: "/",            icon: "◎", label: "Mis pacientes"   },
-    { to: "/registrar",   icon: "⊕", label: "Registrar turno" },
+    { to:"/pacientes", icon:"◎", label:"Pacientes"  },
+    { to:"/registrar", icon:"＋", label:"Registrar"  },
+  ],
+  visualizador: [
+    { to:"/monitor",   icon:"◎", label:"Monitor"   },
   ],
 };
 
-function now() {
-  return new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
-}
-
 export default function Layout() {
   const { profile, logout } = useAuth();
-  const navigate = useNavigate();
-  const links = NAV[profile?.role] || [];
-
-  const handleLogout = async () => { await logout(); navigate("/login"); };
+  const role = profile?.role || "enfermera";
+  const nav  = NAV[role] || [];
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#080a0f" }}>
+    <div style={{ display:"flex", minHeight:"100vh", background:"#080a0f", color:"#f0f0f0", fontFamily:"'Inter', sans-serif" }}>
 
-      {/* Sidebar */}
+      {/* Sidebar — solo en desktop */}
       <aside style={{
-        width: 220, flexShrink: 0,
-        background: "rgba(255,255,255,0.02)", borderRight: "1px solid rgba(255,255,255,0.06)",
-        display: "flex", flexDirection: "column", padding: "24px 0",
-        position: "sticky", top: 0, height: "100vh", overflowY: "auto",
-      }}>
-        {/* Logo */}
-        <div style={{ padding: "0 20px 28px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 9,
-              background: "linear-gradient(135deg, #00d4aa, #0099ff)",
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
-            }}>⊕</div>
-            <div>
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 15, color: "#fff" }}>InfusionCore</div>
-              <div style={{ fontSize: 9, color: "#555", letterSpacing: 1.5, textTransform: "uppercase" }}>{profile?.center || "Sistema"}</div>
-            </div>
+        width:220, flexShrink:0, borderRight:"1px solid rgba(255,255,255,0.06)",
+        display:"flex", flexDirection:"column", padding:"20px 12px",
+        position:"sticky", top:0, height:"100vh", overflowY:"auto",
+      }} className="desktop-only">
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:32, padding:"0 8px" }}>
+          <div style={{ width:34, height:34, borderRadius:10, background:"linear-gradient(135deg,#00d4aa,#0099ff)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>+</div>
+          <div>
+            <div style={{ fontSize:14, fontWeight:700, color:"#fff", letterSpacing:-0.3 }}>InfusionCore</div>
+            <div style={{ fontSize:10, color:"#555", letterSpacing:1, textTransform:"uppercase" }}>{profile?.center}</div>
           </div>
         </div>
 
-        {/* Nav links */}
-        <nav style={{ flex: 1, padding: "20px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
-          {links.map(({ to, icon, label }) => (
-            <NavLink key={to} to={to} end={to === "/"} style={({ isActive }) => ({
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "10px 12px", borderRadius: 10, textDecoration: "none",
-              fontSize: 13, fontWeight: 500, transition: "all 0.15s",
-              background: isActive ? "rgba(0,212,170,0.12)" : "transparent",
-              color: isActive ? "#00d4aa" : "#777",
-              border: isActive ? "1px solid rgba(0,212,170,0.2)" : "1px solid transparent",
-            })}>
-              <span style={{ fontSize: 16, width: 20, textAlign: "center" }}>{icon}</span>
-              {label}
+        <nav style={{ display:"flex", flexDirection:"column", gap:4, flex:1 }}>
+          {nav.map(item => (
+            <NavLink key={item.to} to={item.to} end={item.to === "/"}
+              style={({ isActive }) => ({
+                display:"flex", alignItems:"center", gap:12, padding:"10px 12px", borderRadius:10,
+                textDecoration:"none", fontSize:13, fontWeight:500, transition:"all 0.15s",
+                background: isActive ? "rgba(0,212,170,0.12)" : "transparent",
+                color: isActive ? "#00d4aa" : "#666",
+                border: isActive ? "1px solid rgba(0,212,170,0.2)" : "1px solid transparent",
+              })}>
+              <span style={{ fontSize:16 }}>{item.icon}</span>
+              {item.label}
             </NavLink>
           ))}
         </nav>
 
-        {/* User info + logout */}
-        <div style={{ padding: "16px 20px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-          <div style={{ fontSize: 12, color: "#ddd", fontWeight: 500, marginBottom: 2 }}>{profile?.name || "Usuario"}</div>
-          <div style={{ fontSize: 11, color: "#555", textTransform: "capitalize", marginBottom: 12 }}>{profile?.role}</div>
-          <button onClick={handleLogout} style={{
-            width: "100%", padding: "8px", borderRadius: 8, fontSize: 12,
-            background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)",
-            color: "#666", transition: "all 0.15s",
-          }}
-            onMouseEnter={e => { e.currentTarget.style.color = "#ff6b6b"; e.currentTarget.style.borderColor = "rgba(255,107,107,0.3)"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "#666"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; }}
-          >
+        <div style={{ borderTop:"1px solid rgba(255,255,255,0.06)", paddingTop:16, marginTop:16 }}>
+          <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600, padding:"0 8px", marginBottom:4 }}>{profile?.name}</div>
+          <div style={{ fontSize:11, color:"#555", padding:"0 8px", marginBottom:12, textTransform:"uppercase", letterSpacing:1 }}>{role}</div>
+          <button onClick={logout} style={{ width:"100%", padding:"9px", borderRadius:9, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", color:"#555" }}>
             Cerrar sesión
           </button>
         </div>
       </aside>
 
-      {/* Main content */}
-      <main style={{ flex: 1, overflowY: "auto", minHeight: "100vh" }}>
+      {/* Contenido principal */}
+      <main style={{ flex:1, overflowY:"auto", paddingBottom:80 }} className="main-content">
+        {/* Header móvil */}
+        <div className="mobile-only" style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", borderBottom:"1px solid rgba(255,255,255,0.06)", position:"sticky", top:0, background:"#080a0f", zIndex:50 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ width:28, height:28, borderRadius:8, background:"linear-gradient(135deg,#00d4aa,#0099ff)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>+</div>
+            <div>
+              <div style={{ fontSize:13, fontWeight:700, color:"#fff" }}>InfusionCore</div>
+              <div style={{ fontSize:10, color:"#555" }}>{profile?.center} · {profile?.name}</div>
+            </div>
+          </div>
+          <button onClick={logout} style={{ padding:"6px 12px", borderRadius:8, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", color:"#555" }}>
+            Salir
+          </button>
+        </div>
+
         <Outlet />
       </main>
+
+      {/* Navegación inferior — solo en móvil */}
+      <nav className="mobile-only" style={{
+        position:"fixed", bottom:0, left:0, right:0, zIndex:100,
+        background:"rgba(8,10,15,0.95)", borderTop:"1px solid rgba(255,255,255,0.08)",
+        display:"flex", alignItems:"center", justifyContent:"space-around",
+        padding:"8px 0 max(8px, env(safe-area-inset-bottom))",
+        backdropFilter:"blur(12px)",
+      }}>
+        {nav.map(item => (
+          <NavLink key={item.to} to={item.to} end={item.to === "/"}
+            style={({ isActive }) => ({
+              display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+              textDecoration:"none", padding:"6px 16px", borderRadius:10,
+              color: isActive ? "#00d4aa" : "#555", transition:"all 0.15s",
+              minWidth:60,
+            })}>
+            <span style={{ fontSize:20 }}>{item.icon}</span>
+            <span style={{ fontSize:10, fontWeight:500, letterSpacing:0.5 }}>{item.label}</span>
+          </NavLink>
+        ))}
+      </nav>
+
     </div>
   );
 }
