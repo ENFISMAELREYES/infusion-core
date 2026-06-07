@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, browserLocalPersistence, setPersistence } from "firebase/auth";
 import { auth } from "../firebase/config";
 
 const AuthContext = createContext(null);
@@ -9,7 +9,7 @@ const PROFILES = {
   "QQxWhAem1adZsXiy5BvWBgvM15Y2": { name: "Camila Aquino",     role: "enfermera",    center: "CIPI"  },
   "JRYVuMW3fidrrlQcvDc5KSm00XT2": { name: "Paola Vargas",      role: "enfermera",    center: "CIPI"  },
   "gHEOTAoTe8fZCR4EjetuzqA59Uu1": { name: "Danna Ramírez",     role: "enfermera",    center: "CITIO" },
-  "iwAUACSAqWYhol991xMDxgq30vq1": { name: "Yessica Maderas",   role: "enfermera",    center: "CITIO" },
+  "iwAUACSAqWYhol991xMDxgq30vq1": { name: "Yessica Madera",    role: "enfermera",    center: "CITIO" },
   "IC2Tegxjijc6icyaGXZUSjAFrxR2": { name: "Carlos Sorroza",    role: "visualizador", center: "CIPI"  },
   "0lah1NsefnR5GSpjfTX7D1qc4rh1": { name: "Jonathan Martínez", role: "visualizador", center: "CITIO" },
 };
@@ -38,7 +38,10 @@ export function AuthProvider({ children }) {
     return unsub;
   }, []);
 
-  const login  = (email, password) => signInWithEmailAndPassword(auth, email, password);
+  const login = async (email, password) => {
+    await setPersistence(auth, browserLocalPersistence);
+    return signInWithEmailAndPassword(auth, email, password);
+  };
   const logout = () => signOut(auth);
 
   return (
