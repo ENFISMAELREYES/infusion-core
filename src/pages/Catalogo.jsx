@@ -197,7 +197,7 @@ export default function Catalogo() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [token, setToken]       = useState(null);
-  const [tab, setTab]           = useState("patients");
+  const [centerFilter, setCenterFilter] = useState("Todos");
 
   const load = async () => {
     if (!user) return;
@@ -213,9 +213,10 @@ export default function Catalogo() {
 
   useEffect(() => { load(); }, [user]);
 
-  const patientGroups  = groupSimilar(sessions, "patientName");
-  const physicianGroups = groupSimilar(sessions, "physician");
-  const diagnosisGroups = groupSimilar(sessions, "diagnosis");
+  const filteredSessions = centerFilter === "Todos" ? sessions : sessions.filter(s => s.center === centerFilter);
+const patientGroups   = groupSimilar(filteredSessions, "patientName");
+const physicianGroups = groupSimilar(filteredSessions, "physician");
+const diagnosisGroups = groupSimilar(filteredSessions, "diagnosis");
 
   const tabs = [
     { id: "patients",   label: "Pacientes",   icon: "👤", groups: patientGroups,   field: "patientName" },
@@ -255,7 +256,18 @@ export default function Catalogo() {
           </button>
         ))}
       </div>
-
+      {/* Filtro por centro */}
+<div style={{ display:"flex", gap:8, marginBottom:16 }}>
+  {["Todos","CIPI","CITIO"].map(c => (
+    <button key={c} onClick={() => setCenterFilter(c)} style={{
+      padding:"5px 14px", borderRadius:99, fontSize:11, fontWeight:600, cursor:"pointer",
+      background: centerFilter===c ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
+      border:`1px solid ${centerFilter===c ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.07)"}`,
+      color: centerFilter===c ? "#00d4aa" : "#666",
+    }}>{c}</button>
+  ))}
+</div>
+      
       {loading ? (
         <div style={{ color: "#555", fontSize: 14, padding: 24 }}>Cargando catálogo...</div>
       ) : (
