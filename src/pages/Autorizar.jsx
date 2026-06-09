@@ -320,10 +320,25 @@ export default function Autorizar() {
         ) : sessions.map(s => (
           <div key={s.id} onClick={() => { setSelected(s); setDone(false); }}
             style={{ padding: "10px 12px", borderRadius: 10, cursor: "pointer", marginBottom: 8, background: selected?.id === s.id ? "rgba(255,179,71,0.12)" : "rgba(255,255,255,0.03)", border: `1px solid ${selected?.id === s.id ? "rgba(255,179,71,0.35)" : "rgba(255,255,255,0.07)"}`, transition: "all 0.15s" }}>
-            <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 600, marginBottom: 2 }}>{s.patientName}</div>
-            <div style={{ fontSize: 11, color: "#666" }}>{s.center} · {s.cycle}</div>
-            <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>{s.date} · {s.nurseName}</div>
-          </div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+  <div>
+    <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600, marginBottom:3 }}>{s.patientName}</div>
+    <div style={{ fontSize:11, color:"#666" }}>{s.center} · {s.cycle}</div>
+    <div style={{ fontSize:10, color:"#555", marginTop:2 }}>{s.date} · {s.nurseName}</div>
+  </div>
+  <button type="button" onClick={async e => {
+    e.stopPropagation();
+    if (!confirm(`¿Eliminar sesión de ${s.patientName}?`)) return;
+    try {
+      const token = await user.getIdToken(true);
+      await fetch(
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}`,
+        { method:"DELETE", headers:{ "Authorization":`Bearer ${token}` } }
+      );
+      load();
+    } catch(e) { alert("Error: " + e.message); }
+  }} style={{ background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b", borderRadius:8, padding:"4px 8px", fontSize:11, cursor:"pointer", flexShrink:0 }}>🗑</button>
+</div>
         ))}
       </div>
 
