@@ -294,7 +294,14 @@ function SessionCard({ session, token, onRefresh, user }) {
   };
 
   const handleEdit = (updatedMed) => {
-    const updatedMeds = (session.meds||[]).map(m => m.id === updatedMed.id ? updatedMed : m);
+    const others = (session.meds||[]).filter(m => m.id !== updatedMed.id);
+    const newOrder = updatedMed.order || 1;
+    
+    // Insertar en la posición correcta y reordenar
+    const reordered = [...others];
+    reordered.splice(newOrder - 1, 0, updatedMed);
+    const updatedMeds = reordered.map((m, i) => ({ ...m, order: i + 1 }));
+    
     saveMeds(updatedMeds, session.authorized);
     setEditingId(null);
   };
