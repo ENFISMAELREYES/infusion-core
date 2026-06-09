@@ -339,9 +339,9 @@ export default function Autorizar() {
     } catch(e) { alert("Error: " + e.message); }
   }} style={{ background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b", borderRadius:8, padding:"4px 8px", fontSize:11, cursor:"pointer", flexShrink:0 }}>🗑</button>
 </div>
-        ))}
+          ))}
+        </div>
       </div>
-
       {/* Panel derecho */}
       <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "16px" : "28px 32px" }}>
         {done && (
