@@ -75,6 +75,13 @@ async function authorizeSession(token, sessionId, meds, globalNote, corrected, u
   );
 }
 
+async function deleteSession(token, sessionId) {
+  await fetch(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}`,
+    { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } }
+  );
+}
+
 const CAT_COLOR = {
   premedicacion: { dark: "rgba(250,199,117,0.15)", border: "#FAC775" },
   inmunoterapia: { dark: "rgba(93,202,165,0.15)",  border: "#5DCAA5" },
@@ -122,7 +129,6 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
 
   return (
     <div style={{ borderRadius: 12, overflow: "hidden", border: `1px solid ${med.reviewStatus === "approved" ? "rgba(29,158,117,0.3)" : med.reviewStatus === "corrected" ? "rgba(186,117,23,0.35)" : isNew ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.08)"}`, borderLeft: `3px solid ${cs.border}`, background: "rgba(255,255,255,0.02)" }}>
-
       <div onClick={() => setOpen(o => !o)} style={{ padding: "13px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
         <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#888", fontFamily: "'IBM Plex Mono', monospace" }}>{med.order}</span>
         <div style={{ flex: 1 }}>
@@ -145,7 +151,6 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
       {open && (
         <div style={{ padding: "0 16px 16px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
           <div style={{ paddingTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
-
             {isNew && (
               <>
                 <div>
@@ -228,13 +233,13 @@ export default function Autorizar() {
   const { user } = useAuth();
   const isMobile = window.innerWidth <= 768;
   const today = getToday();
-  const [sessions, setSessions]       = useState([]);
-  const [selected, setSelected]       = useState(null);
-  const [medStates, setMedStates]     = useState({});
-  const [globalNote, setGlobalNote]   = useState("");
+  const [sessions, setSessions]         = useState([]);
+  const [selected, setSelected]         = useState(null);
+  const [medStates, setMedStates]       = useState({});
+  const [globalNote, setGlobalNote]     = useState("");
   const [selectedDate, setSelectedDate] = useState("");
-  const [saving, setSaving]           = useState(false);
-  const [done, setDone]               = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [done, setDone]                 = useState(false);
 
   const load = async () => {
     if (!user) return;
@@ -273,6 +278,16 @@ export default function Autorizar() {
         category: "premedicacion", reviewStatus: "approved", isNew: true,
       }
     }));
+  };
+
+  const handleDeleteSession = async (sessionId, patientName) => {
+    if (!confirm(`¿Eliminar sesión de ${patientName}?`)) return;
+    try {
+      const token = await user.getIdToken(true);
+      await deleteSession(token, sessionId);
+      setSessions(p => p.filter(s => s.id !== sessionId));
+      if (selected?.id === sessionId) setSelected(null);
+    } catch(e) { alert("Error: " + e.message); }
   };
 
   const meds        = Object.values(medStates).sort((a, b) => a.order - b.order);
@@ -320,28 +335,19 @@ export default function Autorizar() {
         ) : sessions.map(s => (
           <div key={s.id} onClick={() => { setSelected(s); setDone(false); }}
             style={{ padding: "10px 12px", borderRadius: 10, cursor: "pointer", marginBottom: 8, background: selected?.id === s.id ? "rgba(255,179,71,0.12)" : "rgba(255,255,255,0.03)", border: `1px solid ${selected?.id === s.id ? "rgba(255,179,71,0.35)" : "rgba(255,255,255,0.07)"}`, transition: "all 0.15s" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-  <div>
-    <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600, marginBottom:3 }}>{s.patientName}</div>
-    <div style={{ fontSize:11, color:"#666" }}>{s.center} · {s.cycle}</div>
-    <div style={{ fontSize:10, color:"#555", marginTop:2 }}>{s.date} · {s.nurseName}</div>
-  </div>
-  <button type="button" onClick={async e => {
-    e.stopPropagation();
-    if (!confirm(`¿Eliminar sesión de ${s.patientName}?`)) return;
-    try {
-      const token = await user.getIdToken(true);
-      await fetch(
-        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}`,
-        { method:"DELETE", headers:{ "Authorization":`Bearer ${token}` } }
-      );
-      load();
-    } catch(e) { alert("Error: " + e.message); }
-  }} style={{ background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b", borderRadius:8, padding:"4px 8px", fontSize:11, cursor:"pointer", flexShrink:0 }}>🗑</button>
-</div>
-          ))}
-        </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 600, marginBottom: 2 }}>{s.patientName}</div>
+                <div style={{ fontSize: 11, color: "#666" }}>{s.center} · {s.cycle}</div>
+                <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>{s.date} · {s.nurseName}</div>
+              </div>
+              <button type="button" onClick={e => { e.stopPropagation(); handleDeleteSession(s.id, s.patientName); }}
+                style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff6b6b", borderRadius: 8, padding: "4px 8px", fontSize: 11, cursor: "pointer", flexShrink: 0, marginLeft: 6 }}>🗑</button>
+            </div>
+          </div>
+        ))}
       </div>
+
       {/* Panel derecho */}
       <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "16px" : "28px 32px" }}>
         {done && (
@@ -419,5 +425,3 @@ export default function Autorizar() {
     </div>
   );
 }
-
-      
