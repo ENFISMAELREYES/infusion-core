@@ -392,8 +392,9 @@ const handleDeleteSession = async () => {
       {open && (
         <div style={{ padding:"16px 20px", borderTop:"1px solid rgba(255,255,255,0.05)" }}>
           {!session.authorized && (
-            <div style={{ padding:"12px 16px", borderRadius:10, marginBottom:14, background:"rgba(255,179,71,0.07)", border:"1px solid rgba(255,179,71,0.2)", fontSize:13, color:"#ffb347" }}>
-              ⏳ Esperando autorización del Jefe de Enfermería.
+            <div style={{ padding:"12px 16px", borderRadius:10, marginBottom:14, background:"rgba(255,179,71,0.07)", border:"1px solid rgba(255,179,71,0.2)", fontSize:13, color:"#ffb347", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span>⏳ Esperando autorización del Jefe de Enfermería.</span>
+              <button onClick={handleDeleteSession} style={{ background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b", borderRadius:8, padding:"5px 10px", fontSize:11, cursor:"pointer", flexShrink:0 }}>🗑 Eliminar</button>
             </div>
           )}
 
