@@ -35,7 +35,26 @@ function parseFirestoreDoc(doc) {
   return { id, ...Object.fromEntries(Object.entries(doc.fields || {}).map(([k, v]) => [k, parse(v)])) };
 }
 
-async function fetchSessions(token, center, date) {
+async function fetchSessionsByNurse(token, nurseId) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const res = await fetch(url, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+    body: JSON.stringify({
+      structuredQuery: {
+        from:[{ collectionId:"sessions" }],
+        where:{ fieldFilter:{ field:{ fieldPath:"nurseId" }, op:"EQUAL", value:{ stringValue:nurseId } } },
+        orderBy:[{ field:{ fieldPath:"date" }, direction:"DESCENDING" }],
+        limit: 100,
+      }
+    })
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data.filter(d => d.document).map(d => parseFirestoreDoc(d.document));
+}
+
+async function fetchTodaySessions(token, center, date) {
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
   const res = await fetch(url, {
     method:"POST",
@@ -104,27 +123,34 @@ async function updateSessionMeds(token, sessionId, meds, reAuth) {
     { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
 }
 
+async function deleteSessionAPI(token, sessionId) {
+  await fetch(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}`,
+    { method:"DELETE", headers:{ "Authorization":`Bearer ${token}` } }
+  );
+}
+
 function ElapsedTimer({ startTime }) {
   const [elapsed, setElapsed] = useState("");
   useEffect(() => {
     const calc = () => {
       if (!startTime) return;
       const pt = (t) => {
-        if (t.includes("a.m.") || t.includes("p.m.")) {
-          const [time, period] = t.split(" ");
+        if (t.includes("a.m.")||t.includes("p.m.")) {
+          const [time,period] = t.split(" ");
           const [h,m] = time.split(":").map(Number);
           let hours = h;
-          if (period === "p.m." && h !== 12) hours += 12;
-          if (period === "a.m." && h === 12) hours = 0;
-          return hours * 60 + m;
+          if (period==="p.m."&&h!==12) hours+=12;
+          if (period==="a.m."&&h===12) hours=0;
+          return hours*60+m;
         }
         const [h,m] = t.split(":").map(Number);
-        return h * 60 + m;
+        return h*60+m;
       };
       const now    = new Date();
-      const nowMin = now.getHours() * 60 + now.getMinutes();
-      const diff   = nowMin - pt(startTime);
-      if (diff < 0) return;
+      const nowMin = now.getHours()*60+now.getMinutes();
+      const diff   = nowMin-pt(startTime);
+      if (diff<0) return;
       setElapsed(`${Math.floor(diff/60)}h ${diff%60}m`);
     };
     calc();
@@ -202,7 +228,7 @@ function AddMedForm({ onAdd, onCancel }) {
         <div><label style={labelStyle}>Tiempo (min)</label><input type="number" min="1" value={med.time} onChange={e => set("time",e.target.value)} placeholder="ej: 30" style={inputStyle} /></div>
       </div>
       <div style={{ display:"flex", gap:8, marginTop:12 }}>
-        <button onClick={() => { if (!med.name) return; onAdd({ ...med, time: parseInt(med.time)||0, id:Date.now() }); }} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff" }}>✓ Agregar</button>
+        <button onClick={() => { if (!med.name) return; onAdd({ ...med, time:parseInt(med.time)||0, id:Date.now() }); }} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff" }}>✓ Agregar</button>
         <button onClick={onCancel} style={{ padding:"9px 16px", borderRadius:9, fontSize:13, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666" }}>Cancelar</button>
       </div>
     </div>
@@ -212,7 +238,7 @@ function AddMedForm({ onAdd, onCancel }) {
 function EditMedForm({ med, onSave, onCancel }) {
   const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
   const labelStyle = { fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 };
-  const [draft, setDraft] = useState({ ...med, time: String(med.time || "") });
+  const [draft, setDraft] = useState({ ...med, time:String(med.time||"") });
   const set = (k,v) => setDraft(d => ({ ...d, [k]:v }));
   return (
     <div style={{ background:"rgba(255,179,71,0.05)", border:"1px dashed rgba(255,179,71,0.3)", borderRadius:12, padding:"16px", marginTop:6 }}>
@@ -233,6 +259,102 @@ function EditMedForm({ med, onSave, onCancel }) {
         <button onClick={() => onSave({ ...draft, time:parseInt(draft.time)||0 })} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"linear-gradient(135deg,#EF9F27,#BA7517)", border:"none", color:"#000" }}>✓ Guardar cambios</button>
         <button onClick={onCancel} style={{ padding:"9px 16px", borderRadius:9, fontSize:13, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666" }}>Cancelar</button>
       </div>
+    </div>
+  );
+}
+
+// Tarjeta para sesiones pendientes y programadas (no del día)
+function PendingSessionCard({ session, user, onRefresh }) {
+  const [open, setOpen]     = useState(false);
+  const [editDate, setEditDate] = useState(session.date || "");
+  const [saving, setSaving] = useState(false);
+
+  const handleReschedule = async () => {
+    if (!editDate || editDate === session.date) return;
+    setSaving(true);
+    try {
+      const token = await user.getIdToken(true);
+      await patchSession(token, session.id, { date: editDate, applicationDate: editDate });
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`¿Eliminar sesión de ${session.patientName}?`)) return;
+    try {
+      const token = await user.getIdToken(true);
+      await deleteSessionAPI(token, session.id);
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+  };
+
+  const handleReauth = async () => {
+    if (!confirm(`¿Enviar a reautorización la sesión de ${session.patientName}?`)) return;
+    try {
+      const token = await user.getIdToken(true);
+      await patchSession(token, session.id, { authorized: false });
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+  };
+
+  const statusColor = !session.authorized ? "#ffb347" : "#1D9E75";
+  const statusLabel = !session.authorized ? "Sin autorizar" : "Autorizado";
+
+  return (
+    <div style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${statusColor}33`, borderLeft:`3px solid ${statusColor}`, borderRadius:14, overflow:"hidden", marginBottom:10 }}>
+      <div onClick={() => setOpen(o=>!o)} style={{ padding:"14px 18px", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:14, color:"#f0f0f0", fontWeight:600 }}>{session.patientName}</div>
+          <div style={{ fontSize:12, color:"#666", marginTop:2 }}>{session.diagnosis} · {session.cycle}</div>
+          <div style={{ fontSize:11, color:"#555", marginTop:2 }}>{session.physician}</div>
+        </div>
+        <div style={{ textAlign:"right" }}>
+          <div style={{ fontSize:12, color:"#777", marginBottom:4 }}>{session.date}</div>
+          <span style={{ fontSize:11, padding:"2px 10px", borderRadius:99, background:`${statusColor}18`, color:statusColor, border:`1px solid ${statusColor}44` }}>{statusLabel}</span>
+        </div>
+        <span style={{ color:"#555", marginLeft:8 }}>{open?"▲":"▼"}</span>
+      </div>
+
+      {open && (
+        <div style={{ padding:"14px 18px", borderTop:"1px solid rgba(255,255,255,0.05)", display:"flex", flexDirection:"column", gap:12 }}>
+          {/* Medicamentos */}
+          <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:4 }}>Medicamentos</div>
+          {(session.meds||[]).map(m => (
+            <div key={m.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", background:"rgba(255,255,255,0.02)", borderRadius:8, borderLeft:`3px solid ${CAT_COLOR[m.category]||"#888"}` }}>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:12, color:"#ddd", fontWeight:600 }}>{m.name} {m.dose}</div>
+                <div style={{ fontSize:11, color:"#555" }}>{m.diluent} · {m.time} min</div>
+              </div>
+            </div>
+          ))}
+
+          {/* Reagendar */}
+          <div>
+            <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Reagendar</div>
+            <div style={{ display:"flex", gap:8 }}>
+              <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
+                style={{ flex:1, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 12px", color:"#f0f0f0", fontSize:13, outline:"none" }} />
+              <button onClick={handleReschedule} disabled={saving || editDate === session.date}
+                style={{ padding:"8px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+                {saving ? "..." : "Guardar fecha"}
+              </button>
+            </div>
+          </div>
+
+          {/* Acciones */}
+          <div style={{ display:"flex", gap:8 }}>
+            {session.authorized && (
+              <button onClick={handleReauth} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+                ↩ Enviar a reautorización
+              </button>
+            )}
+            <button onClick={handleDelete} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
+              🗑 Eliminar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -280,39 +402,28 @@ function SessionCard({ session, token, onRefresh, user }) {
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
-const handleDeleteSession = async () => {
+
+  const handleDeleteSession = async () => {
     if (!confirm(`¿Eliminar sesión de ${session.patientName}?`)) return;
     try {
       const freshToken = await user.getIdToken(true);
-      await fetch(
-        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${session.id}`,
-        { method: "DELETE", headers: { "Authorization": `Bearer ${freshToken}` } }
-      );
+      await deleteSessionAPI(freshToken, session.id);
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
-  
+
   const handleAdd = (newMed) => {
-    const medWithDefaults = {
-      ...newMed,
-      order: (session.meds||[]).length + 1,
-      parallelType: "secuencial",
-      startOffset: null,
-    };
-    const updatedMeds = [...(session.meds||[]), medWithDefaults];
-    saveMeds(updatedMeds, true);
+    const medWithDefaults = { ...newMed, order:(session.meds||[]).length+1, parallelType:"secuencial", startOffset:null };
+    saveMeds([...(session.meds||[]), medWithDefaults], true);
     setShowAdd(false);
   };
 
   const handleEdit = (updatedMed) => {
     const others = (session.meds||[]).filter(m => m.id !== updatedMed.id);
     const newOrder = updatedMed.order || 1;
-    
-    // Insertar en la posición correcta y reordenar
     const reordered = [...others];
-    reordered.splice(newOrder - 1, 0, updatedMed);
-    const updatedMeds = reordered.map((m, i) => ({ ...m, order: i + 1 }));
-    
+    reordered.splice(newOrder-1, 0, updatedMed);
+    const updatedMeds = reordered.map((m,i) => ({ ...m, order:i+1 }));
     saveMeds(updatedMeds, session.authorized);
     setEditingId(null);
   };
@@ -326,6 +437,7 @@ const handleDeleteSession = async () => {
   const completedMeds = (session.meds||[]).filter(m => medEvents[`med_${m.id}`]?.fin).length;
   const totalTimed    = (session.meds||[]).filter(m => m.time).length;
   const pct           = totalTimed ? Math.round((completedMeds/totalTimed)*100) : 0;
+  const allWashDone   = (session.meds||[]).every(m => !m.wash?.time || !medEvents[`med_${m.id}`]?.fin || washEvents[`wash_${m.id}`]?.fin);
 
   const canStartMed = (med) => {
     if (!session.authorized || !events.ingreso) return false;
@@ -365,9 +477,8 @@ const handleDeleteSession = async () => {
     return false;
   };
 
-  const canStartWash  = (med) => !!medEvents[`med_${med.id}`]?.fin;
-  const statusColor   = !session.authorized?"#ffb347":!events.ingreso?"#888":events.retiro?"#4fc3f7":"#1D9E75";
-  const anyStarted    = (session.meds||[]).some(m => medEvents[`med_${m.id}`]?.inicio);
+  const canStartWash = (med) => !!medEvents[`med_${med.id}`]?.fin;
+  const statusColor  = !session.authorized?"#ffb347":!events.ingreso?"#888":events.retiro?"#4fc3f7":"#1D9E75";
 
   return (
     <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderLeft:`3px solid ${statusColor}`, borderRadius:16, overflow:"hidden", marginBottom:12 }}>
@@ -400,15 +511,15 @@ const handleDeleteSession = async () => {
 
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
             <TimeBtn label="Ingreso del paciente" time={events.ingreso} onRecord={() => recordEvent("ingreso")} disabled={!session.authorized} />
-            <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={() => recordEvent("retiro")} disabled={!events.ingreso || completedMeds < totalTimed || (session.meds||[]).some(m => m.wash?.time && medEvents[`med_${m.id}`]?.fin && !washEvents[`wash_${m.id}`]?.fin)} />
+            <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={() => recordEvent("retiro")} disabled={!events.ingreso || completedMeds < totalTimed || !allWashDone} />
           </div>
 
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
             {(session.meds||[]).map(med => {
-              const ev      = medEvents[`med_${med.id}`] || {};
-              const color   = CAT_COLOR[med.category] || "#888";
-              const started = !!ev.inicio;
-              const ended   = !!ev.fin;
+              const ev       = medEvents[`med_${med.id}`] || {};
+              const color    = CAT_COLOR[med.category] || "#888";
+              const started  = !!ev.inicio;
+              const ended    = !!ev.fin;
               const canStart = canStartMed(med);
               const isEditing = editingId === med.id;
 
@@ -422,7 +533,7 @@ const handleDeleteSession = async () => {
                         <div style={{ fontSize:11, color:"#666", marginTop:1 }}>{med.diluent}{med.time?` · ${med.time} min`:""}</div>
                         {med.parallelType && med.parallelType !== "secuencial" && (
                           <div style={{ fontSize:10, color:"#AFA9EC", marginTop:2 }}>
-                            ⚡ {med.parallelType === "junto" ? "Simultáneo con anterior" : `Inicia ${med.startOffset} min después del anterior`}
+                            ⚡ {med.parallelType==="junto"?"Simultáneo con anterior":`Inicia ${med.startOffset} min después del anterior`}
                           </div>
                         )}
                       </div>
@@ -458,7 +569,6 @@ const handleDeleteSession = async () => {
                       </div>
                     )}
 
-                    {/* Editar/Eliminar — disponible siempre que no haya iniciado */}
                     {!started && (
                       <div style={{ padding:"0 14px 10px", display:"flex", gap:6 }}>
                         <button onClick={() => setEditingId(isEditing ? null : med.id)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️ Editar</button>
@@ -467,12 +577,10 @@ const handleDeleteSession = async () => {
                     )}
                   </div>
 
-                  {/* Formulario de edición inline */}
                   {isEditing && !started && (
                     <EditMedForm med={med} onSave={handleEdit} onCancel={() => setEditingId(null)} />
                   )}
 
-                  {/* Lavado */}
                   {med.wash && med.category !== "adicional" && (
                     <div style={{ paddingLeft:16 }}>
                       <WashCard wash={med.wash} washEvents={washEvents} medId={med.id}
@@ -486,7 +594,6 @@ const handleDeleteSession = async () => {
             })}
           </div>
 
-          {/* Agregar medicamento */}
           {!showAdd ? (
             <button onClick={() => setShowAdd(true)} style={{ width:"100%", padding:"9px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.08)", border:"1px dashed rgba(0,212,170,0.3)", color:"#00d4aa", marginTop:10 }}>
               + Agregar medicamento
@@ -510,9 +617,12 @@ const handleDeleteSession = async () => {
 
 export default function NurseView() {
   const { user, profile } = useAuth();
-  const [sessions, setSessions] = useState([]);
+  const [todaySessions, setTodaySessions]     = useState([]);
+  const [pendingSessions, setPendingSessions]   = useState([]);
+  const [scheduledSessions, setScheduledSessions] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [token, setToken]       = useState(null);
+  const [tab, setTab]           = useState("hoy");
   const today = getToday();
 
   const load = async () => {
@@ -520,40 +630,97 @@ export default function NurseView() {
     try {
       const t = await user.getIdToken(true);
       setToken(t);
-      const data = await fetchSessions(t, profile.center, today);
-      setSessions(data);
+
+      // Sesiones de hoy del centro
+      const todayData = await fetchTodaySessions(t, profile.center, today);
+      setTodaySessions(todayData);
+
+      // Sesiones de la enfermera — pendientes y programadas futuras
+      const nurseData = await fetchSessionsByNurse(t, user.uid);
+      
+      // Pendientes: sin autorizar, de cualquier fecha excepto hoy
+      const pending = nurseData.filter(s => !s.authorized && s.date !== today);
+      setPendingSessions(pending);
+
+      // Programadas: autorizadas, no iniciadas, fecha futura
+      const scheduled = nurseData.filter(s => s.authorized && s.date > today && !s.events?.ingreso);
+      setScheduledSessions(scheduled);
+
     } catch(e) { console.error("Error:", e); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { if (profile?.center) load(); }, [profile?.center]);
 
-  const inCourse = sessions.filter(s => s.status === "en_curso").length;
-  const waiting  = sessions.filter(s => !s.events?.ingreso).length;
-  const done     = sessions.filter(s => s.status === "completado").length;
+  const inCourse = todaySessions.filter(s => s.status === "en_curso").length;
+  const waiting  = todaySessions.filter(s => !s.events?.ingreso).length;
+  const done     = todaySessions.filter(s => s.status === "completado").length;
+
+  const tabs = [
+    { id:"hoy",        label:"Hoy",         count: todaySessions.length },
+    { id:"pendientes", label:"Pendientes",   count: pendingSessions.length },
+    { id:"programados",label:"Programados",  count: scheduledSessions.length },
+  ];
 
   return (
     <div style={{ padding:"24px 28px", maxWidth:800, margin:"0 auto" }}>
-      <div style={{ marginBottom:24, display:"flex", justifyContent:"space-between", alignItems:"flex-end" }}>
+      <div style={{ marginBottom:20, display:"flex", justifyContent:"space-between", alignItems:"flex-end" }}>
         <div>
           <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Mis pacientes</h1>
           <p style={{ fontSize:13, color:"#555" }}>{profile?.center} · {new Date().toLocaleDateString("es-MX", { weekday:"long", day:"numeric", month:"long" })}</p>
         </div>
-        <div style={{ display:"flex", gap:8 }}>
-          {[["en espera",waiting,"#888"],["en curso",inCourse,"#1D9E75"],["completos",done,"#4fc3f7"]].map(([l,v,c]) => (
-            <div key={l} style={{ fontSize:11, padding:"5px 12px", borderRadius:99, background:`${c}14`, border:`1px solid ${c}33`, color:c }}>{v} {l}</div>
-          ))}
-        </div>
+        {tab === "hoy" && (
+          <div style={{ display:"flex", gap:8 }}>
+            {[["en espera",waiting,"#888"],["en curso",inCourse,"#1D9E75"],["completos",done,"#4fc3f7"]].map(([l,v,c]) => (
+              <div key={l} style={{ fontSize:11, padding:"5px 12px", borderRadius:99, background:`${c}14`, border:`1px solid ${c}33`, color:c }}>{v} {l}</div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display:"flex", gap:8, marginBottom:20 }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            padding:"7px 16px", borderRadius:10, fontSize:13, fontWeight:600, cursor:"pointer",
+            background: tab===t.id ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
+            border:`1px solid ${tab===t.id ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.07)"}`,
+            color: tab===t.id ? "#00d4aa" : "#666",
+          }}>
+            {t.label}
+            {t.count > 0 && <span style={{ marginLeft:6, fontSize:10, background: tab===t.id ? "rgba(0,212,170,0.2)" : "rgba(255,255,255,0.1)", padding:"1px 6px", borderRadius:99 }}>{t.count}</span>}
+          </button>
+        ))}
       </div>
 
       {loading ? (
         <div style={{ color:"#555", fontSize:14, padding:24 }}>Cargando...</div>
-      ) : sessions.length === 0 ? (
-        <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
-          No hay sesiones asignadas hoy.
-        </div>
       ) : (
-        sessions.map(s => <SessionCard key={s.id} session={s} token={token} onRefresh={load} user={user} />)
+        <>
+          {tab === "hoy" && (
+            todaySessions.length === 0 ? (
+              <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
+                No hay sesiones asignadas hoy.
+              </div>
+            ) : todaySessions.map(s => <SessionCard key={s.id} session={s} token={token} onRefresh={load} user={user} />)
+          )}
+
+          {tab === "pendientes" && (
+            pendingSessions.length === 0 ? (
+              <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
+                No hay sesiones pendientes de autorización.
+              </div>
+            ) : pendingSessions.map(s => <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} />)
+          )}
+
+          {tab === "programados" && (
+            scheduledSessions.length === 0 ? (
+              <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
+                No hay sesiones programadas próximas.
+              </div>
+            ) : scheduledSessions.map(s => <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} />)
+          )}
+        </>
       )}
     </div>
   );
