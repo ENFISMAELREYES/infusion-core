@@ -15,10 +15,10 @@ export default function Login() {
     setError(""); setLoading(true);
     try {
       await login(email, password);
-      navigate("/");
+      // Esperar a que Firebase confirme la sesión
+      setTimeout(() => navigate("/"), 800);
     } catch {
       setError("Correo o contraseña incorrectos.");
-    } finally {
       setLoading(false);
     }
   };
