@@ -280,7 +280,18 @@ function SessionCard({ session, token, onRefresh, user }) {
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
-
+const handleDeleteSession = async () => {
+    if (!confirm(`¿Eliminar sesión de ${session.patientName}?`)) return;
+    try {
+      const freshToken = await user.getIdToken(true);
+      await fetch(
+        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${session.id}`,
+        { method: "DELETE", headers: { "Authorization": `Bearer ${freshToken}` } }
+      );
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+  };
+  
   const handleAdd = (newMed) => {
     const medWithDefaults = {
       ...newMed,
