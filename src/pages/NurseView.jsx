@@ -388,7 +388,7 @@ function SessionCard({ session, token, onRefresh, user }) {
 
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
             <TimeBtn label="Ingreso del paciente" time={events.ingreso} onRecord={() => recordEvent("ingreso")} disabled={!session.authorized} />
-            <TimeBtn label="Retiro del paciente"  time={events.retiro}  onRecord={() => recordEvent("retiro")}  disabled={!events.ingreso||completedMeds<totalTimed} />
+            <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={() => recordEvent("retiro")} disabled={!events.ingreso || completedMeds < totalTimed || (session.meds||[]).some(m => m.wash?.time && medEvents[`med_${m.id}`]?.fin && !washEvents[`wash_${m.id}`]?.fin)} />
           </div>
 
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
