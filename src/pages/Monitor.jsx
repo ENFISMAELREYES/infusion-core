@@ -157,11 +157,14 @@ function PatientRow({ s }) {
     })()}
   </span>
 )}
-        {m.wash && done && (
-          <span style={{ color: me[`wash_${m.id}`]?.fin ? "#4fc3f7" : "#666", fontSize:10 }}>
-            💧 {me[`wash_${m.id}`]?.fin ? "lavado ✓" : "lavado pendiente"}
-          </span>
-        )}
+        {m.wash && done && (() => {
+  const washEv = s.washEvents?.[`wash_${m.id}`];
+  return (
+    <span style={{ color: washEv?.fin ? "#4fc3f7" : "#666", fontSize:10 }}>
+      💧 {washEv?.fin ? "lavado ✓" : "lavado pendiente"}
+    </span>
+  );
+})()}
       </div>
     );
   })}
