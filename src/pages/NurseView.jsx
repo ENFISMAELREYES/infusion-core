@@ -282,8 +282,14 @@ function SessionCard({ session, token, onRefresh, user }) {
   };
 
   const handleAdd = (newMed) => {
-    const updatedMeds = [...(session.meds||[]), { ...newMed, order:(session.meds||[]).length+1 }];
-    saveMeds(updatedMeds, true); // re-autorizar si ya estaba autorizado
+    const medWithDefaults = {
+      ...newMed,
+      order: (session.meds||[]).length + 1,
+      parallelType: "secuencial",
+      startOffset: null,
+    };
+    const updatedMeds = [...(session.meds||[]), medWithDefaults];
+    saveMeds(updatedMeds, true);
     setShowAdd(false);
   };
 
@@ -311,7 +317,7 @@ function SessionCard({ session, token, onRefresh, user }) {
     const prevEv = medEvents[`med_${prev.id}`] || {};
     if (!med.parallelType || med.parallelType === "secuencial") {
       if (!prevEv.fin) return false;
-      if (prev.wash && !washEvents[`wash_${prev.id}`]?.fin) return false;
+      if (prev.wash?.time && !washEvents[`wash_${prev.id}`]?.fin) return false;
       return true;
     }
     if (med.parallelType === "junto") return !!prevEv.inicio;
