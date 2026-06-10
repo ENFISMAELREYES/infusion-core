@@ -162,8 +162,8 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <div><label style={lbl}>Medicamento</label><input value={med.name} onChange={e => onUpdate(med.id, "name", e.target.value)} placeholder="ej: Bevacizumab" style={inp} /></div>
                   <div><label style={lbl}>Dosis</label><input value={med.dose || ""} onChange={e => onUpdate(med.id, "dose", e.target.value)} placeholder="ej: 780 mg" style={inp} /></div>
-                  <div><label style={lbl}>Dilución</label><input value={med.diluent || ""} onChange={e => onUpdate(med.id, "diluent", e.target.value)} placeholder="ej: 100 ml SF" style={inp} /></div>
-                  <div><label style={lbl}>Tiempo (min)</label><input type="number" min="1" value={med.time || ""} onChange={e => onUpdate(med.id, "time", parseInt(e.target.value))} placeholder="ej: 30" style={inp} /></div>
+                  {med.category !== "domicilio" && <div><label style={labelStyle}>Dilución</label><input required value={med.diluent} onChange={e => setMedField(med.id, "diluent", e.target.value)} placeholder="ej: 100 ml SF" style={inputStyle} /></div>}
+{med.category !== "domicilio" && <div><label style={labelStyle}>Tiempo (minutos)</label><input type="number" min="1" value={med.time} onChange={e => setMedField(med.id, "time", e.target.value)} placeholder="ej: 30" style={inputStyle} /></div>}
                 </div>
                 <div><label style={lbl}>Posición en secuencia</label><input type="number" min="1" value={med.order} onChange={e => onUpdate(med.id, "order", parseInt(e.target.value))} style={inp} /></div>
                 <button onClick={() => onApprove(med.id, calcWash(med, {}))} style={{ padding: "10px", borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: "pointer", background: "linear-gradient(135deg,#1D9E75,#0F6E56)", border: "none", color: "#fff" }}>✓ Confirmar medicamento</button>
