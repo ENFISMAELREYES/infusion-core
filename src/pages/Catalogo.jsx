@@ -239,6 +239,43 @@ function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRef
                 <div style={{ padding:"0 16px 16px", borderTop:"1px solid rgba(255,255,255,0.05)" }}>
                   <div style={{ paddingTop:12, display:"flex", flexDirection:"column", gap:12 }}>
 
+                    {/* Datos del paciente */}
+{patientSessions[0] && (
+  <div style={{ padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)" }}>
+    <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
+      {patientSessions[0].dob && (
+        <div>
+          <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Fecha de nacimiento</div>
+          <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace", marginTop:2 }}>
+            {patientSessions[0].dob}
+            {(() => {
+              try {
+                const [y,m,d] = patientSessions[0].dob.split("-").map(Number);
+                const today = new Date();
+                let age = today.getFullYear() - y;
+                if (today.getMonth()+1 < m || (today.getMonth()+1 === m && today.getDate() < d)) age--;
+                return <span style={{ fontSize:11, color:"#666", marginLeft:8 }}>{age} años</span>;
+              } catch(e) { return null; }
+            })()}
+          </div>
+        </div>
+      )}
+      {patientSessions[0].diagnosis && (
+        <div>
+          <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Diagnóstico</div>
+          <div style={{ fontSize:13, color:"#aaa", marginTop:2 }}>{patientSessions[0].diagnosis}</div>
+        </div>
+      )}
+      {patientSessions[0].physician && (
+        <div>
+          <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Médico tratante</div>
+          <div style={{ fontSize:13, color:"#aaa", marginTop:2 }}>{patientSessions[0].physician}</div>
+        </div>
+      )}
+    </div>
+  </div>
+)}
+                    
                     {/* Estatus */}
                     <div>
                       <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Estatus del paciente</div>
