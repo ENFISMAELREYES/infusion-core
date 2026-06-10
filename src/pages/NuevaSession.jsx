@@ -315,8 +315,8 @@ export default function NuevaSession() {
                   </div>
                   <div><label style={labelStyle}>Medicamento</label><input required value={med.name} onChange={e => setMedField(med.id, "name", e.target.value)} placeholder="ej: Bevacizumab" style={inputStyle} /></div>
                   <div><label style={labelStyle}>Dosis</label><input required value={med.dose} onChange={e => setMedField(med.id, "dose", e.target.value)} placeholder="ej: 780 mg" style={inputStyle} /></div>
-                  <div><label style={labelStyle}>Dilución</label><input required value={med.diluent} onChange={e => setMedField(med.id, "diluent", e.target.value)} placeholder="ej: 100 ml SF" style={inputStyle} /></div>
-                  <div><label style={labelStyle}>Tiempo (minutos)</label><input type="number" min="1" value={med.time} onChange={e => setMedField(med.id, "time", e.target.value)} placeholder="ej: 30" style={inputStyle} /></div>
+                  {med.category !== "domicilio" && <div><label style={labelStyle}>Dilución</label><input required value={med.diluent} onChange={e => setMedField(med.id, "diluent", e.target.value)} placeholder="ej: 100 ml SF" style={inputStyle} /></div>}
+{med.category !== "domicilio" && <div><label style={labelStyle}>Tiempo (minutos)</label><input type="number" min="1" value={med.time} onChange={e => setMedField(med.id, "time", e.target.value)} placeholder="ej: 30" style={inputStyle} /></div>}
                  {meds.indexOf(meds.find(m => m.id === med.id)) > 0 && (
   <div style={{ gridColumn:"1/-1" }}>
     <div style={{ display:"flex", alignItems:"center", gap:10 }}>
