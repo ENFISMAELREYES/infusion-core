@@ -434,10 +434,14 @@ function SessionCard({ session, token, onRefresh, user }) {
     saveMeds(updatedMeds, session.authorized);
   };
 
-  const completedMeds = (session.meds||[]).filter(m => medEvents[`med_${m.id}`]?.fin).length;
-  const totalTimed    = (session.meds||[]).filter(m => m.time).length;
+  const completedMeds = (session.meds||[]).filter(m => 
+    m.category === "domicilio" ? !!medEvents[`med_${m.id}`]?.inicio : !!medEvents[`med_${m.id}`]?.fin
+  ).length;
+const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domicilio").length;
   const pct           = totalTimed ? Math.round((completedMeds/totalTimed)*100) : 0;
-  const allWashDone   = (session.meds||[]).every(m => !m.wash?.time || !medEvents[`med_${m.id}`]?.fin || washEvents[`wash_${m.id}`]?.fin);
+  const allWashDone = (session.meds||[]).every(m => 
+    m.category === "domicilio" || !m.wash?.time || !medEvents[`med_${m.id}`]?.fin || washEvents[`wash_${m.id}`]?.fin
+  );;
 
   const canStartMed = (med) => {
     if (!session.authorized || !events.ingreso) return false;
@@ -548,7 +552,20 @@ function SessionCard({ session, token, onRefresh, user }) {
                         {med.correction.general && <div style={{ fontSize:11, color:"#aaa" }}>Nota: {med.correction.general}</div>}
                       </div>
                     )}
-
+                    
+{med.category === "domicilio" && (
+  <div style={{ padding:"0 14px 10px" }}>
+    {!medEvents[`med_${med.id}`]?.inicio ? (
+      <button onClick={() => recordMedEvent(med.id, "inicio")} style={{ width:"100%", padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.15)", border:"1px solid rgba(175,169,236,0.4)", color:"#AFA9EC" }}>
+        📦 Marcar como entregado
+      </button>
+    ) : (
+      <div style={{ padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(175,169,236,0.08)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC" }}>
+        ✓ Entregado a las {medEvents[`med_${med.id}`]?.inicio}
+      </div>
+    )}
+  </div>
+)}
                     {med.time && (
                       <div style={{ padding:"0 14px 10px", display:"flex", gap:8 }}>
                         {!started && <button onClick={() => recordMedEvent(med.id,"inicio")} disabled={!canStart} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:canStart?"pointer":"not-allowed", background:canStart?"rgba(29,158,117,0.12)":"rgba(255,255,255,0.03)", border:`1px solid ${canStart?"rgba(29,158,117,0.3)":"rgba(255,255,255,0.06)"}`, color:canStart?"#1D9E75":"#444" }}>▶ Iniciar</button>}
