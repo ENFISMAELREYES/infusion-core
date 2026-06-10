@@ -87,6 +87,7 @@ const CAT_COLOR = {
   inmunoterapia: { dark: "rgba(93,202,165,0.15)",  border: "#5DCAA5" },
   quimioterapia: { dark: "rgba(240,149,149,0.15)", border: "#F09595" },
   adicional:     { dark: "rgba(175,169,236,0.15)", border: "#AFA9EC" },
+  domicilio:     { dark: "rgba(130,196,248,0.15)", border: "#82C4F8" },
 };
 const CATEGORIES = ["premedicacion", "inmunoterapia", "quimioterapia", "adicional", "domicilio"];
 const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", domicilio:"Domicilio" };
