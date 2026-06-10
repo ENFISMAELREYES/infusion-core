@@ -367,13 +367,31 @@ function SessionCard({ session, token, onRefresh, user }) {
   const medEvents  = session.medEvents || {};
   const washEvents = session.washEvents || {};
 
-  const recordEvent = async (key) => {
+ const recordEvent = async (key) => {
     try {
       const freshToken = await user.getIdToken(true);
       const t = nowStr();
       const updates = { [`events.${key}`]: t };
-      if (key === "ingreso") updates.status = "en_curso";
-      if (key === "retiro")  updates.status = "completado";
+      if (key === "ingreso") {
+        updates.status = "en_curso";
+        // Asignar número consecutivo del centro
+        const counterId = `counter_${session.center}`;
+        const counterRes = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${counterId}`,
+          { headers: { "Authorization": `Bearer ${freshToken}` } }
+        );
+        const counterDoc = await counterRes.json();
+        const lastNumber = counterDoc.fields?.lastNumber?.integerValue ? parseInt(counterDoc.fields.lastNumber.integerValue) : 0;
+        const newNumber  = lastNumber + 1;
+        // Actualizar contador
+        await fetch(
+          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${counterId}?updateMask.fieldPaths=lastNumber`,
+          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
+            body: JSON.stringify({ fields: { lastNumber: { integerValue: String(newNumber) } } }) }
+        );
+        updates.infusionNumber = newNumber;
+      }
+      if (key === "retiro") updates.status = "completado";
       await patchSession(freshToken, session.id, updates);
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
