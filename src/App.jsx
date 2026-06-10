@@ -10,6 +10,7 @@ import NuevaSession from "./pages/NuevaSession";
 import Historial from "./pages/Historial";
 import Catalogo from "./pages/Catalogo";
 import Reportes from "./pages/Reportes";
+import Calculadoras from "./pages/Calculadoras";
 
 function PrivateRoute({ children, roles }) {
   const { user, profile, loading } = useAuth();
@@ -55,6 +56,7 @@ function AppRoutes() {
         <Route path="registrar" element={<PrivateRoute roles={["enfermera"]}><NuevaSession /></PrivateRoute>} />
         <Route path="*" element={<Navigate to={profile?.role === "enfermera" ? "/pacientes" : "/"} replace />} />
         <Route path="reportes" element={<PrivateRoute roles={["jefe"]}><Reportes /></PrivateRoute>} />
+        <Route path="calculadoras" element={<PrivateRoute roles={["jefe","enfermera"]}><Calculadoras /></PrivateRoute>} />
       </Route>
     </Routes>
   );
