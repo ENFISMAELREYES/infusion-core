@@ -642,8 +642,8 @@ const nurseData = await fetchSessionsByNurse(t, profile.center);
       const pending = nurseData.filter(s => !s.authorized && s.date !== today);
       setPendingSessions(pending);
 
-      // Programadas: autorizadas, no iniciadas, fecha futura
-      const scheduled = nurseData.filter(s => s.authorized && s.date > today && !s.events?.ingreso);
+      // Programadas: autorizadas, no iniciadas, cualquier fecha excepto hoy
+const scheduled = nurseData.filter(s => s.authorized && s.date !== today && !s.events?.ingreso);
       setScheduledSessions(scheduled);
 
     } catch(e) { console.error("Error:", e); }
