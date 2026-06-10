@@ -43,7 +43,7 @@ async function fetchSessionsByNurse(token, nurseId) {
     body: JSON.stringify({
       structuredQuery: {
         from:[{ collectionId:"sessions" }],
-        where:{ fieldFilter:{ field:{ fieldPath:"nurseId" }, op:"EQUAL", value:{ stringValue:nurseId } } },
+        where:{ fieldFilter:{ field:{ fieldPath:"center" }, op:"EQUAL", value:{ stringValue:nurseId } } },
         orderBy:[{ field:{ fieldPath:"date" }, direction:"DESCENDING" }],
         limit: 100,
       }
@@ -635,8 +635,8 @@ export default function NurseView() {
       const todayData = await fetchTodaySessions(t, profile.center, today);
       setTodaySessions(todayData);
 
-      // Sesiones de la enfermera — pendientes y programadas futuras
-      const nurseData = await fetchSessionsByNurse(t, user.uid);
+      // Sesiones del centro — pendientes y programadas futuras
+const nurseData = await fetchSessionsByNurse(t, profile.center);
       
       // Pendientes: sin autorizar, de cualquier fecha excepto hoy
       const pending = nurseData.filter(s => !s.authorized && s.date !== today);
