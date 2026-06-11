@@ -32,7 +32,7 @@ async function fetchCollection(token, collection) {
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
 
-async function savePatientScheme(token, data) {
+async function savePatientScheme(token, data, schemes) {
   const toFV = (val) => {
     if (typeof val === "string") return { stringValue: val };
     if (typeof val === "boolean") return { booleanValue: val };
@@ -43,20 +43,82 @@ async function savePatientScheme(token, data) {
     return { stringValue: String(val) };
   };
 
+  let psId = data.id;
+
   if (data.id) {
     const fields = Object.fromEntries(Object.entries(data).filter(([k]) => k !== "id").map(([k, v]) => [k, toFV(v)]));
     const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
     await fetch(
-      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/patientSchemes/${data.id}?${mask}`,
-      { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) }
+      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/patientSchemes/${data.id}?${mask}`,
+      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) }
     );
   } else {
     const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toFV(v)]));
-    await fetch(
-      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/patientSchemes?key=${API_KEY}`,
-      { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) }
+    const res = await fetch(
+      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/patientSchemes?key=${API_KEY}`,
+      { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) }
     );
+    const doc = await res.json();
+    psId = doc.name.split("/").pop();
+
+    // Generar citas automáticamente
+    if (data.startDate && data.schemeId) {
+      const scheme = schemes.find(s => s.id === data.schemeId);
+      if (scheme) {
+        const effectiveCycles = data.totalCyclesOverride || scheme.totalCycles;
+        const effectiveScheme = { ...scheme, totalCycles: effectiveCycles };
+        const dates = calcDates(data.startDate, effectiveScheme, data.currentCycle || 1);
+        const today = new Date().toISOString().split("T")[0];
+        for (const d of dates) {
+          const apptFields = {
+            patientSchemeId: toFV(psId),
+            patientName:     toFV(data.patientName),
+            schemeId:        toFV(data.schemeId),
+            date:            toFV(d.date),
+            cycle:           toFV(d.cycle),
+            day:             toFV(d.day),
+            label:           toFV(d.label),
+            status:          toFV(d.date < today ? "past" : "scheduled"),
+            center:          toFV(data.center || ""),
+            createdAt:       toFV(new Date().toISOString()),
+          };
+          await fetch(
+            `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments?key=${API_KEY}`,
+            { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields: apptFields }) }
+          );
+        }
+      }
+    }
   }
+}
+
+async function fetchAppointments(token) {
+  const url = `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents:runQuery`;
+  const res = await fetch(url, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+    body: JSON.stringify({ structuredQuery: {
+      from:[{ collectionId:"appointments" }],
+      orderBy:[{ field:{ fieldPath:"date" }, direction:"ASCENDING" }],
+      limit: 2000,
+    }})
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data.filter(d => d.document).map(d => parseDoc(d.document));
+}
+
+async function rescheduleAppointment(token, apptId, newDate) {
+  await fetch(
+    `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${apptId}?updateMask.fieldPaths=date&updateMask.fieldPaths=rescheduled&updateMask.fieldPaths=originalDate`,
+    { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+      body: JSON.stringify({ fields: {
+        date:         { stringValue: newDate },
+        rescheduled:  { booleanValue: true },
+        originalDate: { stringValue: newDate },
+      }})
+    }
+  );
 }
 
 async function deletePatientScheme(token, id) {
@@ -286,6 +348,7 @@ export default function Agenda() {
   const [schemes, setSchemes]               = useState([]);
   const [patientSchemes, setPatientSchemes] = useState([]);
   const [sessions, setSessions]             = useState([]);
+  const [appointments, setAppointments] = useState([]);
   const [loading, setLoading]               = useState(true);
   const [token, setToken]                   = useState(null);
   const [view, setView]                     = useState("calendar");
