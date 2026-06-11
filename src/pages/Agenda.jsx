@@ -385,7 +385,7 @@ setAppointments(appts);
   const handleSave = async (data) => {
     try {
       const t = await user.getIdToken(true);
-      await savePatientScheme(t, { ...data, updatedAt: new Date().toISOString() });
+      await savePatientScheme(t, { ...data, updatedAt: new Date().toISOString() }, schemes);
       setShowForm(false);
       setEditing(null);
       load();
