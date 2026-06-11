@@ -4,8 +4,8 @@ import { useAuth } from "../hooks/useAuth";
 const PROJECT_ID = "infusion-core";
 const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
 
-const CATEGORIES = ["premedicacion", "inmunoterapia", "quimioterapia", "adicional", "domicilio"];
-const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", domicilio:"Domicilio" };
+const CATEGORIES = ["premedicacion","inmunoterapia","quimioterapia","adicional","especialidad","domicilio"];
+const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", domicilio:"Domicilio" };
 const emptyMed = (order) => ({ id: Date.now() + order, order, name: "", dose: "", diluent: "", time: "", category: "premedicacion", parallelType: "secuencial", startOffset: null });
 
 function getToday() {
