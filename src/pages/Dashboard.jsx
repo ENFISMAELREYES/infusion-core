@@ -95,6 +95,15 @@ export default function Dashboard() {
         <p style={{ fontSize: 13, color: "#555" }}>{new Date().toLocaleDateString("es-MX", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
       </div>
 
+      <button onClick={async () => {
+  const token = await user.getIdToken(true);
+  console.log("TOKEN:", token);
+  navigator.clipboard.writeText(token);
+  alert("Token copiado al portapapeles");
+}} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa", marginBottom:16 }}>
+  📋 Copiar token
+</button>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 28 }}>
         <StatCard label="En curso"      value={enCurso}    accent="#00d4aa" />
         <StatCard label="Pendientes"    value={pendiente}  accent="#ffb347" />
