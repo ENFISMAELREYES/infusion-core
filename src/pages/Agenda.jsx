@@ -256,6 +256,13 @@ function SchemeForm({ schemes, sessions, onSave, onCancel, editing }) {
           <input type="number" min="1" value={form.totalCyclesOverride} onChange={e => set("totalCyclesOverride", e.target.value)} placeholder={selectedScheme?.totalCycles || "—"} style={inputStyle} />
         </div>
         <div>
+  <label style={labelStyle}>Centro</label>
+  <select value={form.center || "CITIO"} onChange={e => set("center", e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
+    <option value="CITIO">CITIO</option>
+    <option value="CIPI">CIPI</option>
+  </select>
+</div>
+        <div>
           <label style={labelStyle}>Estado</label>
           <select value={form.active ? "true" : "false"} onChange={e => set("active", e.target.value === "true")} style={{ ...inputStyle, cursor:"pointer" }}>
             <option value="true">Activo</option>
