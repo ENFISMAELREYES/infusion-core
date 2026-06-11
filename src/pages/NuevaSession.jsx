@@ -256,6 +256,17 @@ const [form, setForm] = useState({
     ))}
   </div>
 )}
+      {sessionType && (
+  <>
+    <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
+      <button onClick={() => setSessionType(null)} style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"6px 12px", color:"#666", fontSize:12, cursor:"pointer" }}>← Volver</button>
+      <span style={{ fontSize:13, color:"#00d4aa", fontWeight:600 }}>
+        {sessionType === "iv" ? "💉 Infusión IV" : sessionType === "im" ? "💊 Intramuscular" : sessionType === "sc" ? "🩺 Subcutánea" : "📦 Entrega"}
+      </span>
+    </div>
+    {/* aquí va todo el formulario existente */}
+  </>
+)}
       <form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:24 }}>
         <section style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
           <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:16 }}>Datos del paciente</div>
