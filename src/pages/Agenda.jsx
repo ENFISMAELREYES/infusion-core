@@ -235,6 +235,8 @@ export default function Agenda() {
   const [view, setView]                     = useState("calendar");
   const [selectedMonth, setSelectedMonth]   = useState(new Date());
   const [showForm, setShowForm]             = useState(false);
+  const [showSchemeForm, setShowSchemeForm] = useState(false);
+const [editingScheme, setEditingScheme] = useState(null);
   const [editing, setEditing]               = useState(null);
   const [selectedDate, setSelectedDate]     = useState(null);
   const [selectedEvents, setSelectedEvents] = useState([]);
