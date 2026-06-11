@@ -190,7 +190,7 @@ function CalendarView({ appointments, schemes, selectedMonth, onSelectDate }) {
               }}>
               <div style={{ fontSize:12, color: isToday ? "#00d4aa" : "#888", fontWeight: isToday ? 700 : 400, marginBottom:3 }}>{day}</div>
               {events.slice(0,3).map((e, j) => (
-                <div key={j} style={{ fontSize:9, padding:"1px 4px", borderRadius:4, background: e.status==="confirmed" ? "rgba(29,158,117,0.2)" : "rgba(0,212,170,0.15)", color: e.status==="confirmed" ? "#1D9E75" : "#00d4aa", marginBottom:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                <div key={j} style={{ fontSize:9, padding:"1px 4px", borderRadius:4, background: e.status==="confirmed" ? "rgba(29,158,117,0.2)" : e.center==="CITIO" ? "rgba(79,195,247,0.15)" : "rgba(175,169,236,0.15)", color: e.status==="confirmed" ? "#1D9E75" : e.center==="CITIO" ? "#4fc3f7" : "#AFA9EC", marginBottom:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
                   {e.label} {e.patientName?.split(" ")[0]}
                 </div>
               ))}
@@ -545,7 +545,7 @@ const handleDeleteScheme = async (id) => {
                   {upcomingDates.slice(0,50).map((d, i) => {
                     const isToday = d.date === today;
                     return (
-                      <div key={i} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 14px", borderRadius:10, background: isToday ? "rgba(0,212,170,0.08)" : "rgba(255,255,255,0.03)", border:`1px solid ${isToday ? "rgba(0,212,170,0.25)" : "rgba(255,255,255,0.07)"}` }}>
+                     <div key={j} style={{ fontSize:9, padding:"1px 4px", borderRadius:4, background: e.status==="confirmed" ? "rgba(29,158,117,0.2)" : e.center==="CITIO" ? "rgba(79,195,247,0.15)" : "rgba(175,169,236,0.15)", color: e.status==="confirmed" ? "#1D9E75" : e.center==="CITIO" ? "#4fc3f7" : "#AFA9EC", marginBottom:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
                         <div style={{ width:80, fontSize:12, color: isToday ? "#00d4aa" : "#888", fontFamily:"'IBM Plex Mono', monospace", flexShrink:0 }}>{d.date}</div>
                         <div style={{ flex:1 }}>
                           <span style={{ fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{d.patientName}</span>
@@ -572,7 +572,7 @@ const handleDeleteScheme = async (id) => {
                 const effectiveCycles = ps.totalCyclesOverride || scheme?.totalCycles;
                 const nextDates = scheme ? calcDates(ps.startDate, { ...scheme, totalCycles: effectiveCycles }, ps.currentCycle||1).filter(d => d.date >= today).slice(0,3) : [];
                 return (
-                  <div key={ps.id} style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${ps.active ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.03)"}`, borderRadius:12, padding:"14px 18px" }}>
+                  <div key={ps.id} style={{ background:"rgba(255,255,255,0.03)", borderLeft:`3px solid ${ps.center==="CITIO" ? "#4fc3f7" : "#AFA9EC"}`, border:`1px solid ${ps.active ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.03)"}`, borderRadius:12, padding:"14px 18px" }}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12 }}>
                       <div style={{ flex:1 }}>
                         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
