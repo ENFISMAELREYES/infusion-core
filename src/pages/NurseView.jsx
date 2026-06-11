@@ -616,7 +616,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                     <EditMedForm med={med} onSave={handleEdit} onCancel={() => setEditingId(null)} />
                   )}
 
-                  {med.wash && med.category !== "adicional" && (
+                  {med.wash && med.category !== "domicilio" && (
                     <div style={{ paddingLeft:16 }}>
                       <WashCard wash={med.wash} washEvents={washEvents} medId={med.id}
                         onStart={() => recordWashEvent(med.id,"inicio")}
