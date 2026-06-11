@@ -175,6 +175,8 @@ const [form, setForm] = useState({
 
       const data = {
         ...form,
+        sessionType: sessionType || "iv",
+        center:    profile?.center || "",,
         center:    profile?.center || "",
         nurseId:   user?.uid || "",
         nurseName: profile?.name || "",
@@ -202,6 +204,7 @@ const [form, setForm] = useState({
   const reset = () => {
     setForm({ patientName:"", dob:"", diagnosis:"", physician:"", insurance:"", cycle:"", applicationDate:today });
     setMeds([emptyMed(1)]); setSaved(false); setError("");
+    setSessionType(null);
   };
 
   const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"10px 13px", color:"#f0f0f0", fontSize:13, outline:"none" };
