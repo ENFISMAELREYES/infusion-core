@@ -224,6 +224,62 @@ function SchemeForm({ schemes, sessions, onSave, onCancel, editing }) {
     </div>
   );
 }
+function SchemeEditor({ scheme, onSave, onCancel }) {
+  const inp = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
+  const lbl = { fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 };
+  const [form, setForm] = useState(scheme ? {
+    ...scheme,
+    administrationDays: scheme.administrationDays?.join(", ") || "",
+  } : { name:"", description:"", totalCycles:6, cycleDurationDays:21, administrationDays:"1", active:true });
+  const set = (k,v) => setForm(f => ({ ...f, [k]:v }));
+
+  const handleSave = () => {
+    const days = form.administrationDays.toString().split(",").map(d => parseInt(d.trim())).filter(d => !isNaN(d));
+    onSave({
+      ...(scheme?.id ? { id: scheme.id } : {}),
+      name: form.name,
+      description: form.description || "",
+      totalCycles: parseInt(form.totalCycles) || 6,
+      cycleDurationDays: parseInt(form.cycleDurationDays) || 21,
+      administrationDays: days,
+      active: true,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  return (
+    <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(0,212,170,0.25)", borderRadius:12, padding:"18px", marginBottom:16 }}>
+      <div style={{ fontSize:13, color:"#00d4aa", fontWeight:600, marginBottom:14 }}>{scheme ? "✏️ Editar esquema" : "➕ Nuevo esquema"}</div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <div style={{ gridColumn:"1/-1" }}>
+          <label style={lbl}>Nombre del esquema</label>
+          <input value={form.name} onChange={e => set("name", e.target.value)} placeholder="ej: BEP" style={inp} />
+        </div>
+        <div style={{ gridColumn:"1/-1" }}>
+          <label style={lbl}>Descripción (medicamentos)</label>
+          <input value={form.description} onChange={e => set("description", e.target.value)} placeholder="ej: BLEOMICINA - ETOPOSIDO - CISPLATINO" style={inp} />
+        </div>
+        <div>
+          <label style={lbl}>Duración del ciclo (días)</label>
+          <input type="number" min="1" value={form.cycleDurationDays} onChange={e => set("cycleDurationDays", e.target.value)} style={inp} />
+        </div>
+        <div>
+          <label style={lbl}>Total de ciclos</label>
+          <input type="number" min="1" value={form.totalCycles} onChange={e => set("totalCycles", e.target.value)} style={inp} />
+        </div>
+        <div style={{ gridColumn:"1/-1" }}>
+          <label style={lbl}>Días de administración (separados por coma)</label>
+          <input value={form.administrationDays} onChange={e => set("administrationDays", e.target.value)} placeholder="ej: 1, 8, 15" style={inp} />
+          <div style={{ fontSize:11, color:"#555", marginTop:4 }}>Ejemplo: "1" para solo día 1, "1, 8, 15" para días 1, 8 y 15</div>
+        </div>
+      </div>
+      <div style={{ display:"flex", gap:8, marginTop:14 }}>
+        <button onClick={handleSave} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff" }}>✓ Guardar</button>
+        <button onClick={onCancel} style={{ padding:"10px 16px", borderRadius:9, fontSize:13, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666" }}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
 
 export default function Agenda() {
   const { user } = useAuth();
