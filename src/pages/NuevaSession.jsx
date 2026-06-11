@@ -267,6 +267,7 @@ const [form, setForm] = useState({
     {/* aquí va todo el formulario existente */}
   </>
 )}
+{sessionType && (
       <form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:24 }}>
         <section style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
           <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:16 }}>Datos del paciente</div>
@@ -401,6 +402,7 @@ const [form, setForm] = useState({
           {saving ? "Guardando..." : "Enviar para autorización →"}
         </button>
       </form>
+)}
     </div>
   );
 }
