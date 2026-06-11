@@ -89,8 +89,8 @@ const CAT_COLOR = {
   adicional:     { dark: "rgba(175,169,236,0.15)", border: "#AFA9EC" },
   domicilio:     { dark: "rgba(130,196,248,0.15)", border: "#82C4F8" },
 };
-const CATEGORIES = ["premedicacion", "inmunoterapia", "quimioterapia", "adicional", "domicilio"];
-const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", domicilio:"Domicilio" };
+const CATEGORIES = ["premedicacion","inmunoterapia","quimioterapia","adicional","especialidad","domicilio"];
+const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", domicilio:"Domicilio" };
 
 function calcWash(med, draft) {
   const washTime     = draft.washTime !== undefined ? draft.washTime : (med.category === "premedicacion" ? 5 : 15);
