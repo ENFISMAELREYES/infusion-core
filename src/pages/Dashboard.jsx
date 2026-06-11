@@ -95,63 +95,6 @@ export default function Dashboard() {
         <p style={{ fontSize: 13, color: "#555" }}>{new Date().toLocaleDateString("es-MX", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
       </div>
 
-     <button onClick={async () => {
-  const token = await user.getIdToken(true);
-  const schemes = [
-    { name:"CARBO+PEME", description:"CARBOPLATINO+PEMETREXED", totalCycles:6, cycleDurationDays:21, administrationDays:[1] },
-    { name:"CARBOXIMALTOSA FERRICA", description:"", totalCycles:1, cycleDurationDays:1, administrationDays:[1] },
-    { name:"FOLFOX", description:"FOLINATO CALCICO + FLUOROURACILO + OXALIPLATINO", totalCycles:12, cycleDurationDays:14, administrationDays:[1] },
-    { name:"EDARAVONA", description:"", totalCycles:6, cycleDurationDays:28, administrationDays:[1,2,3,4,5,6,7,8,9,10,11,12,13,14] },
-    { name:"PEMBRO+5FU+CISPLA", description:"PEMBROLIZUMAB + FLUOROURACILO + CISPLATINO", totalCycles:8, cycleDurationDays:21, administrationDays:[1] },
-    { name:"RITUXIMAB-BENDAMUSTINA", description:"", totalCycles:6, cycleDurationDays:28, administrationDays:[1,2] },
-    { name:"CARBO-TAX", description:"CARBOPLATINO + PACLITAXEL (TRISEMANAL)", totalCycles:6, cycleDurationDays:21, administrationDays:[1] },
-    { name:"BEV+PLD", description:"BEVACIZUMAB + DOXORUBICINA LIPOSOMAL PEGILADA", totalCycles:6, cycleDurationDays:28, administrationDays:[1,15] },
-    { name:"EPOCH-R 21", description:"RITUXIMAB+CICLOFOSFAMIDA+DOXORUBICINA+VINCRISTINA+ETOPOSIDO", totalCycles:8, cycleDurationDays:21, administrationDays:[1,2,3,4,5,7,12,15] },
-    { name:"NIVOLUMAB + IPILIMUMAB", description:"", totalCycles:6, cycleDurationDays:21, administrationDays:[1] },
-    { name:"DOCETAXEL", description:"DOCETAXEL", totalCycles:6, cycleDurationDays:21, administrationDays:[1] },
-    { name:"NIVOLUMAB 240", description:"", totalCycles:12, cycleDurationDays:14, administrationDays:[1] },
-    { name:"CheckMate 9LA", description:"NIVOLUMAB+IPILIMUMAB+PEMETREXED+CARBOPLATINO", totalCycles:6, cycleDurationDays:21, administrationDays:[1] },
-    { name:"CE", description:"CARBOPLATINO / ETOPOSIDO", totalCycles:6, cycleDurationDays:21, administrationDays:[1,2,3] },
-    { name:"CARBO-TAX-PEMB", description:"PEMBROLIZUMAB / PACLITAXEL / CARBOPLATINO", totalCycles:8, cycleDurationDays:21, administrationDays:[1,8,15] },
-    { name:"LUSPATERCEPT", description:"REBLOZY", totalCycles:8, cycleDurationDays:21, administrationDays:[1] },
-    { name:"TAGRISSO", description:"", totalCycles:10, cycleDurationDays:28, administrationDays:[1] },
-    { name:"GC", description:"GEMCITABINA / CISPLATINO", totalCycles:6, cycleDurationDays:21, administrationDays:[1,8] },
-    { name:"DURVALUMAB", description:"DURVALUMAB", totalCycles:12, cycleDurationDays:28, administrationDays:[1] },
-    { name:"CISPLATINO SEMANAL", description:"CISPLATINO SEMANAL", totalCycles:6, cycleDurationDays:7, administrationDays:[1] },
-    { name:"GEM + NAB-PACLITAXEL", description:"", totalCycles:6, cycleDurationDays:28, administrationDays:[1,8,15] },
-    { name:"R-CHOP", description:"RITUXIMAB + CICLOFOSFAMIDA + DOXORRUBICINA + VINCRISTINA", totalCycles:6, cycleDurationDays:21, administrationDays:[1] },
-    { name:"AC + PEMBRO", description:"DOXORUBICINA + CICLOFOSFAMIDA + PEMBROLIZUMAB", totalCycles:4, cycleDurationDays:21, administrationDays:[1] },
-    { name:"NAB PACLITAXEL", description:"", totalCycles:6, cycleDurationDays:7, administrationDays:[1] },
-    { name:"ERBITAX", description:"CETUXIMAB - PACLITAXEL", totalCycles:6, cycleDurationDays:21, administrationDays:[1,8,15,21] },
-    { name:"BEP", description:"BLEOMICINA - ETOPOSIDO - CISPLATINO", totalCycles:5, cycleDurationDays:21, administrationDays:[1,2,3,4,5,8,15] },
-    { name:"CARBOPLATINO 21D", description:"CARBOPLATINO 21 DIAS", totalCycles:6, cycleDurationDays:21, administrationDays:[1] },
-  ];
-  const toFV = (val) => {
-    if (typeof val === "string") return { stringValue: val };
-    if (typeof val === "boolean") return { booleanValue: val };
-    if (typeof val === "number") return { integerValue: String(val) };
-    if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
-    return { stringValue: String(val) };
-  };
-  let ok = 0;
-  for (const s of schemes) {
-    const fields = {
-      name: toFV(s.name), description: toFV(s.description),
-      totalCycles: toFV(s.totalCycles), cycleDurationDays: toFV(s.cycleDurationDays),
-      administrationDays: toFV(s.administrationDays), active: { booleanValue: true },
-      createdAt: { stringValue: new Date().toISOString() },
-    };
-    const res = await fetch(
-      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/schemes`,
-      { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
-    );
-    if (res.ok) ok++;
-  }
-  alert(`✓ ${ok} esquemas subidos`);
-}} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(175,169,236,0.15)", border:"1px solid rgba(175,169,236,0.4)", color:"#AFA9EC", marginBottom:16 }}>
-  📋 Subir esquemas oncológicos
-</button>
-
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 28 }}>
         <StatCard label="En curso"      value={enCurso}    accent="#00d4aa" />
         <StatCard label="Pendientes"    value={pendiente}  accent="#ffb347" />
