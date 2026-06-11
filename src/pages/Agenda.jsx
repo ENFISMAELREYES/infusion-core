@@ -475,6 +475,41 @@ const handleDeleteScheme = async (id) => {
               })}
             </div>
           )}
+          {/* Vista esquemas */}
+{view === "schemes" && (
+  <div>
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+      <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase" }}>{schemes.length} esquemas registrados</div>
+      <button onClick={() => { setShowSchemeForm(true); setEditingScheme(null); }} style={{ padding:"7px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+        + Nuevo esquema
+      </button>
+    </div>
+
+    {showSchemeForm && (
+      <SchemeEditor scheme={editingScheme} onSave={handleSaveScheme} onCancel={() => { setShowSchemeForm(false); setEditingScheme(null); }} />
+    )}
+
+    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+      {schemes.sort((a,b) => a.name.localeCompare(b.name)).map(s => (
+        <div key={s.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, padding:"14px 18px", display:"flex", alignItems:"flex-start", gap:12 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:14, color:"#f0f0f0", fontWeight:600, marginBottom:3 }}>{s.name}</div>
+            {s.description && <div style={{ fontSize:12, color:"#666", marginBottom:4 }}>{s.description}</div>}
+            <div style={{ display:"flex", gap:12, flexWrap:"wrap", fontSize:11, color:"#555" }}>
+              <span>🔄 Cada {s.cycleDurationDays} días</span>
+              <span>📅 Días: {s.administrationDays?.join(", ")}</span>
+              <span>🎯 {s.totalCycles} ciclos</span>
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:6 }}>
+            <button onClick={() => { setEditingScheme(s); setShowSchemeForm(true); }} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️</button>
+            <button onClick={() => handleDeleteScheme(s.id)} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
         </>
       )}
     </div>
