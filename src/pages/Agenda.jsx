@@ -318,7 +318,7 @@ export default function Agenda() {
 
       {/* Tabs */}
       <div style={{ display:"flex", gap:8, marginBottom:20 }}>
-        {[["calendar","📅","Calendario"],["list","📋","Lista de citas"],["patients","👥","Pacientes"]].map(([id,icon,label]) => (
+        {[["calendar","📅","Calendario"],["list","📋","Lista de citas"],["patients","👥","Pacientes"],["schemes","🧬","Esquemas"]].map(([id,icon,label]) => (
           <button key={id} onClick={() => setView(id)} style={{
             padding:"7px 16px", borderRadius:10, fontSize:13, fontWeight:600, cursor:"pointer",
             background: view===id ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
