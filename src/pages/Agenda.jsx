@@ -366,14 +366,16 @@ const [editingScheme, setEditingScheme] = useState(null);
     try {
       const t = await user.getIdToken(true);
       setToken(t);
-      const [s, ps, sess] = await Promise.all([
-        fetchCollection(t, "schemes"),
-        fetchCollection(t, "patientSchemes"),
-        fetchCollection(t, "sessions"),
-      ]);
-      setSchemes(s);
-      setPatientSchemes(ps);
-      setSessions(sess);
+      const [s, ps, sess, appts] = await Promise.all([
+  fetchCollection(t, "schemes"),
+  fetchCollection(t, "patientSchemes"),
+  fetchCollection(t, "sessions"),
+  fetchAppointments(t),
+]);
+setSchemes(s);
+setPatientSchemes(ps);
+setSessions(sess);
+setAppointments(appts);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
   };
