@@ -572,15 +572,15 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                       </div>
                     )}
                     
-{med.category === "domicilio" && (
+{(med.category === "domicilio" || session.sessionType === "entrega" || session.sessionType === "im" || session.sessionType === "sc") && (
   <div style={{ padding:"0 14px 10px" }}>
     {!medEvents[`med_${med.id}`]?.inicio ? (
       <button onClick={() => recordMedEvent(med.id, "inicio")} style={{ width:"100%", padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.15)", border:"1px solid rgba(175,169,236,0.4)", color:"#AFA9EC" }}>
-        📦 Marcar como entregado
+        {session.sessionType === "entrega" || med.category === "domicilio" ? "📦 Marcar como entregado" : "✅ Marcar como aplicado"}
       </button>
     ) : (
       <div style={{ padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(175,169,236,0.08)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC" }}>
-        ✓ Entregado a las {medEvents[`med_${med.id}`]?.inicio}
+        {session.sessionType === "entrega" || med.category === "domicilio" ? "✓ Entregado" : "✓ Aplicado"} a las {medEvents[`med_${med.id}`]?.inicio}
       </div>
     )}
   </div>
