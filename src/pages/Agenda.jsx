@@ -263,12 +263,15 @@ function SchemeForm({ schemes, sessions, onSave, onCancel, editing }) {
   </select>
 </div>
         <div>
-          <label style={labelStyle}>Estado</label>
-          <select value={form.active ? "true" : "false"} onChange={e => set("active", e.target.value === "true")} style={{ ...inputStyle, cursor:"pointer" }}>
-            <option value="true">Activo</option>
-            <option value="false">Suspendido</option>
-          </select>
-        </div>
+          <div>
+  <label style={labelStyle}>Estatus del esquema</label>
+  <select value={form.schemeStatus || "activo"} onChange={e => set("schemeStatus", e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
+    <option value="activo">Activo</option>
+    <option value="suspendido">Suspendido</option>
+    <option value="completado">Completado</option>
+    <option value="cancelado">Cancelado</option>
+  </select>
+</div>
         <div style={{ gridColumn:"1/-1" }}>
           <label style={labelStyle}>Notas</label>
           <textarea rows={2} value={form.notes} onChange={e => set("notes", e.target.value)} placeholder="Observaciones..." style={{ ...inputStyle, resize:"vertical" }} />
