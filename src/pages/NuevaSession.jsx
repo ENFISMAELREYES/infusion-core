@@ -176,7 +176,6 @@ const [form, setForm] = useState({
       const data = {
         ...form,
         sessionType: sessionType || "iv",
-        center:    profile?.center || "",,
         center:    profile?.center || "",
         nurseId:   user?.uid || "",
         nurseName: profile?.name || "",
