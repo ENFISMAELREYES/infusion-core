@@ -280,6 +280,49 @@ const [editingScheme, setEditingScheme] = useState(null);
     } catch(e) { alert("Error: " + e.message); }
   };
 
+  const handleSaveScheme = async (data) => {
+    const toFV = (val) => {
+      if (typeof val === "string") return { stringValue: val };
+      if (typeof val === "boolean") return { booleanValue: val };
+      if (typeof val === "number") return { integerValue: String(val) };
+      if (val === null) return { nullValue: null };
+      if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
+      return { stringValue: String(val) };
+    };
+    try {
+      const t = await user.getIdToken(true);
+      if (data.id) {
+        const fields = Object.fromEntries(Object.entries(data).filter(([k]) => k !== "id").map(([k, v]) => [k, toFV(v)]));
+        const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+        await fetch(
+          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/schemes/${data.id}?${mask}`,
+          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${t}` }, body:JSON.stringify({ fields }) }
+        );
+      } else {
+        const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toFV(v)]));
+        await fetch(
+          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/schemes?key=${API_KEY}`,
+          { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${t}` }, body:JSON.stringify({ fields }) }
+        );
+      }
+      setShowSchemeForm(false);
+      setEditingScheme(null);
+      load();
+    } catch(e) { alert("Error: " + e.message); }
+  };
+
+const handleDeleteScheme = async (id) => {
+    if (!confirm("¿Eliminar este esquema?")) return;
+    try {
+      const t = await user.getIdToken(true);
+      await fetch(
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/schemes/${id}`,
+        { method:"DELETE", headers:{ "Authorization":`Bearer ${t}` } }
+      );
+      load();
+    } catch(e) { alert("Error: " + e.message); }
+  };
+  
   const prevMonth = () => setSelectedMonth(m => new Date(m.getFullYear(), m.getMonth()-1, 1));
   const nextMonth = () => setSelectedMonth(m => new Date(m.getFullYear(), m.getMonth()+1, 1));
 
