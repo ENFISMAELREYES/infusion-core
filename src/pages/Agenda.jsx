@@ -148,25 +148,20 @@ function calcDates(startDate, scheme, currentCycle) {
   return dates.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function CalendarView({ patientSchemes, schemes, selectedMonth, onSelectDate }) {
+function CalendarView({ appointments, schemes, selectedMonth, onSelectDate }) {
   const year  = selectedMonth.getFullYear();
   const month = selectedMonth.getMonth();
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const today = new Date().toISOString().split("T")[0];
 
-  // Calcular todas las fechas del mes
+  const monthStr = `${year}-${String(month+1).padStart(2,"0")}`;
   const monthEvents = {};
-  patientSchemes.forEach(ps => {
-    const scheme = schemes.find(s => s.id === ps.schemeId);
-    if (!scheme || !ps.startDate || !ps.active) return;
-    const dates = calcDates(ps.startDate, scheme, ps.currentCycle || 1);
-    dates.forEach(d => {
-      if (d.date.startsWith(`${year}-${String(month+1).padStart(2,"0")}`)) {
-        if (!monthEvents[d.date]) monthEvents[d.date] = [];
-        monthEvents[d.date].push({ ...d, patientName: ps.patientName, schemeName: scheme.name, psId: ps.id });
-      }
-    });
+  (appointments||[]).forEach(a => {
+    if (!a.date?.startsWith(monthStr)) return;
+    if (!monthEvents[a.date]) monthEvents[a.date] = [];
+    const scheme = schemes.find(s => s.id === a.schemeId);
+    monthEvents[a.date].push({ ...a, schemeName: scheme?.name || "", apptId: a.id });
   });
 
   const days = [];
@@ -192,12 +187,11 @@ function CalendarView({ patientSchemes, schemes, selectedMonth, onSelectDate }) 
                 minHeight:60, padding:"4px 6px", borderRadius:8, cursor:events.length?"pointer":"default",
                 background: isToday ? "rgba(0,212,170,0.12)" : events.length ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.02)",
                 border:`1px solid ${isToday ? "rgba(0,212,170,0.4)" : events.length ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.04)"}`,
-                transition:"all 0.15s",
               }}>
               <div style={{ fontSize:12, color: isToday ? "#00d4aa" : "#888", fontWeight: isToday ? 700 : 400, marginBottom:3 }}>{day}</div>
               {events.slice(0,3).map((e, j) => (
-                <div key={j} style={{ fontSize:9, padding:"1px 4px", borderRadius:4, background:"rgba(0,212,170,0.15)", color:"#00d4aa", marginBottom:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                  {e.label} {e.patientName.split(" ")[0]}
+                <div key={j} style={{ fontSize:9, padding:"1px 4px", borderRadius:4, background: e.status==="confirmed" ? "rgba(29,158,117,0.2)" : "rgba(0,212,170,0.15)", color: e.status==="confirmed" ? "#1D9E75" : "#00d4aa", marginBottom:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                  {e.label} {e.patientName?.split(" ")[0]}
                 </div>
               ))}
               {events.length > 3 && <div style={{ fontSize:9, color:"#555" }}>+{events.length-3} más</div>}
