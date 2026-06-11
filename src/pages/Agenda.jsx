@@ -207,7 +207,7 @@ function SchemeForm({ schemes, sessions, onSave, onCancel, editing }) {
   const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
   const labelStyle = { fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 };
 
-  const [form, setForm] = useState(editing || { patientName:"", schemeId:"", startDate:"", currentCycle:1, totalCyclesOverride:"", notes:"", active:true });
+  const [form, setForm] = useState(editing || { patientName:"", schemeId:"", startDate:"", currentCycle:1, totalCyclesOverride:"", notes:"", active:true, center:"CITIO" });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const selectedScheme = schemes.find(s => s.id === form.schemeId);
