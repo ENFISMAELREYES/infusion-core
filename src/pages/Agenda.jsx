@@ -506,8 +506,8 @@ const handleDeleteScheme = async (id) => {
                 <div style={{ fontSize:16, color:"#fff", fontWeight:600, textTransform:"capitalize", minWidth:200, textAlign:"center" }}>{monthName}</div>
                 <button onClick={nextMonth} style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"6px 12px", color:"#888", cursor:"pointer", fontSize:16 }}>›</button>
               </div>
-              <CalendarView patientSchemes={patientSchemes} schemes={schemes} selectedMonth={selectedMonth}
-                onSelectDate={(date, events) => { setSelectedDate(date); setSelectedEvents(events); }} />
+              <CalendarView appointments={appointments} schemes={schemes} selectedMonth={selectedMonth}
+  onSelectDate={(date, events) => { setSelectedDate(date); setSelectedEvents(events); }} />
               {selectedDate && (
                 <div style={{ marginTop:16, padding:"16px 18px", borderRadius:12, background:"rgba(0,212,170,0.06)", border:"1px solid rgba(0,212,170,0.2)" }}>
                   <div style={{ fontSize:13, color:"#00d4aa", fontWeight:600, marginBottom:10 }}>📅 {selectedDate}</div>
