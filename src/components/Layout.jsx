@@ -10,6 +10,7 @@ const NAV = {
     { to:"/catalogo",  icon:"◈", label:"Catálogo"  },
     { to:"/reportes", icon:"📊", label:"Reportes" },
     { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
+    { to:"/agenda", icon:"📅", label:"Agenda" },
   ],
   enfermera: [
     { to:"/pacientes", icon:"◎", label:"Pacientes"  },
