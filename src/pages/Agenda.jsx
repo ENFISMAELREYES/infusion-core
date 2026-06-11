@@ -511,13 +511,26 @@ const handleDeleteScheme = async (id) => {
               {selectedDate && (
                 <div style={{ marginTop:16, padding:"16px 18px", borderRadius:12, background:"rgba(0,212,170,0.06)", border:"1px solid rgba(0,212,170,0.2)" }}>
                   <div style={{ fontSize:13, color:"#00d4aa", fontWeight:600, marginBottom:10 }}>📅 {selectedDate}</div>
-                  {selectedEvents.map((e, i) => (
-                    <div key={i} style={{ padding:"8px 12px", borderRadius:8, background:"rgba(255,255,255,0.03)", marginBottom:6, fontSize:13 }}>
-                      <span style={{ color:"#f0f0f0", fontWeight:600 }}>{e.patientName}</span>
-                      <span style={{ color:"#666", marginLeft:8 }}>{e.schemeName}</span>
-                      <span style={{ color:"#00d4aa", marginLeft:8, fontFamily:"'IBM Plex Mono', monospace" }}>{e.label}</span>
-                    </div>
-                  ))}
+                 {selectedEvents.map((e, i) => (
+  <div key={i} style={{ padding:"8px 12px", borderRadius:8, background:"rgba(255,255,255,0.03)", marginBottom:6, fontSize:13, display:"flex", alignItems:"center", gap:10 }}>
+    <div style={{ flex:1 }}>
+      <span style={{ color:"#f0f0f0", fontWeight:600 }}>{e.patientName}</span>
+      <span style={{ color:"#666", marginLeft:8 }}>{e.schemeName}</span>
+      <span style={{ color:"#00d4aa", marginLeft:8, fontFamily:"'IBM Plex Mono', monospace" }}>{e.label}</span>
+      {e.status === "confirmed" && <span style={{ marginLeft:8, fontSize:11, color:"#1D9E75" }}>✓ Confirmada</span>}
+      {e.rescheduled && <span style={{ marginLeft:8, fontSize:11, color:"#ffb347" }}>↻ Reagendada</span>}
+    </div>
+    {e.status !== "confirmed" && e.date >= new Date().toISOString().split("T")[0] && (
+      <button onClick={() => {
+        const newDate = prompt(`Nueva fecha para ${e.patientName} ${e.label}:`, e.date);
+        if (!newDate || newDate === e.date) return;
+        user.getIdToken(true).then(t => rescheduleAppointment(t, e.apptId, newDate).then(load));
+      }} style={{ padding:"4px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+        ↻ Reagendar
+      </button>
+    )}
+  </div>
+))}
                 </div>
               )}
             </div>
