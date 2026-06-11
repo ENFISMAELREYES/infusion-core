@@ -128,7 +128,8 @@ export default function NuevaSession() {
   const { user, profile } = useAuth();
   const today = getToday();
 
-  const [form, setForm] = useState({
+  const [sessionType, setSessionType] = useState(null);
+const [form, setForm] = useState({
     patientName: "", dob: "", diagnosis: "", physician: "",
     insurance: "", cycle: "", applicationDate: today,
   });
@@ -229,7 +230,29 @@ export default function NuevaSession() {
           ⚠ {error}
         </div>
       )}
-
+{!sessionType && (
+  <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+    <div style={{ fontSize:13, color:"#555", marginBottom:8 }}>Selecciona el tipo de atención:</div>
+    {[
+      { id:"iv",        icon:"💉", label:"Infusión IV",          desc:"Medicamentos intravenosos" },
+      { id:"im",        icon:"💊", label:"Intramuscular",         desc:"Aplicación intramuscular" },
+      { id:"sc",        icon:"🩺", label:"Subcutánea",            desc:"Aplicación subcutánea" },
+      { id:"entrega",   icon:"📦", label:"Entrega de medicamento", desc:"Medicamento para domicilio" },
+    ].map(t => (
+      <div key={t.id} onClick={() => setSessionType(t.id)}
+        style={{ padding:"18px 20px", borderRadius:13, cursor:"pointer", background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", display:"flex", alignItems:"center", gap:14, transition:"all 0.15s" }}
+        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
+        onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}>
+        <span style={{ fontSize:28 }}>{t.icon}</span>
+        <div>
+          <div style={{ fontSize:15, color:"#f0f0f0", fontWeight:600 }}>{t.label}</div>
+          <div style={{ fontSize:12, color:"#555", marginTop:2 }}>{t.desc}</div>
+        </div>
+        <span style={{ marginLeft:"auto", color:"#555" }}>›</span>
+      </div>
+    ))}
+  </div>
+)}
       <form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:24 }}>
         <section style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
           <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:16 }}>Datos del paciente</div>
