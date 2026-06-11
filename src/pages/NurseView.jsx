@@ -454,13 +454,16 @@ function SessionCard({ session, token, onRefresh, user }) {
   };
 
   const completedMeds = (session.meds||[]).filter(m => 
-    m.category === "domicilio" ? !!medEvents[`med_${m.id}`]?.inicio : !!medEvents[`med_${m.id}`]?.fin
+    m.category === "domicilio" || session.sessionType === "entrega" || session.sessionType === "im" || session.sessionType === "sc"
+      ? !!medEvents[`med_${m.id}`]?.inicio 
+      : !!medEvents[`med_${m.id}`]?.fin
   ).length;
 const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domicilio").length;
   const pct           = totalTimed ? Math.round((completedMeds/totalTimed)*100) : 0;
   const allWashDone = (session.meds||[]).every(m => 
-    m.category === "domicilio" || !m.wash?.time || !medEvents[`med_${m.id}`]?.fin || washEvents[`wash_${m.id}`]?.fin
-  );;
+    m.category === "domicilio" || session.sessionType === "entrega" || session.sessionType === "im" || session.sessionType === "sc"
+    || !m.wash?.time || !medEvents[`med_${m.id}`]?.fin || washEvents[`wash_${m.id}`]?.fin
+  );
 
   const canStartMed = (med) => {
     if (!session.authorized || !events.ingreso) return false;
