@@ -296,7 +296,7 @@ const saveMeds = async (apptId, confirmAlso) => {
                         </div>
                       </div>
                     )}
-                  </div>>
+                  </div>
                   );
                 })}
               </div>
