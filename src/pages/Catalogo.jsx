@@ -154,6 +154,21 @@ function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRef
   const [saving, setSaving]     = useState(false);
   const [search, setSearch]     = useState("");
   const [expanded, setExpanded] = useState(null);
+  const [editingData, setEditingData] = useState(null);
+const [editDraft, setEditDraft] = useState({ dob:"", diagnosis:"", physician:"" });
+
+const handleDataEdit = async (patientName, draft) => {
+  try {
+    const targets = sessions.filter(s => s.patientName === patientName);
+    for (const s of targets) {
+      if (draft.dob && draft.dob !== s.dob) await updateSessionField(token, s.id, "dob", draft.dob);
+      if (draft.diagnosis && draft.diagnosis !== s.diagnosis) await updateSessionField(token, s.id, "diagnosis", draft.diagnosis);
+      if (draft.physician && draft.physician !== s.physician) await updateSessionField(token, s.id, "physician", draft.physician);
+    }
+    setEditingData(null);
+    onRefresh();
+  } catch(e) { alert("Error: " + e.message); }
+};
 
   const filtered = groups.filter(g => {
     if (centerFilter !== "Todos") {
