@@ -208,6 +208,39 @@ function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appoi
     onRefresh();
   };
 
+const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", domicilio:"Domicilio" };
+const CATEGORIES = Object.keys(CAT_LABEL);
+const [editingMeds, setEditingMeds] = useState(null);
+const [medsDraft, setMedsDraft] = useState([]);
+
+const openMedsEditor = (appt, template) => {
+  setEditingMeds(appt.id);
+  setMedsDraft(appt.meds && appt.meds.length ? appt.meds : (template || []).map(m => ({ ...m, id: Date.now()+Math.random() })));
+};
+const addMedDraft = () => setMedsDraft(m => [...m, { id:Date.now(), name:"", dose:"", category:"premedicacion" }]);
+const updateMedDraft = (id,k,v) => setMedsDraft(m => m.map(x => x.id===id ? {...x,[k]:v} : x));
+const removeMedDraft = (id) => setMedsDraft(m => m.filter(x => x.id!==id));
+
+const saveMeds = async (apptId, confirmAlso) => {
+  const toFV = (val) => {
+    if (typeof val === "string") return { stringValue: val };
+    if (typeof val === "number") return { integerValue: String(val) };
+    if (val === null) return { nullValue: null };
+    if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
+    if (typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k,v]) => [k,toFV(v)])) } };
+    return { stringValue: String(val) };
+  };
+  const fields = { meds: toFV(medsDraft.map(m => ({ id:String(m.id), name:m.name, dose:m.dose, category:m.category }))) };
+  const mask = "updateMask.fieldPaths=meds" + (confirmAlso ? "&updateMask.fieldPaths=status&updateMask.fieldPaths=confirmedAt" : "");
+  if (confirmAlso) { fields.status = toFV("confirmed"); fields.confirmedAt = toFV(new Date().toISOString()); }
+  await fetch(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/appointments/${apptId}?${mask}`,
+    { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
+  );
+  setEditingMeds(null);
+  onRefresh();
+};
+  
   return (
     <div>
       <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Esquemas y citas</div>
@@ -226,18 +259,44 @@ function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appoi
                 {myAppts.map(a => {
                   const sm = STATUS_META[a.status] || STATUS_META.scheduled;
                   return (
-                    <div key={a.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:11 }}>
+                    <div key={a.id}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:11 }}>
                       <span style={{ color:"#888", fontFamily:"'IBM Plex Mono', monospace", width:90 }}>{a.date}</span>
                       <span style={{ color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace", width:50 }}>{a.label}</span>
                       <span style={{ fontSize:10, padding:"1px 8px", borderRadius:99, background:`${sm.color}18`, color:sm.color, border:`1px solid ${sm.color}44` }}>{sm.label}</span>
                       {a.rescheduled && <span style={{ fontSize:10, color:"#ffb347" }}>↻</span>}
+                      {a.meds?.length > 0 && <span style={{ fontSize:10, color:"#AFA9EC" }}>💊{a.meds.length}</span>}
                       <div style={{ flex:1 }} />
+                      <button onClick={() => editingMeds===a.id ? setEditingMeds(null) : openMedsEditor(a, ps.medTemplate)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC" }}>💊</button>
                       {a.status !== "confirmed" && (
                         <button onClick={() => handleConfirm(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", color:"#1D9E75" }}>✓ Confirmar</button>
                       )}
                       <button onClick={() => handleChangeDate(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>📅</button>
                       <button onClick={() => handleRemove(a.id)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
                     </div>
+
+                    {editingMeds === a.id && (
+                      <div style={{ marginTop:6, marginLeft:10, padding:"10px", borderRadius:8, background:"rgba(175,169,236,0.04)", border:"1px dashed rgba(175,169,236,0.25)" }}>
+                        <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:8 }}>
+                          {medsDraft.map(m => (
+                            <div key={m.id} style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr auto", gap:6 }}>
+                              <select value={m.category} onChange={e => updateMedDraft(m.id,"category",e.target.value)} style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"5px 8px", color:"#f0f0f0", fontSize:11 }}>
+                                {CATEGORIES.map(c => <option key={c} value={c}>{CAT_LABEL[c]}</option>)}
+                              </select>
+                              <input value={m.name} onChange={e => updateMedDraft(m.id,"name",e.target.value)} placeholder="Medicamento" style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"5px 8px", color:"#f0f0f0", fontSize:11 }} />
+                              <input value={m.dose} onChange={e => updateMedDraft(m.id,"dose",e.target.value)} placeholder="Dosis" style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"5px 8px", color:"#f0f0f0", fontSize:11 }} />
+                              <button onClick={() => removeMedDraft(m.id)} style={{ background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b", borderRadius:6, padding:"5px 8px", cursor:"pointer", fontSize:11 }}>✕</button>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ display:"flex", gap:6 }}>
+                          <button onClick={addMedDraft} style={{ padding:"5px 10px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>+ Agregar</button>
+                          <div style={{ flex:1 }} />
+                          <button onClick={() => saveMeds(a.id, a.status!=="confirmed")} style={{ padding:"5px 12px", borderRadius:6, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.15)", border:"1px solid rgba(29,158,117,0.4)", color:"#1D9E75" }}>✓ Guardar{a.status!=="confirmed" ? " y confirmar" : ""}</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>>
                   );
                 })}
               </div>
