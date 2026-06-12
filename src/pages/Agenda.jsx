@@ -554,7 +554,7 @@ const handleDeleteScheme = async (id) => {
                   {upcomingDates.slice(0,50).map((d, i) => {
                     const isToday = d.date === today;
                     return (
-                     <div key={j} style={{ fontSize:9, padding:"1px 4px", borderRadius:4, background: e.status==="confirmed" ? "rgba(29,158,117,0.2)" : e.center==="CITIO" ? "rgba(79,195,247,0.15)" : "rgba(175,169,236,0.15)", color: e.status==="confirmed" ? "#1D9E75" : e.center==="CITIO" ? "#4fc3f7" : "#AFA9EC", marginBottom:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                    <div key={i} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 14px", borderRadius:10, borderLeft:`3px solid ${d.center==="CITIO" ? "#4fc3f7" : "#AFA9EC"}`, background: isToday ? "rgba(0,212,170,0.08)" : "rgba(255,255,255,0.03)", border:`1px solid ${isToday ? "rgba(0,212,170,0.25)" : "rgba(255,255,255,0.07)"}` }}>
                         <div style={{ width:80, fontSize:12, color: isToday ? "#00d4aa" : "#888", fontFamily:"'IBM Plex Mono', monospace", flexShrink:0 }}>{d.date}</div>
                         <div style={{ flex:1 }}>
                           <span style={{ fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{d.patientName}</span>
