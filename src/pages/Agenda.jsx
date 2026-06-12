@@ -347,7 +347,8 @@ function SchemeEditor({ scheme, onSave, onCancel }) {
 }
 
 export default function Agenda() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+const isJefe = profile?.role === "jefe";
   const [schemes, setSchemes]               = useState([]);
   const [patientSchemes, setPatientSchemes] = useState([]);
   const [sessions, setSessions]             = useState([]);
@@ -474,9 +475,11 @@ const handleDeleteScheme = async (id) => {
           <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Agenda de ciclos</h1>
           <p style={{ fontSize:13, color:"#555" }}>{patientSchemes.filter(p=>p.active).length} pacientes activos · {schemes.length} esquemas disponibles</p>
         </div>
-        <button onClick={() => { setShowForm(true); setEditing(null); }} style={{ padding:"9px 18px", borderRadius:10, fontSize:13, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
-          + Asignar esquema
-        </button>
+       {isJefe && (
+          <button onClick={() => { setShowForm(true); setEditing(null); }} style={{ padding:"9px 18px", borderRadius:10, fontSize:13, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+            + Asignar esquema
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -487,7 +490,7 @@ const handleDeleteScheme = async (id) => {
 
       {/* Tabs */}
       <div style={{ display:"flex", gap:8, marginBottom:20 }}>
-        {[["calendar","📅","Calendario"],["list","📋","Lista de citas"],["patients","👥","Pacientes"],["schemes","🧬","Esquemas"]].map(([id,icon,label]) => (
+       {[["calendar","📅","Calendario"],["list","📋","Lista de citas"],["patients","👥","Pacientes"],...(isJefe?[["schemes","🧬","Esquemas"]]:[])].map(([id,icon,label]) => (
           <button key={id} onClick={() => setView(id)} style={{
             padding:"7px 16px", borderRadius:10, fontSize:13, fontWeight:600, cursor:"pointer",
             background: view===id ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
@@ -613,10 +616,12 @@ const handleDeleteScheme = async (id) => {
                           </div>
                         )}
                       </div>
-                      <div style={{ display:"flex", gap:6 }}>
-                        <button onClick={() => { setEditing(ps); setShowForm(true); }} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️</button>
-                        <button onClick={() => handleDelete(ps.id)} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
-                      </div>
+                      {isJefe && (
+                        <div style={{ display:"flex", gap:6 }}>
+                          <button onClick={() => { setEditing(ps); setShowForm(true); }} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️</button>
+                          <button onClick={() => handleDelete(ps.id)} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
