@@ -456,7 +456,7 @@ const handleDeleteScheme = async (id) => {
   const today = new Date().toISOString().split("T")[0];
   patientSchemes.forEach(ps => {
     const scheme = schemes.find(s => s.id === ps.schemeId);
-    if (!scheme || !ps.startDate || !ps.active) return;
+    if (!scheme || !ps.startDate || (ps.schemeStatus && ps.schemeStatus !== "activo")) return;
     const effectiveCycles = ps.totalCyclesOverride || scheme.totalCycles;
     const effectiveScheme = { ...scheme, totalCycles: effectiveCycles };
     const dates = calcDates(ps.startDate, effectiveScheme, ps.currentCycle || 1);
@@ -587,9 +587,20 @@ const handleDeleteScheme = async (id) => {
                       <div style={{ flex:1 }}>
                         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
                           <span style={{ fontSize:14, color: ps.active ? "#f0f0f0" : "#555", fontWeight:600 }}>{ps.patientName}</span>
-                          <span style={{ fontSize:11, padding:"2px 8px", borderRadius:99, background: ps.active ? "rgba(29,158,117,0.12)" : "rgba(255,255,255,0.05)", color: ps.active ? "#1D9E75" : "#555", border:`1px solid ${ps.active ? "rgba(29,158,117,0.25)" : "rgba(255,255,255,0.07)"}` }}>
-                            {ps.active ? "Activo" : "Suspendido"}
-                          </span>
+                          {(() => {
+  const STATUS = {
+    activo:     { color:"#1D9E75", label:"Activo" },
+    suspendido: { color:"#ffb347", label:"Suspendido" },
+    completado: { color:"#4fc3f7", label:"Completado" },
+    cancelado:  { color:"#ff6b6b", label:"Cancelado" },
+  };
+  const s = STATUS[ps.schemeStatus || (ps.active ? "activo" : "suspendido")] || STATUS.activo;
+  return (
+    <span style={{ fontSize:11, padding:"2px 8px", borderRadius:99, background:`${s.color}18`, color:s.color, border:`1px solid ${s.color}44` }}>
+      {s.label}
+    </span>
+  );
+})()}
                         </div>
                         <div style={{ fontSize:12, color:"#666" }}>{scheme?.name} · C{ps.currentCycle||1}/{effectiveCycles} · cada {scheme?.cycleDurationDays} días</div>
                         {ps.notes && <div style={{ fontSize:11, color:"#555", marginTop:3 }}>📝 {ps.notes}</div>}
