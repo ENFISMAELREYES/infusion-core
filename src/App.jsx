@@ -51,14 +51,14 @@ function AppRoutes() {
         } />
         <Route path="monitor" element={<PrivateRoute roles={["jefe","visualizador"]}><Monitor /></PrivateRoute>} />
         <Route path="autorizar" element={<PrivateRoute roles={["jefe"]}><Autorizar /></PrivateRoute>} />
-        <Route path="historial" element={<PrivateRoute roles={["jefe","visualizador"]}><Historial /></PrivateRoute>} />
-        <Route path="catalogo" element={<PrivateRoute roles={["jefe"]}><Catalogo /></PrivateRoute>} />
+        <Route path="historial" element={<PrivateRoute roles={["jefe","visualizador","enfermera"]}><Historial /></PrivateRoute>} />
+        <Route path="catalogo" element={<PrivateRoute roles={["jefe","visualizador"]}><Catalogo /></PrivateRoute>} />
         <Route path="pacientes" element={<PrivateRoute roles={["enfermera"]}><NurseView /></PrivateRoute>} />
         <Route path="registrar" element={<PrivateRoute roles={["enfermera"]}><NuevaSession /></PrivateRoute>} />
         <Route path="*" element={<Navigate to={profile?.role === "enfermera" ? "/pacientes" : "/"} replace />} />
         <Route path="reportes" element={<PrivateRoute roles={["jefe"]}><Reportes /></PrivateRoute>} />
         <Route path="calculadoras" element={<PrivateRoute roles={["jefe","enfermera"]}><Calculadoras /></PrivateRoute>} />
-        <Route path="agenda" element={<PrivateRoute roles={["jefe"]}><Agenda /></PrivateRoute>} />
+       <Route path="agenda" element={<PrivateRoute roles={["jefe","visualizador","enfermera"]}><Agenda /></PrivateRoute>} />
       </Route>
     </Routes>
   );
