@@ -240,41 +240,80 @@ function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRef
                   <div style={{ paddingTop:12, display:"flex", flexDirection:"column", gap:12 }}>
 
                     {/* Datos del paciente */}
-{patientSessions[0] && (
-  <div style={{ padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)" }}>
-    <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
-      {patientSessions[0].dob && (
-        <div>
-          <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Fecha de nacimiento</div>
-          <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace", marginTop:2 }}>
-            {patientSessions[0].dob}
-            {(() => {
-              try {
-                const [y,m,d] = patientSessions[0].dob.split("-").map(Number);
-                const today = new Date();
-                let age = today.getFullYear() - y;
-                if (today.getMonth()+1 < m || (today.getMonth()+1 === m && today.getDate() < d)) age--;
-                return <span style={{ fontSize:11, color:"#666", marginLeft:8 }}>{age} años</span>;
-              } catch(e) { return null; }
-            })()}
+{(() => {
+  const sample = patientSessions[0] || {};
+  const isEditingData = editingData === g.canonical;
+  const [draft, setDraftLocal] = [editDraft, setEditDraft];
+
+  if (!isEditingData) {
+    return (
+      <div style={{ padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+          <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
+            {sample.dob && (
+              <div>
+                <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Fecha de nacimiento</div>
+                <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace", marginTop:2 }}>
+                  {sample.dob}
+                  {(() => {
+                    try {
+                      const [y,m,d] = sample.dob.split("-").map(Number);
+                      const today = new Date();
+                      let age = today.getFullYear() - y;
+                      if (today.getMonth()+1 < m || (today.getMonth()+1 === m && today.getDate() < d)) age--;
+                      return <span style={{ fontSize:11, color:"#666", marginLeft:8 }}>{age} años</span>;
+                    } catch(e) { return null; }
+                  })()}
+                </div>
+              </div>
+            )}
+            {sample.diagnosis && (
+              <div>
+                <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Diagnóstico</div>
+                <div style={{ fontSize:13, color:"#aaa", marginTop:2 }}>{sample.diagnosis}</div>
+              </div>
+            )}
+            {sample.physician && (
+              <div>
+                <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Médico tratante</div>
+                <div style={{ fontSize:13, color:"#aaa", marginTop:2 }}>{sample.physician}</div>
+              </div>
+            )}
           </div>
+          <button onClick={() => { setEditingData(g.canonical); setEditDraft({ dob:sample.dob||"", diagnosis:sample.diagnosis||"", physician:sample.physician||"" }); }}
+            style={{ padding:"4px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347", flexShrink:0 }}>✏️ Editar</button>
         </div>
-      )}
-      {patientSessions[0].diagnosis && (
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding:"12px 14px", borderRadius:10, background:"rgba(255,179,71,0.05)", border:"1px solid rgba(255,179,71,0.2)" }}>
+      <div style={{ fontSize:11, color:"#ffb347", fontWeight:600, marginBottom:10 }}>✏️ Editar datos del paciente</div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
         <div>
-          <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Diagnóstico</div>
-          <div style={{ fontSize:13, color:"#aaa", marginTop:2 }}>{patientSessions[0].diagnosis}</div>
+          <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>Fecha de nacimiento</label>
+          <input type="date" value={draft.dob} onChange={e => setEditDraft(d=>({...d,dob:e.target.value}))}
+            style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
         </div>
-      )}
-      {patientSessions[0].physician && (
         <div>
-          <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Médico tratante</div>
-          <div style={{ fontSize:13, color:"#aaa", marginTop:2 }}>{patientSessions[0].physician}</div>
+          <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>Diagnóstico</label>
+          <input value={draft.diagnosis} onChange={e => setEditDraft(d=>({...d,diagnosis:e.target.value}))}
+            style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
         </div>
-      )}
+        <div>
+          <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>Médico tratante</label>
+          <input value={draft.physician} onChange={e => setEditDraft(d=>({...d,physician:e.target.value}))}
+            style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+        </div>
+      </div>
+      <div style={{ display:"flex", gap:8 }}>
+        <button onClick={() => handleDataEdit(g.canonical, draft)} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.15)", border:"1px solid rgba(29,158,117,0.4)", color:"#1D9E75" }}>✓ Guardar cambios</button>
+        <button onClick={() => setEditingData(null)} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666" }}>Cancelar</button>
+      </div>
     </div>
-  </div>
-)}
+  );
+})()}
                     
                     {/* Estatus */}
                     <div>
