@@ -120,6 +120,121 @@ export default function Dashboard() {
         ))}
       </div>
 
+      <button onClick={async () => {
+  const token = await user.getIdToken(true);
+  const imports = [
+    { patientName:"AIREL COUTIÑO GONZALEZ", schemeName:"R-CHOP", startDate:"2026-05-15", currentCycle:3, center:"CITIO" },
+    { patientName:"ANA CRISTINA PANINI SICILIA", schemeName:"GC", startDate:"2026-03-31", currentCycle:4, center:"CITIO" },
+    { patientName:"EDUARDO ARIAS DE JESUS", schemeName:"BEP", startDate:"2026-06-02", currentCycle:1, center:"CITIO" },
+    { patientName:"ROSALINA LEYVA ACEVES", schemeName:"ERBITAX", startDate:"2026-06-04", currentCycle:1, center:"CITIO" },
+    { patientName:"MARIA GUADALUPE ARIAS RIVERA", schemeName:"AC + PEMBRO", startDate:"2026-06-01", currentCycle:2, center:"CITIO" },
+    { patientName:"ELENA  BEATRIZ GOMEZ UGALDE", schemeName:"GEM + NAB-PACLITAXEL", startDate:"2026-05-08", currentCycle:2, center:"CITIO" },
+    { patientName:"TATIANA GRACIELA KIREEV IBARRA", schemeName:"CARBO-TAX", startDate:"2026-04-11", currentCycle:4, center:"CITIO" },
+    { patientName:"JORGE ALBERTO ALFARO LUNA", schemeName:"TAGRISSO", startDate:"2026-02-25", currentCycle:5, center:"CITIO" },
+    { patientName:"JOSE ENRIQUE DIAZ LEAL ALDANA", schemeName:"LUSPATERCEPT", startDate:"2026-03-19", currentCycle:5, center:"CITIO" },
+    { patientName:"MARIA MAGDALENA ARIAS ARVIZU", schemeName:"GC", startDate:"2026-05-08", currentCycle:3, center:"CITIO" },
+    { patientName:"MARIA DE LOS NIEVES ANDION NICOLAU", schemeName:"RITUXIMAB-BENDAMUSTINA", startDate:"2026-03-20", currentCycle:4, center:"CITIO" },
+    { patientName:"BLANCA SERVIN PEÑA", schemeName:"NAB PACLITAXEL", startDate:"2026-05-28", currentCycle:3, center:"CITIO" },
+    { patientName:"DAVID ALFRED KNOPF", schemeName:"DURVALUMAB", startDate:"2026-04-09", currentCycle:4, center:"CITIO" },
+    { patientName:"CINDY LOPEZ SANCHEZ", schemeName:"CARBO+PEME", startDate:"2026-04-25", currentCycle:4, center:"CITIO" },
+    { patientName:"JOSE JAVIER RONQUILLO GRANADOS", schemeName:"CARBOPLATINO 21D", startDate:"2026-06-08", currentCycle:2, center:"CITIO" },
+  ];
+
+  const toFV = (val) => {
+    if (typeof val === "string") return { stringValue: val };
+    if (typeof val === "boolean") return { booleanValue: val };
+    if (typeof val === "number") return { integerValue: String(val) };
+    if (val === null) return { nullValue: null };
+    if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
+    return { stringValue: String(val) };
+  };
+
+  function calcDates(startDate, scheme, currentCycle) {
+    const dates = [];
+    const start = new Date(startDate + "T12:00:00");
+    for (let cycle = currentCycle; cycle <= scheme.totalCycles; cycle++) {
+      const cycleStart = new Date(start);
+      cycleStart.setDate(start.getDate() + (cycle - 1) * scheme.cycleDurationDays);
+      for (const day of scheme.administrationDays) {
+        const d = new Date(cycleStart);
+        d.setDate(cycleStart.getDate() + (day - 1));
+        dates.push({ date: d.toISOString().split("T")[0], cycle, day, label: `C${cycle}D${day}` });
+      }
+    }
+    return dates;
+  }
+
+  // Fetch schemes
+  const schemesRes = await fetch(
+    `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents:runQuery`,
+    { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+      body: JSON.stringify({ structuredQuery: { from:[{ collectionId:"schemes" }], limit:100 } }) }
+  );
+  const schemesData = await schemesRes.json();
+  const schemes = schemesData.filter(d=>d.document).map(d => {
+    const f = d.document.fields;
+    const parse = (v) => v.stringValue ?? v.integerValue ?? (v.arrayValue ? v.arrayValue.values.map(x=>parseInt(x.integerValue)) : null);
+    return {
+      id: d.document.name.split("/").pop(),
+      name: f.name?.stringValue,
+      totalCycles: parseInt(f.totalCycles?.integerValue),
+      cycleDurationDays: parseInt(f.cycleDurationDays?.integerValue),
+      administrationDays: f.administrationDays?.arrayValue?.values.map(x=>parseInt(x.integerValue)) || [],
+    };
+  });
+
+  const today = new Date().toISOString().split("T")[0];
+  let ok = 0, skip = 0;
+
+  for (const imp of imports) {
+    const scheme = schemes.find(s => s.name === imp.schemeName);
+    if (!scheme) { console.log("Esquema no encontrado:", imp.schemeName); skip++; continue; }
+
+    const psFields = {
+      patientName: toFV(imp.patientName),
+      schemeId: toFV(scheme.id),
+      startDate: toFV(imp.startDate),
+      currentCycle: toFV(imp.currentCycle),
+      totalCyclesOverride: { nullValue: null },
+      notes: toFV("Importado desde sistema CITIO"),
+      active: { booleanValue: true },
+      center: toFV(imp.center),
+      schemeStatus: toFV("activo"),
+      updatedAt: toFV(new Date().toISOString()),
+    };
+    const psRes = await fetch(
+      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/patientSchemes?key=AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw`,
+      { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields: psFields }) }
+    );
+    const psDoc = await psRes.json();
+    const psId = psDoc.name.split("/").pop();
+
+    const dates = calcDates(imp.startDate, scheme, imp.currentCycle);
+    for (const d of dates) {
+      const apptFields = {
+        patientSchemeId: toFV(psId),
+        patientName: toFV(imp.patientName),
+        schemeId: toFV(scheme.id),
+        date: toFV(d.date),
+        cycle: toFV(d.cycle),
+        day: toFV(d.day),
+        label: toFV(d.label),
+        status: toFV(d.date < today ? "past" : "scheduled"),
+        center: toFV(imp.center),
+        createdAt: toFV(new Date().toISOString()),
+      };
+      await fetch(
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments?key=AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw`,
+        { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields: apptFields }) }
+      );
+    }
+    ok++;
+  }
+  alert(`✓ ${ok} pacientes importados, ${skip} omitidos (revisa consola)`);
+}} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(175,169,236,0.15)", border:"1px solid rgba(175,169,236,0.4)", color:"#AFA9EC", marginBottom:16 }}>
+  📥 Importar pacientes CITIO
+</button>
+
       <div style={{ fontSize: 11, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 14 }}>Sesiones del día</div>
 
       {loading ? (
