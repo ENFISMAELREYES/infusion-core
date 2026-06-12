@@ -68,7 +68,7 @@ async function savePatientScheme(token, data, schemes) {
         const effectiveCycles = data.totalCyclesOverride || scheme.totalCycles;
         const effectiveScheme = { ...scheme, totalCycles: effectiveCycles };
         const dates = calcDates(data.startDate, effectiveScheme, data.currentCycle || 1);
-        const today = new Date().toISOString().split("T")[0];
+        const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
         for (const d of dates) {
           const apptFields = {
             patientSchemeId: toFV(psId),
@@ -153,7 +153,7 @@ function CalendarView({ appointments, schemes, selectedMonth, onSelectDate }) {
   const month = selectedMonth.getMonth();
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
 
   const monthStr = `${year}-${String(month+1).padStart(2,"0")}`;
   const monthEvents = {};
@@ -452,7 +452,7 @@ const handleDeleteScheme = async (id) => {
 
   // Lista de próximas citas
   const upcomingDates = [];
-  const today = new Date().toISOString().split("T")[0];
+ const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
   patientSchemes.forEach(ps => {
     const scheme = schemes.find(s => s.id === ps.schemeId);
     if (!scheme || !ps.startDate || (ps.schemeStatus && ps.schemeStatus !== "activo")) return;
