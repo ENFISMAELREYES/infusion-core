@@ -15,10 +15,13 @@ const NAV = {
   enfermera: [
     { to:"/pacientes", icon:"◎", label:"Pacientes"  },
     { to:"/registrar", icon:"＋", label:"Registrar"  },
-    { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
+    { to:"/historial", icon:"◷", label:"Historial"  },
+    { to:"/agenda",    icon:"📅", label:"Agenda"     },
   ],
-  visualizador: [
+ visualizador: [
     { to:"/monitor",   icon:"◎", label:"Monitor"   },
+    { to:"/catalogo",  icon:"◈", label:"Catálogo"  },
+    { to:"/agenda",    icon:"📅", label:"Agenda"    },
   ],
 };
 
