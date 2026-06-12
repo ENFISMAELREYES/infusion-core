@@ -68,6 +68,18 @@ async function fetchAllSessions(token) {
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
 
+async function fetchCollection(token, collection) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: collection }], limit: 1000 } })
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data.filter(d => d.document).map(d => parseDoc(d.document));
+}
+
 async function fetchPatientCatalog(token) {
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
   const res = await fetch(url, {
@@ -484,6 +496,9 @@ export default function Catalogo() {
   const [token, setToken]               = useState(null);
   const [tab, setTab]                   = useState("patients");
   const [centerFilter, setCenterFilter] = useState("Todos");
+  const [schemes, setSchemes] = useState([]);
+const [patientSchemes, setPatientSchemes] = useState([]);
+const [appointments, setAppointments] = useState([]);
 
   const load = async () => {
     if (!user) return;
@@ -491,9 +506,15 @@ export default function Catalogo() {
     try {
       const t = await user.getIdToken(true);
       setToken(t);
-      const [data, catalog] = await Promise.all([fetchAllSessions(t), fetchPatientCatalog(t)]);
+      const [data, catalog, schemesData, patientSchemesData, appointmentsData] = await Promise.all([
+        fetchAllSessions(t), fetchPatientCatalog(t),
+        fetchCollection(t, "schemes"), fetchCollection(t, "patientSchemes"), fetchCollection(t, "appointments"),
+      ]);
       setSessions(data);
       setPatientCatalog(catalog);
+      setSchemes(schemesData);
+      setPatientSchemes(patientSchemesData);
+      setAppointments(appointmentsData);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -566,6 +587,9 @@ export default function Catalogo() {
               patientStatuses={patientStatuses}
               onRefresh={load}
               centerFilter={centerFilter}
+              schemes={schemes}
+              patientSchemes={patientSchemes}
+              appointments={appointments}
             />
           )}
           {tab === "physicians" && (
