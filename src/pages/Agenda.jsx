@@ -262,7 +262,6 @@ function SchemeForm({ schemes, sessions, onSave, onCancel, editing }) {
     <option value="CIPI">CIPI</option>
   </select>
 </div>
-        <div>
           <div>
   <label style={labelStyle}>Estatus del esquema</label>
   <select value={form.schemeStatus || "activo"} onChange={e => set("schemeStatus", e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
