@@ -109,8 +109,9 @@ function SessionRow({ s, onSelect, selected }) {
           <div style={{ fontSize:12, color:"#666" }}>{s.diagnosis} · {s.cycle}</div>
           <div style={{ fontSize:11, color:"#555", marginTop:2 }}>{s.physician} · {s.center} · {s.nurseName}</div>
         </div>
-        <div style={{ textAlign:"right", flexShrink:0 }}>
+       <div style={{ textAlign:"right", flexShrink:0 }}>
           <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>{s.date}</div>
+          {s.infusionNumber && <div style={{ fontSize:11, color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace", marginBottom:4 }}>#{s.infusionNumber}</div>}
           <span style={{ fontSize:11, padding:"3px 10px", borderRadius:99, background:`${sm.color}18`, color:sm.color, border:`1px solid ${sm.color}44` }}>{sm.label}</span>
         </div>
       </div>
