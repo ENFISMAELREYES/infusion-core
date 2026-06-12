@@ -680,7 +680,18 @@ const [appointments, setAppointments] = useState([]);
   useEffect(() => { load(); }, [user]);
 
   const filteredSessions  = centerFilter === "Todos" ? sessions : sessions.filter(s => s.center === centerFilter);
-  const patientGroups     = groupSimilar(filteredSessions, "patientName");
+const patientGroups     = groupSimilar(filteredSessions, "patientName");
+
+// Agregar pacientes que solo existen en patientSchemes (sin sesiones aún)
+const sessionPatientNames = new Set(patientGroups.map(g => normalize(g.canonical)));
+const schemeOnlyPatients = patientSchemes.filter(ps => {
+  if (centerFilter !== "Todos" && ps.center !== centerFilter) return false;
+  return !sessionPatientNames.has(normalize(ps.patientName));
+});
+const schemeOnlyNames = [...new Set(schemeOnlyPatients.map(ps => ps.patientName))];
+schemeOnlyNames.forEach(name => {
+  patientGroups.push({ canonical: name, variants: [name], count: 0, sessions: [] });
+});
   const physicianGroups   = groupSimilar(filteredSessions, "physician");
   const diagnosisGroups   = groupSimilar(filteredSessions, "diagnosis");
 
