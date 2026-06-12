@@ -160,7 +160,7 @@ function groupSimilar(items, key) {
   return groups.sort((a, b) => b.count - a.count);
 }
 
-function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRefresh, centerFilter }) {
+function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRefresh, centerFilter, schemes, patientSchemes, appointments }) {
   const [editing, setEditing]   = useState(null);
   const [newName, setNewName]   = useState("");
   const [saving, setSaving]     = useState(false);
@@ -372,7 +372,7 @@ const handleDataEdit = async (patientName, draft) => {
                       </div>
                     )}
 
-                    {/* Sesiones del paciente */}
+                   {/* Sesiones del paciente */}
                     <div>
                       <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Sesiones registradas</div>
                       <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:200, overflowY:"auto" }}>
@@ -386,6 +386,16 @@ const handleDataEdit = async (patientName, draft) => {
                         ))}
                       </div>
                     </div>
+
+                    {/* Esquemas y citas */}
+                    <SchemeAppointmentsSection
+                      patientName={g.canonical}
+                      schemes={schemes}
+                      patientSchemes={patientSchemes}
+                      appointments={appointments}
+                      token={token}
+                      onRefresh={onRefresh}
+                    />
 
                   </div>
                 </div>
