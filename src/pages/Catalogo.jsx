@@ -160,6 +160,95 @@ function groupSimilar(items, key) {
   return groups.sort((a, b) => b.count - a.count);
 }
 
+async function updateAppointment(token, apptId, fields) {
+  const toFV = (val) => {
+    if (typeof val === "string") return { stringValue: val };
+    if (typeof val === "boolean") return { booleanValue: val };
+    if (typeof val === "number") return { integerValue: String(val) };
+    return { stringValue: String(val) };
+  };
+  const body = Object.fromEntries(Object.entries(fields).map(([k,v]) => [k, toFV(v)]));
+  const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+  await fetch(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/appointments/${apptId}?${mask}`,
+    { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields: body }) }
+  );
+}
+
+async function deleteAppointment(token, apptId) {
+  await fetch(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/appointments/${apptId}`,
+    { method:"DELETE", headers:{ "Authorization":`Bearer ${token}` } }
+  );
+}
+
+function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appointments, token, onRefresh }) {
+  const mySchemes = patientSchemes.filter(ps => ps.patientName === patientName);
+  if (mySchemes.length === 0) return null;
+
+  const STATUS_META = {
+    scheduled:  { label:"Programada", color:"#888" },
+    confirmed:  { label:"Confirmada", color:"#1D9E75" },
+    past:       { label:"No confirmada", color:"#ffb347" },
+  };
+
+  const handleConfirm = async (apptId, currentDate) => {
+    await updateAppointment(token, apptId, { status:"confirmed", confirmedAt:new Date().toISOString() });
+    onRefresh();
+  };
+  const handleChangeDate = async (apptId, currentDate) => {
+    const newDate = prompt("Nueva fecha (YYYY-MM-DD):", currentDate);
+    if (!newDate || newDate === currentDate) return;
+    await updateAppointment(token, apptId, { date:newDate, rescheduled:true });
+    onRefresh();
+  };
+  const handleRemove = async (apptId) => {
+    if (!confirm("¿Quitar esta cita? (no se completó)")) return;
+    await deleteAppointment(token, apptId);
+    onRefresh();
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Esquemas y citas</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+        {mySchemes.map(ps => {
+          const scheme = schemes.find(s => s.id === ps.schemeId);
+          const myAppts = appointments.filter(a => a.patientSchemeId === ps.id).sort((a,b) => a.date.localeCompare(b.date));
+          return (
+            <div key={ps.id} style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)", borderRadius:10, padding:"10px 12px" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                <span style={{ fontSize:12, color:"#00d4aa", fontWeight:600 }}>{scheme?.name || ps.schemeId}</span>
+                <span style={{ fontSize:10, color:"#666" }}>C{ps.currentCycle||1}/{ps.totalCyclesOverride || scheme?.totalCycles}</span>
+                <span style={{ fontSize:10, padding:"1px 8px", borderRadius:99, background:"rgba(255,255,255,0.05)", color:"#888" }}>{ps.schemeStatus || "activo"}</span>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:220, overflowY:"auto" }}>
+                {myAppts.map(a => {
+                  const sm = STATUS_META[a.status] || STATUS_META.scheduled;
+                  return (
+                    <div key={a.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:11 }}>
+                      <span style={{ color:"#888", fontFamily:"'IBM Plex Mono', monospace", width:90 }}>{a.date}</span>
+                      <span style={{ color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace", width:50 }}>{a.label}</span>
+                      <span style={{ fontSize:10, padding:"1px 8px", borderRadius:99, background:`${sm.color}18`, color:sm.color, border:`1px solid ${sm.color}44` }}>{sm.label}</span>
+                      {a.rescheduled && <span style={{ fontSize:10, color:"#ffb347" }}>↻</span>}
+                      <div style={{ flex:1 }} />
+                      {a.status !== "confirmed" && (
+                        <button onClick={() => handleConfirm(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", color:"#1D9E75" }}>✓ Confirmar</button>
+                      )}
+                      <button onClick={() => handleChangeDate(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>📅</button>
+                      <button onClick={() => handleRemove(a.id)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRefresh, centerFilter, schemes, patientSchemes, appointments }) {
   const [editing, setEditing]   = useState(null);
   const [newName, setNewName]   = useState("");
