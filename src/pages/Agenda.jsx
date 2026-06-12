@@ -523,7 +523,7 @@ const handleDeleteScheme = async (id) => {
       {e.status === "confirmed" && <span style={{ marginLeft:8, fontSize:11, color:"#1D9E75" }}>✓ Confirmada</span>}
       {e.rescheduled && <span style={{ marginLeft:8, fontSize:11, color:"#ffb347" }}>↻ Reagendada</span>}
     </div>
-    {e.status !== "confirmed" && e.date >= new Date().toISOString().split("T")[0] && (
+    {e.status !== "confirmed" && e.date >= today && (
       <button onClick={() => {
         const newDate = prompt(`Nueva fecha para ${e.patientName} ${e.label}:`, e.date);
         if (!newDate || newDate === e.date) return;
