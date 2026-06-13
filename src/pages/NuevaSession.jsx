@@ -69,13 +69,14 @@ const sessions = data.filter(d => d.document).map(d => {
     return unique;
   };
 
-  const filtered   = center ? sessions.filter(s => s.center === center) : sessions;
+const filtered   = center ? sessions.filter(s => s.center === center) : sessions;
 const patients   = dedupe(filtered, "patientName");
 const physicians = [...new Set(filtered.map(s => s.physician).filter(Boolean))].map(p => ({ physician: p }));
 const diagnoses  = [...new Set(filtered.map(s => s.diagnosis).filter(Boolean))].map(d => ({ diagnosis: d }));
+const medications = [...new Set(filtered.flatMap(s => s.medNames || []))].map(m => ({ medication: m }));
 console.log("Catalog loaded:", { total: sessions.length, filtered: filtered.length, center });
   console.log("Sample centers:", sessions.slice(0,5).map(s => s.center));
-return { patients: dedupe(patients, "patientName"), physicians: dedupe(physicians, "physician"), diagnoses: dedupe(diagnoses, "diagnosis") };
+return { patients: dedupe(patients, "patientName"), physicians: dedupe(physicians, "physician"), diagnoses: dedupe(diagnoses, "diagnosis"), medications: dedupe(medications, "medication") };
 }
 
 function Autocomplete({ value, onChange, suggestions, onSelect, placeholder, field }) {
