@@ -363,6 +363,7 @@ const isVisualizador = profile?.role === "visualizador";
 const [editingScheme, setEditingScheme] = useState(null);
   const [editing, setEditing]               = useState(null);
   const [selectedDate, setSelectedDate]     = useState(null);
+  const [expandedScheme, setExpandedScheme] = useState(null);
   const [selectedEvents, setSelectedEvents] = useState([]);
 
   const load = async () => {
@@ -646,8 +647,12 @@ const handleDeleteScheme = async (id) => {
     )}
 
     <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-      {schemes.sort((a,b) => a.name.localeCompare(b.name)).map(s => (
-        <div key={s.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, padding:"14px 18px", display:"flex", alignItems:"flex-start", gap:12 }}>
+   {schemes.sort((a,b) => a.name.localeCompare(b.name)).map(s => {
+        const myPatients = patientSchemes.filter(ps => ps.schemeId === s.id);
+        const isExpanded = expandedScheme === s.id;
+        return (
+        <div key={s.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, padding:"14px 18px" }}>
+        <div style={{ display:"flex", alignItems:"flex-start", gap:12 }}>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:14, color:"#f0f0f0", fontWeight:600, marginBottom:3 }}>{s.name}</div>
             {s.description && <div style={{ fontSize:12, color:"#666", marginBottom:4 }}>{s.description}</div>}
@@ -656,15 +661,42 @@ const handleDeleteScheme = async (id) => {
               <span>📅 Días: {s.administrationDays?.join(", ")}</span>
               <span>🎯 {s.totalCycles} ciclos</span>
             </div>
+            {myPatients.length > 0 && (
+              <button onClick={() => setExpandedScheme(isExpanded ? null : s.id)} style={{ marginTop:8, padding:"4px 12px", borderRadius:99, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
+                👥 {myPatients.length} paciente{myPatients.length!==1?"s":""} — {isExpanded ? "Ocultar" : "Ver pacientes"}
+              </button>
+            )}
           </div>
          {isJefe && (
+           {isJefe && (
             <div style={{ display:"flex", gap:6 }}>
               <button onClick={() => { setEditingScheme(s); setShowSchemeForm(true); }} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️</button>
               <button onClick={() => handleDeleteScheme(s.id)} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
             </div>
           )}
         </div>
-      ))}
+
+        {isExpanded && (
+          <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid rgba(255,255,255,0.06)", display:"flex", flexDirection:"column", gap:6 }}>
+            {myPatients.map(ps => {
+              const myAppts = appointments.filter(a => a.patientSchemeId === ps.id).sort((a,b) => a.date.localeCompare(b.date));
+              const confirmed = myAppts.filter(a => a.status === "confirmed");
+              const lastDate = myAppts.length ? myAppts[myAppts.length-1].date : null;
+              return (
+                <div key={ps.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:12 }}>
+                  <span style={{ flex:1, color:"#f0f0f0", fontWeight:600 }}>{ps.patientName}</span>
+                  <span style={{ fontSize:10, padding:"1px 8px", borderRadius:99, background: ps.center==="CITIO" ? "rgba(79,195,247,0.12)" : "rgba(175,169,236,0.12)", color: ps.center==="CITIO" ? "#4fc3f7" : "#AFA9EC" }}>{ps.center}</span>
+                  <span style={{ color:"#666", fontFamily:"'IBM Plex Mono', monospace" }}>Inicio: {ps.startDate}</span>
+                  <span style={{ color:"#666", fontFamily:"'IBM Plex Mono', monospace" }}>Fin: {lastDate || "—"}</span>
+                  <span style={{ fontSize:10, color:"#1D9E75" }}>{confirmed.length}/{myAppts.length} confirmadas</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        </div>
+        );
+      })}
     </div>
   </div>
 )}
