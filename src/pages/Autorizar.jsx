@@ -253,8 +253,9 @@ export default function Autorizar() {
     } catch(e) { console.error(e); }
   };
 
-  useEffect(() => { loadUnfinished(); }, [user]);
-
+  useEffect(() => { load(); }, [user]);
+useEffect(() => { loadUnfinished(); }, [user]);
+  
   useEffect(() => {
     if (selected) {
       const init = {};
@@ -364,6 +365,11 @@ export default function Autorizar() {
 
       {/* Lista de pendientes */}
       <div style={{ width: isMobile ? "100%" : 280, flexShrink: 0, borderRight: isMobile ? "none" : "1px solid rgba(255,255,255,0.06)", borderBottom: isMobile ? "1px solid rgba(255,255,255,0.06)" : "none", overflowY: "auto", padding: "16px", maxHeight: isMobile ? 220 : "100vh" }}>
+        {unfinished.length > 0 && (
+          <div style={{ marginBottom:20 }}>
+            <div style={{ fontSize:11, color:"#ffb347", letterSpacing:2, textTransform:"uppercase", marginBottom:10 }}>⚠ Sesiones inconclusas</div>
+            {unfinished.map(s => (
+              <div key={s.id} style={{ padding:"10px 12px", borderRadius:10, marginBottom:8, background:"rgba(255,179,71,0.06)", border:"1px solid rgba(255,179,71,0.2)" }}>
                 <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600, marginBottom:2 }}>{s.patientName}</div>
                 <div style={{ fontSize:11, color:"#666" }}>{s.center} · {s.cycle} · quedó el {s.date}</div>
                 <button onClick={() => handleContinue(s.id, s.patientName)} style={{ marginTop:8, width:"100%", padding:"7px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.12)", border:"1px solid rgba(255,179,71,0.35)", color:"#ffb347" }}>
@@ -374,7 +380,6 @@ export default function Autorizar() {
           </div>
         )}
         <div style={{ fontSize: 11, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 14 }}>Pendientes de autorizar</div>
-        {sessions.length === 0 ? (
           <div style={{ fontSize: 13, color: "#444", textAlign: "center", padding: "16px 0" }}>✓ Sin pendientes</div>
         ) : sessions.map(s => (
           <div key={s.id} onClick={() => { setSelected(s); setDone(false); }}
