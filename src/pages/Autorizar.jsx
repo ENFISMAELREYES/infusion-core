@@ -48,7 +48,7 @@ async function fetchPendingSessions(token) {
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
 
-async function authorizeSession(token, sessionId, meds, globalNote, corrected, userId, date) {
+async function authorizeSession(token, sessionId, meds, globalNote, corrected, userId, date, status) {
   const toFV = (val) => {
     if (typeof val === "string") return { stringValue: val };
     if (typeof val === "boolean") return { booleanValue: val };
@@ -64,7 +64,7 @@ async function authorizeSession(token, sessionId, meds, globalNote, corrected, u
     authorizedAt:   { stringValue: new Date().toISOString() },
     hasCorrestions: { booleanValue: corrected },
     globalNote:     { stringValue: globalNote },
-    status:         { stringValue: "pendiente" },
+    status:         { stringValue: status },
     meds:           toFV(meds),
     date:           { stringValue: date },
   };
@@ -281,7 +281,7 @@ useEffect(() => { loadUnfinished(); }, [user]);
     } catch(e) { alert("Error: " + e.message); }
   };
 
-  const loadUnfinished = async () => {
+ const loadUnfinished = async () => {
     if (!user) return;
     try {
       const token = await user.getIdToken(true);
@@ -291,12 +291,12 @@ useEffect(() => { loadUnfinished(); }, [user]);
         headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
         body: JSON.stringify({ structuredQuery: {
           from:[{ collectionId:"sessions" }],
-          where:{ fieldFilter:{ field:{ fieldPath:"status" }, op:"EQUAL", value:{ stringValue:"en_curso" } } },
+          where:{ fieldFilter:{ field:{ fieldPath:"authorized" }, op:"EQUAL", value:{ booleanValue:true } } },
         }})
       });
       const data = await res.json();
       const items = data.filter(d => d.document).map(d => parseDoc(d.document));
-      setUnfinished(items.filter(s => s.date !== today));
+      setUnfinished(items.filter(s => s.date !== today && s.events?.ingreso && !s.events?.retiro));
     } catch(e) { console.error(e); }
   };
 
@@ -350,7 +350,7 @@ useEffect(() => { loadUnfinished(); }, [user]);
       const updatedMeds = [...correctedMeds]
         .sort((a, b) => a.order - b.order)
         .map((m, i) => ({ ...m, order: i + 1 }));
-      await authorizeSession(token, selected.id, updatedMeds, globalNote, corrected > 0, user.uid, selectedDate);
+     await authorizeSession(token, selected.id, updatedMeds, globalNote, corrected > 0, user.uid, selectedDate, selected.events?.ingreso ? (selected.events?.retiro ? "completado" : "en_curso") : "pendiente");
       setDone(true);
       setSessions(p => p.filter(s => s.id !== selected.id));
       setSelected(null);
