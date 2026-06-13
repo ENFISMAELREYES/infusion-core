@@ -38,10 +38,11 @@ async function fetchCatalog(token, center) {
       structuredQuery: {
         from: [{ collectionId: "sessions" }],
         select: { fields: [
-  { fieldPath: "patientName" }, { fieldPath: "dob" },
-  { fieldPath: "diagnosis" }, { fieldPath: "physician" },
-  { fieldPath: "insurance" }, { fieldPath: "center" },
-]},
+          { fieldPath: "patientName" }, { fieldPath: "dob" },
+          { fieldPath: "diagnosis" }, { fieldPath: "physician" },
+          { fieldPath: "insurance" }, { fieldPath: "center" },
+          { fieldPath: "meds" },
+        ]},
         limit: 200,
       }
     })
@@ -52,7 +53,8 @@ async function fetchCatalog(token, center) {
 const sessions = data.filter(d => d.document).map(d => {
     const f = d.document.fields || {};
     const g = (k) => f[k]?.stringValue || "";
-    return { patientName: g("patientName"), dob: g("dob"), diagnosis: g("diagnosis"), physician: g("physician"), insurance: g("insurance"), center: g("center") };
+    const medNames = (f.meds?.arrayValue?.values || []).map(m => m.mapValue?.fields?.name?.stringValue).filter(Boolean);
+    return { patientName: g("patientName"), dob: g("dob"), diagnosis: g("diagnosis"), physician: g("physician"), insurance: g("insurance"), center: g("center"), medNames };
   });
   
   // Deduplicar por similitud
