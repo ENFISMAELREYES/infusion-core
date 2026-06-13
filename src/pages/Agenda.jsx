@@ -667,7 +667,6 @@ const handleDeleteScheme = async (id) => {
               </button>
             )}
           </div>
-         {isJefe && (
            {isJefe && (
             <div style={{ display:"flex", gap:6 }}>
               <button onClick={() => { setEditingScheme(s); setShowSchemeForm(true); }} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️</button>
