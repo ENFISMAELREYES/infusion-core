@@ -140,7 +140,7 @@ const [form, setForm] = useState({
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
   const [error, setError]     = useState("");
-  const [catalog, setCatalog] = useState({ patients: [], physicians: [], diagnoses: [] });
+  const [catalog, setCatalog] = useState({ patients: [], physicians: [], diagnoses: [], medications: [] });
 
   useEffect(() => {
     if (!user || !profile?.center) return;
@@ -353,7 +353,17 @@ const [form, setForm] = useState({
                       {CATEGORIES.map(c => <option key={c} value={c}>{CAT_LABEL[c]}</option>)}
                     </select>
                   </div>
-                  <div><label style={labelStyle}>Medicamento</label><input required value={med.name} onChange={e => setMedField(med.id, "name", e.target.value)} placeholder="ej: Bevacizumab" style={inputStyle} /></div>
+                  <div>
+                    <label style={labelStyle}>Medicamento</label>
+                    <Autocomplete
+                      value={med.name}
+                      onChange={v => setMedField(med.id, "name", v)}
+                      suggestions={catalog.medications}
+                      onSelect={s => setMedField(med.id, "name", s.medication)}
+                      placeholder="ej: Bevacizumab"
+                      field="medication"
+                    />
+                  </div>
                   <div><label style={labelStyle}>Dosis</label><input required value={med.dose} onChange={e => setMedField(med.id, "dose", e.target.value)} placeholder="ej: 780 mg" style={inputStyle} /></div>
                   {med.category !== "domicilio" && <div><label style={labelStyle}>Dilución</label><input required value={med.diluent} onChange={e => setMedField(med.id, "diluent", e.target.value)} placeholder="ej: 100 ml SF" style={inputStyle} /></div>}
 {med.category !== "domicilio" && <div><label style={labelStyle}>Tiempo (minutos)</label><input type="number" min="1" value={med.time} onChange={e => setMedField(med.id, "time", e.target.value)} placeholder="ej: 30" style={inputStyle} /></div>}
