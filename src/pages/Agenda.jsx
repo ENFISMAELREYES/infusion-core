@@ -528,9 +528,16 @@ const handleDeleteScheme = async (id) => {
       {e.rescheduled && <span style={{ marginLeft:8, fontSize:11, color:"#ffb347" }}>↻ Reagendada</span>}
     </div>
     {!isVisualizador && e.status !== "confirmed" && e.date >= today && (
+      <button onClick={() => {
+        const newDate = prompt(`Nueva fecha para ${e.patientName} ${e.label}:`, e.date);
+        if (!newDate || newDate === e.date) return;
+        user.getIdToken(true).then(t => rescheduleAppointment(t, e.apptId, newDate).then(load));
+      }} style={{ padding:"4px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+        ↻ Reagendar
+      </button>
     )}
-  </div>
-))}
+    </div>
+  ))}
                 </div>
               )}
             </div>
