@@ -349,6 +349,7 @@ function SchemeEditor({ scheme, onSave, onCancel }) {
 export default function Agenda() {
   const { user, profile } = useAuth();
 const isJefe = profile?.role === "jefe";
+const isVisualizador = profile?.role === "visualizador";
   const [schemes, setSchemes]               = useState([]);
   const [patientSchemes, setPatientSchemes] = useState([]);
   const [sessions, setSessions]             = useState([]);
@@ -526,14 +527,7 @@ const handleDeleteScheme = async (id) => {
       {e.status === "confirmed" && <span style={{ marginLeft:8, fontSize:11, color:"#1D9E75" }}>✓ Confirmada</span>}
       {e.rescheduled && <span style={{ marginLeft:8, fontSize:11, color:"#ffb347" }}>↻ Reagendada</span>}
     </div>
-    {e.status !== "confirmed" && e.date >= today && (
-      <button onClick={() => {
-        const newDate = prompt(`Nueva fecha para ${e.patientName} ${e.label}:`, e.date);
-        if (!newDate || newDate === e.date) return;
-        user.getIdToken(true).then(t => rescheduleAppointment(t, e.apptId, newDate).then(load));
-      }} style={{ padding:"4px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
-        ↻ Reagendar
-      </button>
+    {!isVisualizador && e.status !== "confirmed" && e.date >= today && (
     )}
   </div>
 ))}
