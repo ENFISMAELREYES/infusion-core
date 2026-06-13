@@ -647,7 +647,8 @@ function CatalogSection({ title, icon, groups, field, sessions, token, onRefresh
 }
 
 export default function Catalogo() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const canEdit = profile?.role !== "visualizador";
   const [sessions, setSessions]         = useState([]);
   const [patientCatalog, setPatientCatalog] = useState([]);
   const [loading, setLoading]           = useState(true);
@@ -749,7 +750,7 @@ schemeOnlyNames.forEach(name => {
       ) : (
         <>
           {tab === "patients" && (
-            <PatientCatalogSection
+           <PatientCatalogSection
               groups={patientGroups}
               sessions={sessions}
               token={token}
@@ -759,6 +760,7 @@ schemeOnlyNames.forEach(name => {
               schemes={schemes}
               patientSchemes={patientSchemes}
               appointments={appointments}
+              canEdit={canEdit}
             />
           )}
           {tab === "physicians" && (
