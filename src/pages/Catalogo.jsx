@@ -457,8 +457,10 @@ const handleDataEdit = async (patientName, draft) => {
               </div>
             )}
           </div>
-          <button onClick={() => { setEditingData(g.canonical); setEditDraft({ dob:sample.dob||"", diagnosis:sample.diagnosis||"", physician:sample.physician||"" }); }}
-            style={{ padding:"4px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347", flexShrink:0 }}>✏️ Editar</button>
+         {canEdit && (
+            <button onClick={() => { setEditingData(g.canonical); setEditDraft({ dob:sample.dob||"", diagnosis:sample.diagnosis||"", physician:sample.physician||"" }); }}
+              style={{ padding:"4px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347", flexShrink:0 }}>✏️ Editar</button>
+          )}
         </div>
       </div>
     );
@@ -514,9 +516,11 @@ const handleDataEdit = async (patientName, draft) => {
                         {g.variants.filter(v => v !== g.canonical).map((v, j) => (
                           <div key={j} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
                             <span style={{ fontSize:12, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{v}</span>
+                            {canEdit && (
                             <button onClick={() => handleMerge(v, g.canonical)} style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
                               Fusionar
                             </button>
+                          )}
                           </div>
                         ))}
                       </div>
@@ -545,6 +549,7 @@ const handleDataEdit = async (patientName, draft) => {
                       appointments={appointments}
                       token={token}
                       onRefresh={onRefresh}
+                      canEdit={canEdit}
                     />
 
                   </div>
