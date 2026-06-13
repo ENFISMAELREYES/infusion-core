@@ -404,8 +404,10 @@ const handleDataEdit = async (patientName, draft) => {
                   <div style={{ fontSize:11, color:"#555", marginTop:4 }}>{g.count} sesión{g.count !== 1 ? "es" : ""}</div>
                 </div>
                 <div style={{ display:"flex", gap:6, flexShrink:0 }} onClick={e => e.stopPropagation()}>
-                  <button onClick={() => { setEditing(g.canonical); setNewName(g.canonical); }}
-                    style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666" }}>✏️</button>
+                 {canEdit && (
+                    <button onClick={() => { setEditing(g.canonical); setNewName(g.canonical); }}
+                      style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666" }}>✏️</button>
+                  )}
                   <span style={{ color:"#555", fontSize:12, padding:"5px 4px" }}>{isExpanded?"▲":"▼"}</span>
                 </div>
               </div>
