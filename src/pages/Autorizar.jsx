@@ -266,6 +266,20 @@ export default function Autorizar() {
     }
   }, [selected?.id]);
 
+  const handleContinue = async (sessionId, patientName) => {
+    const newDate = prompt(`Continuar sesión de ${patientName}. Fecha:`, today);
+    if (!newDate) return;
+    try {
+      const token = await user.getIdToken(true);
+      const fields = { date: { stringValue: newDate } };
+      await fetch(
+        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?updateMask.fieldPaths=date`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
+      );
+      loadUnfinished();
+    } catch(e) { alert("Error: " + e.message); }
+  };
+
   const loadUnfinished = async () => {
     if (!user) return;
     try {
