@@ -241,6 +241,7 @@ export default function Autorizar() {
   const [selectedDate, setSelectedDate] = useState("");
   const [saving, setSaving]             = useState(false);
   const [done, setDone]                 = useState(false);
+  const [unfinished, setUnfinished] = useState([]);
 
   const load = async () => {
     if (!user) return;
