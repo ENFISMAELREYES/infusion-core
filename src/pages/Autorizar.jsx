@@ -253,7 +253,7 @@ export default function Autorizar() {
     } catch(e) { console.error(e); }
   };
 
-  useEffect(() => { load(); }, [user]);
+  useEffect(() => { loadUnfinished(); }, [user]);
 
   useEffect(() => {
     if (selected) {
@@ -265,6 +265,25 @@ export default function Autorizar() {
       setDone(false);
     }
   }, [selected?.id]);
+
+  const loadUnfinished = async () => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken(true);
+      const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+      const res = await fetch(url, {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+        body: JSON.stringify({ structuredQuery: {
+          from:[{ collectionId:"sessions" }],
+          where:{ fieldFilter:{ field:{ fieldPath:"status" }, op:"EQUAL", value:{ stringValue:"en_curso" } } },
+        }})
+      });
+      const data = await res.json();
+      const items = data.filter(d => d.document).map(d => parseDoc(d.document));
+      setUnfinished(items.filter(s => s.date !== today));
+    } catch(e) { console.error(e); }
+  };
 
   const approveMed = (id, washData) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus: "approved", ...washData } }));
   const correctMed = (id, corr)     => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus: "corrected", correction: corr, washTime: corr.washTime, washSolution: corr.washSolution, washSpeed: corr.washSpeed } }));
