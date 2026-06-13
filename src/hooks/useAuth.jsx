@@ -12,6 +12,8 @@ const PROFILES = {
   "iwAUACSAqWYhol991xMDxgq30vq1": { name: "Yessica Madera",    role: "enfermera",    center: "CITIO" },
   "IC2Tegxjijc6icyaGXZUSjAFrxR2": { name: "Carlos Sorroza",    role: "visualizador", center: "CIPI"  },
   "0lah1NsefnR5GSpjfTX7D1qc4rh1": { name: "Jonathan Martínez", role: "visualizador", center: "CITIO" },
+  "Ms8W1cGrrtY7bDDeSkt3RISvDZM2": { name: "Paola Itzel Sandre", role: "visualizador", center: "CIPI"  },
+  "GstGhEoU7AbfbNwU8Lq2KZ2wiL52": { name: "Maricruz Zorrosa",  role: "visualizador", center: "CITIO" },
 };
 
 export function AuthProvider({ children }) {
