@@ -788,7 +788,11 @@ const scheduled = nurseData.filter(s => s.authorized && s.date !== today && s.st
               <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
                 No hay sesiones programadas próximas.
               </div>
-            ) : scheduledSessions.map(s => <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} />)
+            ) : scheduledSessions.map(s => 
+                s.status === "en_curso" 
+                  ? <SessionCard key={s.id} session={s} token={token} onRefresh={load} user={user} />
+                  : <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} />
+              )
           )}
         </>
       )}
