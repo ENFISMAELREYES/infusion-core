@@ -308,7 +308,7 @@ const saveMeds = async (apptId, confirmAlso) => {
   );
 }
 
-function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRefresh, centerFilter, schemes, patientSchemes, appointments }) {
+function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRefresh, centerFilter, schemes, patientSchemes, appointments, canEdit }) {
   const [editing, setEditing]   = useState(null);
   const [newName, setNewName]   = useState("");
   const [saving, setSaving]     = useState(false);
