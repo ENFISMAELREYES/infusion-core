@@ -379,7 +379,8 @@ useEffect(() => { loadUnfinished(); }, [user]);
             ))}
           </div>
         )}
-        <div style={{ fontSize: 11, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 14 }}>Pendientes de autorizar</div>
+       <div style={{ fontSize: 11, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 14 }}>Pendientes de autorizar</div>
+        {sessions.length === 0 ? (
           <div style={{ fontSize: 13, color: "#444", textAlign: "center", padding: "16px 0" }}>✓ Sin pendientes</div>
         ) : sessions.map(s => (
           <div key={s.id} onClick={() => { setSelected(s); setDone(false); }}
