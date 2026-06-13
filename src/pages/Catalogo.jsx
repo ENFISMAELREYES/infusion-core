@@ -182,7 +182,7 @@ async function deleteAppointment(token, apptId) {
   );
 }
 
-function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appointments, token, onRefresh }) {
+function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appointments, token, onRefresh, canEdit }) {
   const mySchemes = patientSchemes.filter(ps => ps.patientName === patientName);
   if (mySchemes.length === 0) return null;
 
@@ -267,12 +267,16 @@ const saveMeds = async (apptId, confirmAlso) => {
                       {a.rescheduled && <span style={{ fontSize:10, color:"#ffb347" }}>↻</span>}
                       {a.meds?.length > 0 && <span style={{ fontSize:10, color:"#AFA9EC" }}>💊{a.meds.length}</span>}
                       <div style={{ flex:1 }} />
-                      <button onClick={() => editingMeds===a.id ? setEditingMeds(null) : openMedsEditor(a, ps.medTemplate)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC" }}>💊</button>
-                      {a.status !== "confirmed" && (
-                        <button onClick={() => handleConfirm(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", color:"#1D9E75" }}>✓ Confirmar</button>
+                      {canEdit && (
+                        <>
+                          <button onClick={() => editingMeds===a.id ? setEditingMeds(null) : openMedsEditor(a, ps.medTemplate)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC" }}>💊</button>
+                          {a.status !== "confirmed" && (
+                            <button onClick={() => handleConfirm(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", color:"#1D9E75" }}>✓ Confirmar</button>
+                          )}
+                          <button onClick={() => handleChangeDate(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>📅</button>
+                          <button onClick={() => handleRemove(a.id)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
+                        </>
                       )}
-                      <button onClick={() => handleChangeDate(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>📅</button>
-                      <button onClick={() => handleRemove(a.id)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
                     </div>
 
                     {editingMeds === a.id && (
@@ -563,7 +567,7 @@ const handleDataEdit = async (patientName, draft) => {
   );
 }
 
-function CatalogSection({ title, icon, groups, field, sessions, token, onRefresh, centerFilter }) {
+function CatalogSection({ title, icon, groups, field, sessions, token, onRefresh, centerFilter, canEdit }) {
   const [editing, setEditing]   = useState(null);
   const [newName, setNewName]   = useState("");
   const [saving, setSaving]     = useState(false);
@@ -638,7 +642,7 @@ function CatalogSection({ title, icon, groups, field, sessions, token, onRefresh
                     </div>
                   )}
                 </div>
-                {!isEditing && (
+                {!isEditing && canEdit && (
                   <button onClick={() => { setEditing(g.canonical); setNewName(g.canonical); }}
                     style={{ padding:"6px 12px", borderRadius:8, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666", flexShrink:0 }}>
                     ✏️ Editar
