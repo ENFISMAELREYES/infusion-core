@@ -490,7 +490,7 @@ const handleDeleteScheme = async (id) => {
 
       {/* Tabs */}
       <div style={{ display:"flex", gap:8, marginBottom:20 }}>
-       {[["calendar","📅","Calendario"],["list","📋","Lista de citas"],["patients","👥","Pacientes"],...(isJefe?[["schemes","🧬","Esquemas"]]:[])].map(([id,icon,label]) => (
+       {[["calendar","📅","Calendario"],["list","📋","Lista de citas"],["patients","👥","Pacientes"],["schemes","🧬","Esquemas"]].map(([id,icon,label]) => (
           <button key={id} onClick={() => setView(id)} style={{
             padding:"7px 16px", borderRadius:10, fontSize:13, fontWeight:600, cursor:"pointer",
             background: view===id ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
@@ -633,9 +633,11 @@ const handleDeleteScheme = async (id) => {
   <div>
     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
       <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase" }}>{schemes.length} esquemas registrados</div>
-      <button onClick={() => { setShowSchemeForm(true); setEditingScheme(null); }} style={{ padding:"7px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
-        + Nuevo esquema
-      </button>
+      {isJefe && (
+        <button onClick={() => { setShowSchemeForm(true); setEditingScheme(null); }} style={{ padding:"7px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+          + Nuevo esquema
+        </button>
+      )}
     </div>
 
     {showSchemeForm && (
@@ -654,10 +656,12 @@ const handleDeleteScheme = async (id) => {
               <span>🎯 {s.totalCycles} ciclos</span>
             </div>
           </div>
-          <div style={{ display:"flex", gap:6 }}>
-            <button onClick={() => { setEditingScheme(s); setShowSchemeForm(true); }} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️</button>
-            <button onClick={() => handleDeleteScheme(s.id)} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
-          </div>
+         {isJefe && (
+            <div style={{ display:"flex", gap:6 }}>
+              <button onClick={() => { setEditingScheme(s); setShowSchemeForm(true); }} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️</button>
+              <button onClick={() => handleDeleteScheme(s.id)} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
+            </div>
+          )}
         </div>
       ))}
     </div>
