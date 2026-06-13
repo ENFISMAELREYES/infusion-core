@@ -497,8 +497,8 @@ const handleDataEdit = async (patientName, draft) => {
                       <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Estatus del paciente</div>
                       <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                         {Object.entries(PATIENT_STATUS).map(([k, v]) => (
-                          <button key={k} onClick={() => handleStatusChange(g.canonical, k)} style={{
-                            padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
+                         <button key={k} onClick={() => canEdit && handleStatusChange(g.canonical, k)} disabled={!canEdit} style={{
+                            padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor: canEdit ? "pointer" : "default",
                             background: status === k ? `${v.color}20` : "rgba(255,255,255,0.04)",
                             border:`1px solid ${status === k ? v.color : "rgba(255,255,255,0.07)"}`,
                             color: status === k ? v.color : "#666",
