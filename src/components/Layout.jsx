@@ -8,15 +8,16 @@ const NAV = {
     { to:"/autorizar", icon:"✦", label:"Autorizar"  },
     { to:"/historial", icon:"◷", label:"Historial"  },
     { to:"/catalogo",  icon:"◈", label:"Catálogo"  },
-    { to:"/reportes", icon:"📊", label:"Reportes" },
-    { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
     { to:"/agenda", icon:"📅", label:"Agenda" },
+    { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
+    { to:"/reportes", icon:"📊", label:"Reportes" },
   ],
   enfermera: [
     { to:"/pacientes", icon:"◎", label:"Pacientes"  },
     { to:"/registrar", icon:"＋", label:"Registrar"  },
     { to:"/historial", icon:"◷", label:"Historial"  },
     { to:"/agenda",    icon:"📅", label:"Agenda"     },
+    { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
   ],
  visualizador: [
     { to:"/monitor",   icon:"◎", label:"Monitor"   },
