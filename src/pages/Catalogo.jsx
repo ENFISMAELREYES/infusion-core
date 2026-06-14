@@ -479,7 +479,7 @@ const handleDataEdit = async (patientName, draft) => {
   return (
     <div style={{ padding:"12px 14px", borderRadius:10, background:"rgba(255,179,71,0.05)", border:"1px solid rgba(255,179,71,0.2)" }}>
       <div style={{ fontSize:11, color:"#ffb347", fontWeight:600, marginBottom:10 }}>✏️ Editar datos del paciente</div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:10, marginBottom:10 }}>
         <div>
           <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>Fecha de nacimiento</label>
           <input type="date" value={draft.dob} onChange={e => setEditDraft(d=>({...d,dob:e.target.value}))}
@@ -493,6 +493,11 @@ const handleDataEdit = async (patientName, draft) => {
         <div>
           <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>Médico tratante</label>
           <input value={draft.physician} onChange={e => setEditDraft(d=>({...d,physician:e.target.value}))}
+            style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+        </div>
+        <div>
+          <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>Alergias</label>
+          <input value={draft.allergies} onChange={e => setEditDraft(d=>({...d,allergies:e.target.value}))}
             style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
         </div>
       </div>
