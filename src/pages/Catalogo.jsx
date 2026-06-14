@@ -461,7 +461,7 @@ const handleDataEdit = async (patientName, draft) => {
                 <div style={{ fontSize:13, color:"#aaa", marginTop:2 }}>{sample.physician}</div>
               </div>
             )}
-            {sample.allergies && (
+           {sample.allergies && (
               <div>
                 <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Alergias</div>
                 <div style={{ fontSize:13, color:"#aaa", marginTop:2 }}>{sample.allergies}</div>
