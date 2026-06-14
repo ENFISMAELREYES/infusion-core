@@ -134,7 +134,7 @@ export default function NuevaSession() {
   const [sessionType, setSessionType] = useState(null);
 const [form, setForm] = useState({
     patientName: "", dob: "", diagnosis: "", physician: "",
-    insurance: "", cycle: "", applicationDate: today,
+    insurance: "", cycle: "", applicationDate: today, allergies: "",
   });
   const [meds, setMeds]       = useState([emptyMed(1)]);
   const [saving, setSaving]   = useState(false);
