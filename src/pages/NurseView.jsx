@@ -7,7 +7,7 @@ const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
 const CAT_COLOR = {
   premedicacion: "#FAC775", inmunoterapia: "#5DCAA5",
   quimioterapia: "#F09595", adicional: "#AFA9EC", 
-  especialidad: "#F7A8D0", domicilio: "#82C4F8",
+  especialidad: "#F7A8D0", hidratacion: "#FFFFFF", domicilio: "#82C4F8",
 };
 const CATEGORIES = ["premedicacion","inmunoterapia","quimioterapia","adicional","especialidad","domicilio"];
 const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", domicilio:"Domicilio" };
