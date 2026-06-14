@@ -292,9 +292,9 @@ const [form, setForm] = useState({
               <input type="date" required value={form.dob} onChange={e => setField("dob", e.target.value)} style={inputStyle} />
             </div>
 
-            <div>
-              <label style={labelStyle}>Tipo de atención</label>
-              <input value={form.insurance} onChange={e => setField("insurance", e.target.value)} placeholder="ej: Aseguradora" style={inputStyle} />
+           <div>
+              <label style={labelStyle}>Alergias</label>
+              <input value={form.allergies} onChange={e => setField("allergies", e.target.value)} placeholder="ej: Negadas / Penicilina" style={inputStyle} />
             </div>
 
             <div style={{ gridColumn:"1/-1" }}>
