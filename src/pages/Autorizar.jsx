@@ -87,6 +87,8 @@ const CAT_COLOR = {
   inmunoterapia: { dark: "rgba(93,202,165,0.15)",  border: "#5DCAA5" },
   quimioterapia: { dark: "rgba(240,149,149,0.15)", border: "#F09595" },
   adicional:     { dark: "rgba(175,169,236,0.15)", border: "#AFA9EC" },
+  especialidad:  { dark: "rgba(247,168,208,0.15)", border: "#F7A8D0" },
+  hidratacion:   { dark: "rgba(255,255,255,0.08)", border: "#FFFFFF" },
   domicilio:     { dark: "rgba(130,196,248,0.15)", border: "#82C4F8" },
 };
 const CATEGORIES = ["premedicacion","inmunoterapia","quimioterapia","adicional","especialidad","hidratacion","domicilio"];
