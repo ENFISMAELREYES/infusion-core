@@ -319,7 +319,7 @@ function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRef
   const [search, setSearch]     = useState("");
   const [expanded, setExpanded] = useState(null);
   const [editingData, setEditingData] = useState(null);
-const [editDraft, setEditDraft] = useState({ dob:"", diagnosis:"", physician:"" });
+const [editDraft, setEditDraft] = useState({ dob:"", diagnosis:"", physician:"", allergies:"" });
 
 const handleDataEdit = async (patientName, draft) => {
   try {
