@@ -328,6 +328,7 @@ const handleDataEdit = async (patientName, draft) => {
       if (draft.dob && draft.dob !== s.dob) await updateSessionField(token, s.id, "dob", draft.dob);
       if (draft.diagnosis && draft.diagnosis !== s.diagnosis) await updateSessionField(token, s.id, "diagnosis", draft.diagnosis);
       if (draft.physician && draft.physician !== s.physician) await updateSessionField(token, s.id, "physician", draft.physician);
+      if (draft.allergies !== s.allergies) await updateSessionField(token, s.id, "allergies", draft.allergies || "");
     }
     setEditingData(null);
     onRefresh();
