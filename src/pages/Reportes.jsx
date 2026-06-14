@@ -116,12 +116,16 @@ export default function Reportes() {
 
   useEffect(() => { load(); }, [user]);
 
+  // Separar entregas del resto
+  const deliveries     = sessions.filter(s => s.sessionType === "entrega");
+  const clinicSessions = sessions.filter(s => s.sessionType !== "entrega");
+
   // Métricas
-  const completed  = sessions.filter(s => s.status === "completado").length;
-  const inProgress = sessions.filter(s => s.status === "en_curso").length;
-  const pending    = sessions.filter(s => s.status === "pendiente").length;
-  const cipi       = sessions.filter(s => s.center === "CIPI").length;
-  const citio      = sessions.filter(s => s.center === "CITIO").length;
+  const completed  = clinicSessions.filter(s => s.status === "completado").length;
+  const inProgress = clinicSessions.filter(s => s.status === "en_curso").length;
+  const pending    = clinicSessions.filter(s => s.status === "pendiente").length;
+  const cipi       = clinicSessions.filter(s => s.center === "CIPI").length;
+  const citio      = clinicSessions.filter(s => s.center === "CITIO").length;
 
   // Promedio de estancia
   const pt = (t) => {
@@ -144,21 +148,21 @@ export default function Reportes() {
   }, 0) / withTimes.length) : 0;
 
   // Pacientes únicos
-  const uniquePatients = [...new Set(sessions.map(s => s.patientName).filter(Boolean))].length;
-
+  const uniquePatients = [...new Set(clinicSessions.map(s => s.patientName).filter(Boolean))].length;
+  
   // Por médico
   const byPhysician = Object.entries(
-    sessions.reduce((acc, s) => { if (s.physician) acc[s.physician] = (acc[s.physician]||0)+1; return acc; }, {})
+   clinicSessions.reduce((acc, s) => { if (s.physician) acc[s.physician] = (acc[s.physician]||0)+1; return acc; }, {})
   ).map(([label, value]) => ({ label, value })).sort((a,b) => b.value - a.value);
 
   // Por diagnóstico
   const byDiagnosis = Object.entries(
-    sessions.reduce((acc, s) => { if (s.diagnosis) acc[s.diagnosis] = (acc[s.diagnosis]||0)+1; return acc; }, {})
+    clinicSessions.reduce((acc, s) => { if (s.diagnosis) acc[s.diagnosis] = (acc[s.diagnosis]||0)+1; return acc; }, {})
   ).map(([label, value]) => ({ label, value })).sort((a,b) => b.value - a.value);
 
   // Por mes
   const byMonth = Object.entries(
-    sessions.reduce((acc, s) => {
+    clinicSessions.reduce((acc, s) => {
       if (!s.date) return acc;
       const month = s.date.substring(0, 7);
       acc[month] = (acc[month]||0)+1;
@@ -218,12 +222,13 @@ export default function Reportes() {
         <>
           {/* Stats principales */}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(160px, 1fr))", gap:12, marginBottom:28 }}>
-            <StatBox label="Total sesiones"    value={sessions.length} color="#00d4aa" />
+            <StatBox label="Total sesiones"    value={clinicSessions.length} color="#00d4aa" />
             <StatBox label="Completadas"        value={completed}       color="#4fc3f7" />
             <StatBox label="Pacientes únicos"   value={uniquePatients}  color="#AFA9EC" />
             <StatBox label="Estancia promedio"  value={avgStay ? `${Math.floor(avgStay/60)}h ${avgStay%60}m` : "—"} color="#FAC775" />
-            <StatBox label="CIPI"  value={cipi}  sub={`${sessions.length ? Math.round(cipi/sessions.length*100) : 0}% del total`} color="#5DCAA5" />
-            <StatBox label="CITIO" value={citio} sub={`${sessions.length ? Math.round(citio/sessions.length*100) : 0}% del total`} color="#F09595" />
+           <StatBox label="CIPI"  value={cipi}  sub={`${clinicSessions.length ? Math.round(cipi/clinicSessions.length*100) : 0}% del total`} color="#5DCAA5" />
+            <StatBox label="CITIO" value={citio} sub={`${clinicSessions.length ? Math.round(citio/clinicSessions.length*100) : 0}% del total`} color="#F09595" />
+            <StatBox label="Entregas de medicamento" value={deliveries.length} color="#82C4F8" />
           </div>
 
           {/* Gráfica por mes */}
