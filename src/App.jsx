@@ -52,7 +52,7 @@ function AppRoutes() {
         <Route path="monitor" element={<PrivateRoute roles={["jefe","visualizador"]}><Monitor /></PrivateRoute>} />
         <Route path="autorizar" element={<PrivateRoute roles={["jefe"]}><Autorizar /></PrivateRoute>} />
         <Route path="historial" element={<PrivateRoute roles={["jefe","visualizador","enfermera"]}><Historial /></PrivateRoute>} />
-        <Route path="catalogo" element={<PrivateRoute roles={["jefe","visualizador"]}><Catalogo /></PrivateRoute>} />
+        <Route path="catalogo" element={<PrivateRoute roles={["jefe","visualizador","enfermera"]}><Catalogo /></PrivateRoute>} />
         <Route path="pacientes" element={<PrivateRoute roles={["enfermera"]}><NurseView /></PrivateRoute>} />
         <Route path="registrar" element={<PrivateRoute roles={["enfermera"]}><NuevaSession /></PrivateRoute>} />
         <Route path="*" element={<Navigate to={profile?.role === "enfermera" ? "/pacientes" : "/"} replace />} />
