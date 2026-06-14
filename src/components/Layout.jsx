@@ -17,6 +17,7 @@ const NAV = {
     { to:"/registrar", icon:"＋", label:"Registrar"  },
     { to:"/historial", icon:"◷", label:"Historial"  },
     { to:"/agenda",    icon:"📅", label:"Agenda"     },
+    { to:"/catalogo",  icon:"◈", label:"Catálogo"  },
     { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
   ],
  visualizador: [
