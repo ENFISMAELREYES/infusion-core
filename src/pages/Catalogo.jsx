@@ -468,7 +468,7 @@ const handleDataEdit = async (patientName, draft) => {
             )}
           </div>
          {canEdit && (
-            <button onClick={() => { setEditingData(g.canonical); setEditDraft({ dob:sample.dob||"", diagnosis:sample.diagnosis||"", physician:sample.physician||"" }); }}
+            <button onClick={() => { setEditingData(g.canonical); setEditDraft({ dob:sample.dob||"", diagnosis:sample.diagnosis||"", physician:sample.physician||"", allergies:sample.allergies||"" }); }}
               style={{ padding:"4px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347", flexShrink:0 }}>✏️ Editar</button>
           )}
         </div>
