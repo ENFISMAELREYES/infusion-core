@@ -86,12 +86,18 @@ function SessionRow({ s, onSelect, selected }) {
   const we          = s.washEvents || {};
 
   const totalReal = (s.meds||[]).reduce((acc, m) => {
+    let total = acc;
     const ev = me[`med_${m.id}`] || {};
     if (ev.inicio && ev.fin) {
       const diff = parseTime(ev.fin) - parseTime(ev.inicio);
-      return acc + (diff > 0 ? diff : 0);
+      total += (diff > 0 ? diff : 0);
     }
-    return acc;
+    const wev = we[`wash_${m.id}`] || {};
+    if (wev.inicio && wev.fin) {
+      const washDiff = parseTime(wev.fin) - parseTime(wev.inicio);
+      total += (washDiff > 0 ? washDiff : 0);
+    }
+    return total;
   }, 0);
 
   const totalProg = (s.meds||[]).reduce((acc, m) => acc + (m.time||0) + (m.wash?.time||0), 0);
