@@ -14,6 +14,7 @@ const PROFILES = {
   "0lah1NsefnR5GSpjfTX7D1qc4rh1": { name: "Jonathan Martínez", role: "visualizador", center: "CITIO" },
   "Ms8W1cGrrtY7bDDeSkt3RISvDZM2": { name: "Paola Itzel Sandre", role: "visualizador", center: "CIPI"  },
   "GstGhEoU7AbfbNwU8Lq2KZ2wiL52": { name: "Maricruz Zorrosa",  role: "visualizador", center: "CITIO" },
+  "IhiRm5Fc5IT8BzzmQLQaq1dFXGs1": { name: "Ismael Reyes",      role: "enfermera",    center: "CITIO" },
 };
 
 export function AuthProvider({ children }) {
