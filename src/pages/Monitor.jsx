@@ -191,13 +191,20 @@ function PatientRow({ s }) {
       const [h, mm] = t.split(":").map(Number);
       return h * 60 + mm;
     };
+    const we = s.washEvents || {};
     const real = s.meds.reduce((acc, m) => {
+      let total = acc;
       const ev = me[`med_${m.id}`] || {};
       if (ev.inicio && ev.fin) {
         const d = pt(ev.fin) - pt(ev.inicio);
-        return acc + (d > 0 ? d : 0);
+        total += (d > 0 ? d : 0);
       }
-      return acc;
+      const wev = we[`wash_${m.id}`] || {};
+      if (wev.inicio && wev.fin) {
+        const wd = pt(wev.fin) - pt(wev.inicio);
+        total += (wd > 0 ? wd : 0);
+      }
+      return total;
     }, 0);
     return (
       <div style={{ marginTop:4, fontSize:10, fontFamily:"'IBM Plex Mono', monospace" }}>
