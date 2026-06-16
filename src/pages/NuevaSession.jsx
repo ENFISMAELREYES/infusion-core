@@ -128,7 +128,8 @@ const filtered = suggestions
 }
 
 export default function NuevaSession() {
-  const { user, profile } = useAuth();
+ const { user, profile } = useAuth();
+const canCopyPrevious = user?.uid === "IhiRm5Fc5IT8BzzmQLQaq1dFXGs1";
   const today = getToday();
 
   const [sessionType, setSessionType] = useState(null);
@@ -161,6 +162,48 @@ const [form, setForm] = useState({
     insurance:   s.insurance   || f.insurance,
   }));
 
+  const copyPreviousTreatment = async () => {
+    if (!form.patientName) return;
+    try {
+      const token = await user.getIdToken(true);
+      const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: "sessions" }],
+            where: { fieldFilter: { field: { fieldPath: "patientName" }, op: "EQUAL", value: { stringValue: form.patientName } } },
+            orderBy: [{ field: { fieldPath: "date" }, direction: "DESCENDING" }],
+            limit: 1,
+          }
+        })
+      });
+      const data = await res.json();
+      const doc = data.find(d => d.document);
+      if (!doc) { alert("No se encontró sesión anterior para este paciente."); return; }
+      const f = doc.document.fields || {};
+      const parse = (v) => {
+        if (!v) return null;
+        if (v.stringValue !== undefined) return v.stringValue;
+        if (v.integerValue !== undefined) return parseInt(v.integerValue);
+        if (v.nullValue !== undefined) return null;
+        if (v.mapValue) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, val]) => [k, parse(val)]));
+        if (v.arrayValue) return (v.arrayValue.values || []).map(parse);
+        return null;
+      };
+      const prevMeds = parse(f.meds) || [];
+      const copiedMeds = prevMeds.map((m, i) => ({
+        id: Date.now() + i, order: i + 1,
+        name: m.name || "", dose: m.dose || "", diluent: m.diluent || "",
+        time: m.time ? String(m.time) : "", category: m.category || "premedicacion",
+        parallelType: "secuencial", startOffset: null,
+      }));
+      if (copiedMeds.length === 0) { alert("La sesión anterior no tiene medicamentos."); return; }
+      setMeds(copiedMeds);
+    } catch(e) { alert("Error: " + e.message); }
+  };
+  
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true); setError("");
