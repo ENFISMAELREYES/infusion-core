@@ -407,14 +407,23 @@ try {
   }
 } catch(err) { console.log("No se pudo confirmar cita:", err); }
         // Asignar número consecutivo del centro
-        const counterId = `counter_${session.center}`;
-        const counterRes = await fetch(
-          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${counterId}`,
-          { headers: { "Authorization": `Bearer ${freshToken}` } }
-        );
-        const counterDoc = await counterRes.json();
-        const lastNumber = counterDoc.fields?.lastNumber?.integerValue ? parseInt(counterDoc.fields.lastNumber.integerValue) : 0;
-        const newNumber  = lastNumber + 1;
+      // Asignar número consecutivo del centro (solo sesiones de infusión, no entregas)
+        if (session.sessionType !== "entrega") {
+          const counterId = `counter_${session.center}`;
+          const counterRes = await fetch(
+            `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${counterId}`,
+            { headers: { "Authorization": `Bearer ${freshToken}` } }
+          );
+          const counterDoc = await counterRes.json();
+          const lastNumber = counterDoc.fields?.lastNumber?.integerValue ? parseInt(counterDoc.fields.lastNumber.integerValue) : 0;
+          const newNumber  = lastNumber + 1;
+          await fetch(
+            `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${counterId}?updateMask.fieldPaths=lastNumber`,
+            { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
+              body: JSON.stringify({ fields: { lastNumber: { integerValue: String(newNumber) } } }) }
+          );
+          updates.infusionNumber = newNumber;
+        }
         // Actualizar contador
         await fetch(
           `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${counterId}?updateMask.fieldPaths=lastNumber`,
