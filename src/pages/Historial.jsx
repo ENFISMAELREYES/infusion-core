@@ -303,9 +303,16 @@ export default function Historial() {
         </div>
       ) : (
         <div>
-          <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:12 }}>
-            {filtered.length} sesión{filtered.length !== 1 ? "es" : ""} encontrada{filtered.length !== 1 ? "s" : ""}
-          </div>
+         {(() => {
+            const clinicSessions = filtered.filter(s => s.sessionType !== "entrega");
+            const deliveries = filtered.filter(s => s.sessionType === "entrega");
+            return (
+              <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:12, display:"flex", gap:16 }}>
+                <span>{clinicSessions.length} sesión{clinicSessions.length !== 1 ? "es" : ""} de infusión</span>
+                {deliveries.length > 0 && <span style={{ color:"#82C4F8" }}>{deliveries.length} entrega{deliveries.length !== 1 ? "s" : ""}</span>}
+              </div>
+            );
+          })()}
           {filtered.map(s => <SessionRow key={s.id} s={s} onSelect={setSelected} selected={selected} />)}
         </div>
       )}
