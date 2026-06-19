@@ -41,7 +41,7 @@ async function fetchCatalog(token, center) {
           { fieldPath: "patientName" }, { fieldPath: "dob" },
           { fieldPath: "diagnosis" }, { fieldPath: "physician" },
           { fieldPath: "insurance" }, { fieldPath: "center" },
-          { fieldPath: "meds" },
+          { fieldPath: "meds" }, { fieldPath: "allergies" },
         ]},
         limit: 200,
       }
@@ -54,7 +54,7 @@ const sessions = data.filter(d => d.document).map(d => {
     const f = d.document.fields || {};
     const g = (k) => f[k]?.stringValue || "";
     const medNames = (f.meds?.arrayValue?.values || []).map(m => m.mapValue?.fields?.name?.stringValue).filter(Boolean);
-    return { patientName: g("patientName"), dob: g("dob"), diagnosis: g("diagnosis"), physician: g("physician"), insurance: g("insurance"), center: g("center"), medNames };
+   return { patientName: g("patientName"), dob: g("dob"), diagnosis: g("diagnosis"), physician: g("physician"), insurance: g("insurance"), center: g("center"), medNames, allergies: g("allergies") };
   });
   
   // Deduplicar por similitud
@@ -160,6 +160,7 @@ const [form, setForm] = useState({
     diagnosis:   s.diagnosis   || f.diagnosis,
     physician:   s.physician   || f.physician,
     insurance:   s.insurance   || f.insurance,
+    allergies:   s.allergies   || f.allergies,
   }));
 
   const copyPreviousTreatment = async () => {
