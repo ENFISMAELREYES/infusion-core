@@ -304,12 +304,19 @@ export default function Historial() {
       ) : (
         <div>
          {(() => {
-            const clinicSessions = filtered.filter(s => s.sessionType !== "entrega");
-            const deliveries = filtered.filter(s => s.sessionType === "entrega");
+            const iv = filtered.filter(s => !s.sessionType || s.sessionType === "iv");
+            const im = filtered.filter(s => s.sessionType === "intramuscular");
+            const sc = filtered.filter(s => s.sessionType === "subcutaneo");
+            const entregas = filtered.filter(s => s.sessionType === "entrega");
+            const procs = filtered.filter(s => s.sessionType === "procedimiento");
             return (
-              <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:12, display:"flex", gap:16 }}>
-                <span>{clinicSessions.length} sesión{clinicSessions.length !== 1 ? "es" : ""} de infusión</span>
-                {deliveries.length > 0 && <span style={{ color:"#82C4F8" }}>{deliveries.length} entrega{deliveries.length !== 1 ? "s" : ""}</span>}
+              <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:12 }}>
+                {iv.length > 0 && <span style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background:"rgba(79,195,247,0.1)", color:"#4fc3f7", border:"1px solid rgba(79,195,247,0.25)" }}>IV: {iv.length}</span>}
+                {im.length > 0 && <span style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background:"rgba(175,169,236,0.1)", color:"#AFA9EC", border:"1px solid rgba(175,169,236,0.25)" }}>IM: {im.length}</span>}
+                {sc.length > 0 && <span style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background:"rgba(93,202,165,0.1)", color:"#5DCAA5", border:"1px solid rgba(93,202,165,0.25)" }}>SC: {sc.length}</span>}
+                {entregas.length > 0 && <span style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background:"rgba(130,196,248,0.1)", color:"#82C4F8", border:"1px solid rgba(130,196,248,0.25)" }}>Entregas: {entregas.length}</span>}
+                {procs.length > 0 && <span style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background:"rgba(250,199,117,0.1)", color:"#FAC775", border:"1px solid rgba(250,199,117,0.25)" }}>Procedimientos: {procs.length}</span>}
+                <span style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background:"rgba(255,255,255,0.05)", color:"#666", border:"1px solid rgba(255,255,255,0.09)" }}>Total: {filtered.length}</span>
               </div>
             );
           })()}
