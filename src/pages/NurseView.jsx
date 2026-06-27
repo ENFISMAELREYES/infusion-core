@@ -408,7 +408,13 @@ try {
 } catch(err) { console.log("No se pudo confirmar cita:", err); }
        // Asignar número consecutivo del centro
         const counterId = session.sessionType === "entrega" 
-          ? `counter_${session.center}_entrega` 
+          ? `counter_${session.center}_entrega`
+          : session.sessionType === "intramuscular"
+          ? `counter_${session.center}_im`
+          : session.sessionType === "subcutaneo"
+          ? `counter_${session.center}_sc`
+          : session.sessionType === "procedimiento"
+          ? `counter_${session.center}_procedimiento`
           : `counter_${session.center}`;
         const counterRes = await fetch(
           `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${counterId}`,
@@ -422,8 +428,14 @@ try {
           { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
             body: JSON.stringify({ fields: { lastNumber: { integerValue: String(newNumber) } } }) }
         );
-        if (session.sessionType === "entrega") {
+       if (session.sessionType === "entrega") {
           updates.deliveryNumber = newNumber;
+        } else if (session.sessionType === "intramuscular") {
+          updates.imNumber = newNumber;
+        } else if (session.sessionType === "subcutaneo") {
+          updates.scNumber = newNumber;
+        } else if (session.sessionType === "procedimiento") {
+          updates.procedureNumber = newNumber;
         } else {
           updates.infusionNumber = newNumber;
         }
