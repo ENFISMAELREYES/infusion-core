@@ -114,6 +114,19 @@ function SessionRow({ s, onSelect, selected }) {
           <div style={{ fontSize:14, color:"#f0f0f0", fontWeight:600, marginBottom:3 }}>{s.patientName}</div>
           <div style={{ fontSize:12, color:"#666" }}>{s.diagnosis} · {s.cycle}</div>
           <div style={{ fontSize:11, color:"#555", marginTop:2 }}>{s.physician} · {s.center} · {s.nurseName}</div>
+          <div style={{ marginTop:4 }}>
+  {(() => {
+    const TYPE = {
+      iv:            { label:"Infusión IV",   color:"#4fc3f7" },
+      intramuscular: { label:"IM",            color:"#AFA9EC" },
+      subcutaneo:    { label:"SC",            color:"#5DCAA5" },
+      entrega:       { label:"Entrega",       color:"#82C4F8" },
+      procedimiento: { label:"Procedimiento", color:"#FAC775" },
+    };
+    const t = TYPE[s.sessionType] || TYPE.iv;
+    return <span style={{ fontSize:10, padding:"2px 8px", borderRadius:99, background:`${t.color}18`, color:t.color, border:`1px solid ${t.color}44` }}>{t.label}</span>;
+  })()}
+</div>
         </div>
        <div style={{ textAlign:"right", flexShrink:0 }}>
           <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>{s.date}</div>
