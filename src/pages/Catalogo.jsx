@@ -186,10 +186,7 @@ async function deleteAppointment(token, apptId) {
 function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appointments, sessions, token, onRefresh, canEdit }) {
   const mySchemes = patientSchemes.filter(ps => ps.patientName === patientName);
   if (mySchemes.length === 0) return null;
-  console.log("Sessions en SchemeAppts:", sessions?.length, sessions?.[0]);
-console.log("SES:", JSON.stringify(sessions?.map(s => ({date: s.date, schemeName: s.schemeName}))));
-console.log("CITAS:", JSON.stringify(appointments.filter(a => a.patientSchemeId === mySchemes[0]?.id).map(a => ({date: a.date, status: a.status}))));
-
+ 
   const STATUS_META = {
     scheduled:  { label:"Programada", color:"#888" },
     confirmed:  { label:"Confirmada", color:"#1D9E75" },
