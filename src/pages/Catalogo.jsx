@@ -388,7 +388,6 @@ const handleDataEdit = async (patientName, draft) => {
           const statusMeta  = PATIENT_STATUS[status] || PATIENT_STATUS.activo;
           const hasDups     = g.variants.length > 1;
           const patientSessions = (g.sessions||[]).sort((a,b) => (b.date||"").localeCompare(a.date||""));
-     console.log("Paciente:", g.canonical, "expediente:", patientSessions[0]?.expedienteNumber);
 
           return (
             <div key={i} style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${hasDups ? "rgba(255,179,71,0.25)" : "rgba(255,255,255,0.07)"}`, borderRadius:12, overflow:"hidden" }}>
