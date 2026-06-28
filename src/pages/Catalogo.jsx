@@ -600,9 +600,10 @@ const handleDataEdit = async (patientName, draft) => {
                       <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Sesiones registradas</div>
                       <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:200, overflowY:"auto" }}>
                         {patientSessions.map((s, j) => (
-                          <div key={j} style={{ display:"flex", justifyContent:"space-between", padding:"7px 10px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:11 }}>
+                          <div key={j} style={{ display:"flex", justifyContent:"space-between", padding:"7px 10px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:11, gap:8, flexWrap:"wrap" }}>
                             <span style={{ color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{s.date}</span>
                             <span style={{ color:"#666" }}>{s.cycle}</span>
+                            {s.schemeName && <span style={{ color:"#00d4aa" }}>{s.schemeName}</span>}
                             <span style={{ color:"#555" }}>{s.center}</span>
                             <span style={{ color:"#555" }}>{s.diagnosis}</span>
                           </div>
