@@ -251,10 +251,54 @@ const saveMeds = async (apptId, confirmAlso) => {
           const myAppts = appointments.filter(a => a.patientSchemeId === ps.id).sort((a,b) => a.date.localeCompare(b.date));
           return (
             <div key={ps.id} style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)", borderRadius:10, padding:"10px 12px" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, flexWrap:"wrap" }}>
                 <span style={{ fontSize:12, color:"#00d4aa", fontWeight:600 }}>{scheme?.name || ps.schemeId}</span>
                 <span style={{ fontSize:10, color:"#666" }}>C{ps.currentCycle||1}/{ps.totalCyclesOverride || scheme?.totalCycles}</span>
-                <span style={{ fontSize:10, padding:"1px 8px", borderRadius:99, background:"rgba(255,255,255,0.05)", color:"#888" }}>{ps.schemeStatus || "activo"}</span>
+                {canEdit ? (
+                  <select value={ps.schemeStatus || "activo"} onChange={async e => {
+                    const newStatus = e.target.value;
+                    const today = new Date().toLocaleDateString("en-CA", { timeZone:"America/Mexico_City" });
+                    // Actualizar schemeStatus
+                    await fetch(
+                      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/patientSchemes/${ps.id}?updateMask.fieldPaths=schemeStatus`,
+                      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+                        body: JSON.stringify({ fields: { schemeStatus: { stringValue: newStatus } } }) }
+                    );
+                    // Actualizar citas futuras
+                    const futureAppts = appointments.filter(a =>
+                      a.patientSchemeId === ps.id && a.date > today && a.status !== "confirmed"
+                    );
+                    const suspendedAppts = appointments.filter(a =>
+                      a.patientSchemeId === ps.id && a.date > today && a.status === "suspendida"
+                    );
+                    if (newStatus === "suspendido" || newStatus === "cancelado") {
+                      const apptStatus = newStatus === "suspendido" ? "suspendida" : "cancelada";
+                      for (const appt of futureAppts) {
+                        await fetch(
+                          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
+                          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+                            body: JSON.stringify({ fields: { status: { stringValue: apptStatus } } }) }
+                        );
+                      }
+                    } else if (newStatus === "activo") {
+                      for (const appt of suspendedAppts) {
+                        await fetch(
+                          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
+                          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+                            body: JSON.stringify({ fields: { status: { stringValue: "scheduled" } } }) }
+                        );
+                      }
+                    }
+                    onRefresh();
+                  }} style={{ fontSize:10, padding:"2px 8px", borderRadius:99, background:"rgba(255,255,255,0.05)", color:"#888", border:"1px solid rgba(255,255,255,0.1)", cursor:"pointer", outline:"none" }}>
+                    <option value="activo">Activo</option>
+                    <option value="suspendido">Suspendido</option>
+                    <option value="completado">Completado</option>
+                    <option value="cancelado">Cancelado</option>
+                  </select>
+                ) : (
+                  <span style={{ fontSize:10, padding:"1px 8px", borderRadius:99, background:"rgba(255,255,255,0.05)", color:"#888" }}>{ps.schemeStatus || "activo"}</span>
+                )}
               </div>
               <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:220, overflowY:"auto" }}>
                 {myAppts.map(a => {
