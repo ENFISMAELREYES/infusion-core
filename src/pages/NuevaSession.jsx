@@ -76,7 +76,19 @@ const diagnoses  = [...new Set(filtered.map(s => s.diagnosis).filter(Boolean))].
 const medications = [...new Set(filtered.flatMap(s => s.medNames || []))].map(m => ({ medication: m }));
 console.log("Catalog loaded:", { total: sessions.length, filtered: filtered.length, center });
   console.log("Sample centers:", sessions.slice(0,5).map(s => s.center));
-return { patients: dedupe(patients, "patientName"), physicians: dedupe(physicians, "physician"), diagnoses: dedupe(diagnoses, "diagnosis"), medications: dedupe(medications, "medication") };
+// Cargar esquemas
+      const schemesRes = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
+        { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ structuredQuery: { from:[{ collectionId:"schemes" }], limit:100 } }) }
+      );
+      const schemesData = await schemesRes.json();
+      const schemes = schemesData.filter(d=>d.document).map(d => {
+        const f = d.document.fields || {};
+        return { id: d.document.name.split("/").pop(), name: f.name?.stringValue || "" };
+      });
+
+      return { patients: dedupe(patients, "patientName"), physicians: dedupe(physicians, "physician"), diagnoses: dedupe(diagnoses, "diagnosis"), medications: dedupe(medications, "medication"), schemes };
 }
 
 function Autocomplete({ value, onChange, suggestions, onSelect, placeholder, field }) {
