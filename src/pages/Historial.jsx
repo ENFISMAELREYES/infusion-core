@@ -88,6 +88,7 @@ const openEditor = () => {
       diagnosis: s.diagnosis || "",
       sessionType: s.sessionType || "iv",
       infusionNumber: s.infusionNumber || s.imNumber || s.scNumber || s.deliveryNumber || s.procedureNumber || "",
+      expedienteNumber: s.expedienteNumber || "",
       ingreso: s.events?.ingreso || "",
       retiro: s.events?.retiro || "",
       globalNote: s.globalNote || "",
@@ -121,6 +122,7 @@ const saveEdit = async () => {
         sessionType: { stringValue: editDraft.sessionType },
         globalNote:  { stringValue: editDraft.globalNote },
         [numField]:  { integerValue: String(parseInt(editDraft.infusionNumber)||0) },
+       expedienteNumber: { integerValue: String(parseInt(editDraft.expedienteNumber)||0) },
         events: toFV({ ingreso: editDraft.ingreso, retiro: editDraft.retiro }),
         meds: toFV(editDraft.meds.map(m => {
           const { inicio, fin, washInicio, washFin, ...rest } = m;
