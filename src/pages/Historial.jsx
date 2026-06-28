@@ -262,6 +262,7 @@ const isJefe = profile?.role === "jefe";
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading]   = useState(false);
   const [selected, setSelected] = useState(null);
+  const [token, setToken] = useState("");
   const [filters, setFilters]   = useState({ date:"", center:"", search:"" });
 
   const load = async () => {
@@ -269,6 +270,8 @@ const isJefe = profile?.role === "jefe";
     setLoading(true);
     try {
       const token = await user.getIdToken(true);
+      const t = await user.getIdToken(true);
+setToken(t);
       const data  = await fetchSessions(token, filters);
       setSessions(data);
     } catch(e) { console.error(e); }
