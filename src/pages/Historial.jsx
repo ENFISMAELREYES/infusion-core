@@ -192,6 +192,7 @@ const saveEdit = async () => {
        <div style={{ textAlign:"right", flexShrink:0 }}>
           <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>{s.date}</div>
           {s.infusionNumber && <div style={{ fontSize:11, color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace", marginBottom:4 }}>#{s.infusionNumber}</div>}
+         {s.expedienteNumber && <div style={{ fontSize:11, color:"#AFA9EC", fontFamily:"'IBM Plex Mono', monospace", marginBottom:4 }}>Exp. {String(s.expedienteNumber).padStart(3,"0")}</div>}
           <span style={{ fontSize:11, padding:"3px 10px", borderRadius:99, background:`${sm.color}18`, color:sm.color, border:`1px solid ${sm.color}44` }}>{sm.label}</span>
         </div>
       </div>
