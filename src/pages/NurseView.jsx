@@ -407,11 +407,11 @@ try {
   }
 } catch(err) { console.log("No se pudo confirmar cita:", err); }
        // Asignar número consecutivo del centro
-        const counterId = session.sessionType === "entrega" 
+       const counterId = session.sessionType === "entrega" 
           ? `counter_${session.center}_entrega`
-          : session.sessionType === "intramuscular"
+          : (session.sessionType === "intramuscular" || session.sessionType === "im")
           ? `counter_${session.center}_im`
-          : session.sessionType === "subcutaneo"
+          : (session.sessionType === "subcutaneo" || session.sessionType === "sc")
           ? `counter_${session.center}_sc`
           : session.sessionType === "procedimiento"
           ? `counter_${session.center}_procedimiento`
@@ -428,11 +428,11 @@ try {
           { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
             body: JSON.stringify({ fields: { lastNumber: { integerValue: String(newNumber) } } }) }
         );
-       if (session.sessionType === "entrega") {
+      if (session.sessionType === "entrega") {
           updates.deliveryNumber = newNumber;
-        } else if (session.sessionType === "intramuscular") {
+        } else if (session.sessionType === "intramuscular" || session.sessionType === "im") {
           updates.imNumber = newNumber;
-        } else if (session.sessionType === "subcutaneo") {
+        } else if (session.sessionType === "subcutaneo" || session.sessionType === "sc") {
           updates.scNumber = newNumber;
         } else if (session.sessionType === "procedimiento") {
           updates.procedureNumber = newNumber;
