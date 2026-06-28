@@ -452,7 +452,49 @@ try {
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
-
+// Asignar número de expediente si es paciente nuevo
+        try {
+          const patientQuery = await fetch(
+            `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
+            { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
+              body: JSON.stringify({ structuredQuery: {
+                from:[{ collectionId:"sessions" }],
+                where:{ compositeFilter:{ op:"AND", filters:[
+                  { fieldFilter:{ field:{ fieldPath:"patientName" }, op:"EQUAL", value:{ stringValue:session.patientName } } },
+                  { fieldFilter:{ field:{ fieldPath:"expedienteNumber" }, op:"GREATER_THAN", value:{ integerValue:"0" } } },
+                ]}},
+                limit: 1,
+              }})
+            }
+          );
+          const patientData = await patientQuery.json();
+          const existingExpediente = patientData.find(d => d.document);
+          
+          if (!existingExpediente) {
+            // Paciente nuevo — asignar número de expediente
+            const expCounterId = `counter_${session.center}_expediente`;
+            const expRes = await fetch(
+              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${expCounterId}`,
+              { headers:{ "Authorization":`Bearer ${freshToken}` } }
+            );
+            const expDoc = await expRes.json();
+            const lastExp = expDoc.fields?.lastNumber?.integerValue ? parseInt(expDoc.fields.lastNumber.integerValue) : 0;
+            const newExp = lastExp + 1;
+            await fetch(
+              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${expCounterId}?updateMask.fieldPaths=lastNumber`,
+              { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
+                body: JSON.stringify({ fields:{ lastNumber:{ integerValue: String(newExp) } } }) }
+            );
+            updates.expedienteNumber = newExp;
+          } else {
+            // Paciente existente — copiar su número de expediente
+            const existingDoc = existingExpediente.document.fields;
+            if (existingDoc.expedienteNumber?.integerValue) {
+              updates.expedienteNumber = parseInt(existingDoc.expedienteNumber.integerValue);
+            }
+          }
+        } catch(e) { console.log("Error expediente:", e); }
+  
   const recordMedEvent = async (medId, key) => {
     try {
       const freshToken = await user.getIdToken(true);
