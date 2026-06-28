@@ -283,10 +283,11 @@ const [form, setForm] = useState({
   <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
     <div style={{ fontSize:13, color:"#555", marginBottom:8 }}>Selecciona el tipo de atención:</div>
     {[
-      { id:"iv",        icon:"💉", label:"Infusión IV",          desc:"Medicamentos intravenosos" },
-      { id:"im",        icon:"💊", label:"Intramuscular",         desc:"Aplicación intramuscular" },
-      { id:"sc",        icon:"🩺", label:"Subcutánea",            desc:"Aplicación subcutánea" },
-      { id:"entrega",   icon:"📦", label:"Entrega de medicamento", desc:"Medicamento para domicilio" },
+     { id:"iv",           icon:"💉", label:"Infusión IV",          desc:"Medicamentos intravenosos" },
+      { id:"im",           icon:"💊", label:"Intramuscular",         desc:"Aplicación intramuscular" },
+      { id:"sc",           icon:"🩺", label:"Subcutánea",            desc:"Aplicación subcutánea" },
+      { id:"entrega",      icon:"📦", label:"Entrega de medicamento", desc:"Medicamento para domicilio" },
+      { id:"procedimiento",icon:"🔧", label:"Procedimiento",          desc:"Heparinización, retiro de infusor" },
     ].map(t => (
       <div key={t.id} onClick={() => setSessionType(t.id)}
         style={{ padding:"18px 20px", borderRadius:13, cursor:"pointer", background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", display:"flex", alignItems:"center", gap:14, transition:"all 0.15s" }}
