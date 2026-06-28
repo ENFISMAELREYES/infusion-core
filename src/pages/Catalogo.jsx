@@ -352,7 +352,32 @@ const saveMeds = async (apptId, confirmAlso) => {
                           {a.status !== "confirmed" && (
                             <button onClick={() => handleConfirm(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", color:"#1D9E75" }}>✓ Confirmar</button>
                           )}
-                          <button onClick={() => handleChangeDate(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>📅</button>
+                         <button onClick={async () => {
+                            const newDate = prompt(`Nueva fecha para ${a.label}:`, a.date);
+                            if (!newDate || newDate === a.date) return;
+                            const oldD = new Date(a.date + "T12:00:00");
+                            const newD = new Date(newDate + "T12:00:00");
+                            const diffDays = Math.round((newD - oldD) / (1000*60*60*24));
+                            await updateAppointment(token, a.id, { date: newDate, rescheduled: true });
+                            if (diffDays !== 0) {
+                              const today = new Date().toLocaleDateString("en-CA", { timeZone:"America/Mexico_City" });
+                              const recalc = confirm(`¿Recorrer ${diffDays > 0 ? "+" : ""}${diffDays} días a las citas futuras?\n\nAceptar = Sí\nCancelar = Solo esta cita`);
+                              if (recalc) {
+                                const futureAppts = appointments.filter(fa =>
+                                  fa.patientSchemeId === ps.id &&
+                                  fa.id !== a.id &&
+                                  fa.date >= today &&
+                                  fa.status !== "confirmed"
+                                );
+                                for (const fa of futureAppts) {
+                                  const fd = new Date(fa.date + "T12:00:00");
+                                  fd.setDate(fd.getDate() + diffDays);
+                                  await updateAppointment(token, fa.id, { date: fd.toISOString().split("T")[0], rescheduled: true });
+                                }
+                              }
+                            }
+                            onRefresh();
+                          }} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>📅</button>
                           <button onClick={() => handleRemove(a.id)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
                         </>
                       )}
