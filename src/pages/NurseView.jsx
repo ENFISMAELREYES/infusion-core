@@ -445,14 +445,19 @@ try {
           { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
             body: JSON.stringify({ fields: { lastNumber: { integerValue: String(newNumber) } } }) }
         );
-        updates.infusionNumber = newNumber;
-      }
-      if (key === "retiro") updates.status = "completado";
-      await patchSession(freshToken, session.id, updates);
-      onRefresh();
-    } catch(e) { alert("Error: " + e.message); }
-  };
-// Asignar número de expediente si es paciente nuevo
+        if (session.sessionType === "entrega") {
+          updates.deliveryNumber = newNumber;
+        } else if (session.sessionType === "intramuscular" || session.sessionType === "im") {
+          updates.imNumber = newNumber;
+        } else if (session.sessionType === "subcutaneo" || session.sessionType === "sc") {
+          updates.scNumber = newNumber;
+        } else if (session.sessionType === "procedimiento") {
+          updates.procedureNumber = newNumber;
+        } else {
+          updates.infusionNumber = newNumber;
+        }
+
+        // Asignar número de expediente si es paciente nuevo
         try {
           const patientQuery = await fetch(
             `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
@@ -469,9 +474,7 @@ try {
           );
           const patientData = await patientQuery.json();
           const existingExpediente = patientData.find(d => d.document);
-          
           if (!existingExpediente) {
-            // Paciente nuevo — asignar número de expediente
             const expCounterId = `counter_${session.center}_expediente`;
             const expRes = await fetch(
               `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${expCounterId}`,
@@ -487,14 +490,19 @@ try {
             );
             updates.expedienteNumber = newExp;
           } else {
-            // Paciente existente — copiar su número de expediente
             const existingDoc = existingExpediente.document.fields;
             if (existingDoc.expedienteNumber?.integerValue) {
               updates.expedienteNumber = parseInt(existingDoc.expedienteNumber.integerValue);
             }
           }
         } catch(e) { console.log("Error expediente:", e); }
-  
+
+      if (key === "retiro") updates.status = "completado";
+      await patchSession(freshToken, session.id, updates);
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+  };
+
   const recordMedEvent = async (medId, key) => {
     try {
       const freshToken = await user.getIdToken(true);
@@ -502,7 +510,6 @@ try {
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
-
   const recordWashEvent = async (medId, key) => {
     try {
       const freshToken = await user.getIdToken(true);
@@ -510,7 +517,6 @@ try {
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
-
   const saveMeds = async (updatedMeds, reAuth) => {
     try {
       const freshToken = await user.getIdToken(true);
@@ -518,7 +524,6 @@ try {
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
-
   const handleDeleteSession = async () => {
     if (!confirm(`¿Eliminar sesión de ${session.patientName}?`)) return;
     try {
