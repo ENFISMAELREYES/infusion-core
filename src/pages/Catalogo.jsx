@@ -334,6 +334,17 @@ const saveMeds = async (apptId, confirmAlso) => {
                       <div style={{ flex:1 }} />
                       {canEdit && (
                         <>
+                          {(() => {
+                        const matchingSessions = (sessions||[]).filter(s => 
+                          s.date === a.date && !s.schemeName && a.status !== "confirmed"
+                        );
+                        if (!canEdit || matchingSessions.length === 0) return null;
+                        return matchingSessions.map(s => (
+                          <button key={s.id} onClick={() => handleLink(a, s)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
+                            🔗 {s.date} {s.cycle}
+                          </button>
+                        ));
+                      })()}
                           <button onClick={() => editingMeds===a.id ? setEditingMeds(null) : openMedsEditor(a, ps.medTemplate)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC" }}>💊</button>
                           {a.status !== "confirmed" && (
                             <button onClick={() => handleConfirm(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", color:"#1D9E75" }}>✓ Confirmar</button>
