@@ -58,6 +58,23 @@ function StatCard({ label, value, accent }) {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const [notifStatus, setNotifStatus] = useState(Notification?.permission || "default");
+
+const activateNotifications = async () => {
+    try {
+      const token = await user.getIdToken(true);
+      const { requestNotificationPermission } = await import("../firebase.js");
+      const fcmToken = await requestNotificationPermission(user.uid, token);
+      if (fcmToken) {
+        setNotifStatus("granted");
+        alert("✅ Notificaciones activadas correctamente");
+      } else {
+        alert("⚠️ No se pudieron activar las notificaciones");
+      }
+    } catch(e) {
+      alert("Error: " + e.message);
+    }
+  };
   const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
