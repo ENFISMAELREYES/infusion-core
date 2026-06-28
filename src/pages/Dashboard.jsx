@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useNavigate } from "react-router-dom";
-import { requestNotificationPermission } from "../firebase.js";
-
+const requestNotificationPermission = async (userId, token) => {
+  try {
+    const mod = await import("../firebase.js");
+    return await mod.requestNotificationPermission(userId, token);
+  } catch(e) {
+    console.error("Firebase import error:", e);
+    return null;
+  }
+};
 const PROJECT_ID = "infusion-core";
 const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
 
