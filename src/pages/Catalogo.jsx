@@ -57,7 +57,7 @@ async function fetchAllSessions(token) {
           { fieldPath: "diagnosis" }, { fieldPath: "physician" },
           { fieldPath: "insurance" }, { fieldPath: "center" },
           { fieldPath: "date" }, { fieldPath: "cycle" },
-          { fieldPath: "allergies" }, { fieldPath: "expedienteNumber" },
+         { fieldPath: "allergies" }, { fieldPath: "expedienteNumber" }, { fieldPath: "schemeName" },
         ]},
         orderBy: [{ field: { fieldPath: "date" }, direction: "DESCENDING" }],
         limit: 500,
