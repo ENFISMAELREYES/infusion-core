@@ -396,9 +396,8 @@ setAppointments(appts);
       // Actualizar citas futuras si el esquema cambia de estatus
       if (data.id && data.schemeStatus) {
         const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-        const futureAppts = appointments.filter(a =>
+     const futureAppts = appointments.filter(a =>
           a.patientSchemeId === data.id &&
-          a.date > today &&
           a.status !== "confirmed"
         );
         if (data.schemeStatus === "suspendido" || data.schemeStatus === "cancelado") {
