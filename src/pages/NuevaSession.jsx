@@ -308,7 +308,7 @@ const [form, setForm] = useState({
     <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
       <button onClick={() => setSessionType(null)} style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"6px 12px", color:"#666", fontSize:12, cursor:"pointer" }}>← Volver</button>
       <span style={{ fontSize:13, color:"#00d4aa", fontWeight:600 }}>
-        {sessionType === "iv" ? "💉 Infusión IV" : sessionType === "im" ? "💊 Intramuscular" : sessionType === "sc" ? "🩺 Subcutánea" : "📦 Entrega"}
+       {sessionType === "iv" ? "💉 Infusión IV" : sessionType === "im" ? "💊 Intramuscular" : sessionType === "sc" ? "🩺 Subcutánea" : sessionType === "entrega" ? "📦 Entrega" : "🔧 Procedimiento"}
       </span>
     </div>
     {/* aquí va todo el formulario existente */}
