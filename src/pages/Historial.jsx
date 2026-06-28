@@ -257,7 +257,8 @@ function SessionRow({ s, onSelect, selected }) {
 }
 
 export default function Historial() {
-  const { user } = useAuth();
+ const { user, profile } = useAuth();
+const isJefe = profile?.role === "jefe";
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading]   = useState(false);
   const [selected, setSelected] = useState(null);
