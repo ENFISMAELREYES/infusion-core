@@ -183,7 +183,7 @@ async function deleteAppointment(token, apptId) {
   );
 }
 
-function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appointments, token, onRefresh, canEdit }) {
+function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appointments, sessions, token, onRefresh, canEdit }) {
   const mySchemes = patientSchemes.filter(ps => ps.patientName === patientName);
   if (mySchemes.length === 0) return null;
 
@@ -209,6 +209,26 @@ function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appoi
     onRefresh();
   };
 
+  const handleLink = async (appt, session) => {
+    if (!confirm(`¿Vincular cita ${appt.label} con sesión del ${session.date} (${session.cycle})?`)) return;
+    // Guardar schemeName en la sesión
+    const scheme = schemes.find(s => s.id === appt.schemeId);
+    if (scheme) {
+      await fetch(
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${session.id}?updateMask.fieldPaths=schemeName&updateMask.fieldPaths=schemeId`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            schemeName: { stringValue: scheme.name },
+            schemeId:   { stringValue: appt.schemeId },
+          }})
+        }
+      );
+    }
+    // Confirmar la cita
+    await updateAppointment(token, appt.id, { status:"confirmed", confirmedAt: new Date().toISOString() });
+    onRefresh();
+  };
+  
 const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", domicilio:"Domicilio" };
 const CATEGORIES = Object.keys(CAT_LABEL);
 const [editingMeds, setEditingMeds] = useState(null);
@@ -625,11 +645,12 @@ const handleDataEdit = async (patientName, draft) => {
                     </div>
 
                     {/* Esquemas y citas */}
-                    <SchemeAppointmentsSection
+                   <SchemeAppointmentsSection
                       patientName={g.canonical}
                       schemes={schemes}
                       patientSchemes={patientSchemes}
                       appointments={appointments}
+                      sessions={patientSessions}
                       token={token}
                       onRefresh={onRefresh}
                       canEdit={canEdit}
