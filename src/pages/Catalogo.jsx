@@ -186,6 +186,7 @@ async function deleteAppointment(token, apptId) {
 function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appointments, sessions, token, onRefresh, canEdit }) {
   const mySchemes = patientSchemes.filter(ps => ps.patientName === patientName);
   if (mySchemes.length === 0) return null;
+  console.log("Sessions en SchemeAppts:", sessions?.length, sessions?.[0]);
 
   const STATUS_META = {
     scheduled:  { label:"Programada", color:"#888" },
