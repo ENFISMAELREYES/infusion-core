@@ -529,10 +529,39 @@ const handleDeleteScheme = async (id) => {
       {e.rescheduled && <span style={{ marginLeft:8, fontSize:11, color:"#ffb347" }}>↻ Reagendada</span>}
     </div>
     {!isVisualizador && e.status !== "confirmed" && e.date >= today && (
-      <button onClick={() => {
+      <button onClick={async () => {
         const newDate = prompt(`Nueva fecha para ${e.patientName} ${e.label}:`, e.date);
         if (!newDate || newDate === e.date) return;
-        user.getIdToken(true).then(t => rescheduleAppointment(t, e.apptId, newDate).then(load));
+        const t = await user.getIdToken(true);
+        
+        // Calcular desfase en días
+        const oldD = new Date(e.date + "T12:00:00");
+        const newD = new Date(newDate + "T12:00:00");
+        const diffDays = Math.round((newD - oldD) / (1000 * 60 * 60 * 24));
+        
+        // Reagendar esta cita
+        await rescheduleAppointment(t, e.apptId, newDate);
+        
+        // Preguntar si recalcular posteriores
+        if (diffDays !== 0) {
+          const recalc = confirm(`¿Recorrer ${diffDays > 0 ? "+" : ""}${diffDays} días a las citas futuras de este esquema?\n\n"Aceptar" = Sí, recorrer todas las citas futuras\n"Cancelar" = No, solo esta cita`);
+          if (recalc) {
+            const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+            const futureAppts = appointments.filter(a =>
+              a.patientSchemeId === e.patientSchemeId &&
+              a.id !== e.apptId &&
+              a.date > today &&
+              a.status !== "confirmed"
+            );
+            for (const appt of futureAppts) {
+              const apptDate = new Date(appt.date + "T12:00:00");
+              apptDate.setDate(apptDate.getDate() + diffDays);
+              const newApptDate = apptDate.toISOString().split("T")[0];
+              await rescheduleAppointment(t, appt.id, newApptDate);
+            }
+          }
+        }
+        load();
       }} style={{ padding:"4px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
         ↻ Reagendar
       </button>
