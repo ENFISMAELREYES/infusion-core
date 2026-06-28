@@ -66,7 +66,9 @@ function StatCard({ label, value, accent }) {
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
-  const [notifStatus, setNotifStatus] = useState(Notification?.permission || "default");
+  const [notifStatus, setNotifStatus] = useState(() => {
+  try { return Notification?.permission || "default"; } catch(e) { return "default"; }
+});
 
 const activateNotifications = async () => {
     try {
