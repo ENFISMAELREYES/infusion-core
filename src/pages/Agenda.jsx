@@ -157,8 +157,9 @@ function CalendarView({ appointments, schemes, selectedMonth, onSelectDate }) {
 
   const monthStr = `${year}-${String(month+1).padStart(2,"0")}`;
   const monthEvents = {};
-  (appointments||[]).forEach(a => {
+ (appointments||[]).forEach(a => {
     if (!a.date?.startsWith(monthStr)) return;
+    if (a.status === "suspendida" || a.status === "cancelada") return;
     if (!monthEvents[a.date]) monthEvents[a.date] = [];
     const scheme = schemes.find(s => s.id === a.schemeId);
     monthEvents[a.date].push({ ...a, schemeName: scheme?.name || "", apptId: a.id, patientSchemeId: a.patientSchemeId });
