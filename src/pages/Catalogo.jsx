@@ -320,7 +320,6 @@ function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRef
   const [search, setSearch]     = useState("");
   const [expanded, setExpanded] = useState(null);
   const [editingData, setEditingData] = useState(null);
-  console.log("Sample:", patientSessions[0]?.patientName, "expediente:", patientSessions[0]?.expedienteNumber);
 const [editDraft, setEditDraft] = useState({ dob:"", diagnosis:"", physician:"", allergies:"" });
 
 const handleDataEdit = async (patientName, draft) => {
