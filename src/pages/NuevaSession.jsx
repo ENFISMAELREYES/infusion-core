@@ -74,8 +74,6 @@ const patients   = dedupe(filtered, "patientName");
 const physicians = [...new Set(filtered.map(s => s.physician).filter(Boolean))].map(p => ({ physician: p }));
 const diagnoses  = [...new Set(filtered.map(s => s.diagnosis).filter(Boolean))].map(d => ({ diagnosis: d }));
 const medications = [...new Set(filtered.flatMap(s => s.medNames || []))].map(m => ({ medication: m }));
-console.log("Catalog loaded:", { total: sessions.length, filtered: filtered.length, center });
-  console.log("Sample centers:", sessions.slice(0,5).map(s => s.center));
 // Cargar esquemas
       const schemesRes = await fetch(
         `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
@@ -265,6 +263,7 @@ const [form, setForm] = useState({
       const data = {
         ...form,
         sessionType: sessionType || "iv",
+        schemeName: catalog.schemes?.find(s => s.id === form.schemeId)?.name || "",
         center:    profile?.center || "",
         nurseId:   user?.uid || "",
         nurseName: profile?.name || "",
