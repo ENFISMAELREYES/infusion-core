@@ -187,7 +187,8 @@ function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appoi
   const mySchemes = patientSchemes.filter(ps => ps.patientName === patientName);
   if (mySchemes.length === 0) return null;
   console.log("Sessions en SchemeAppts:", sessions?.length, sessions?.[0]);
-  console.log("Fechas sesiones:", sessions?.map(s => s.date), "Fechas citas:", appointments.filter(a => a.patientSchemeId === mySchemes[0]?.id).map(a => a.date));
+console.log("Fechas sesiones:", sessions?.map(s => ({date: s.date, schemeName: s.schemeName})));
+console.log("Fechas citas:", appointments.filter(a => a.patientSchemeId === mySchemes[0]?.id).map(a => ({date: a.date, status: a.status})));
 
   const STATUS_META = {
     scheduled:  { label:"Programada", color:"#888" },
