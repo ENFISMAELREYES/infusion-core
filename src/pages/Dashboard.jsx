@@ -112,6 +112,26 @@ const activateNotifications = async () => {
         <p style={{ fontSize: 13, color: "#555" }}>{new Date().toLocaleDateString("es-MX", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
       </div>
 
+      {profile?.role === "jefe" && (
+          <div style={{ marginBottom:20, padding:"12px 16px", borderRadius:10, background: notifStatus === "granted" ? "rgba(29,158,117,0.08)" : "rgba(255,179,71,0.08)", border:`1px solid ${notifStatus === "granted" ? "rgba(29,158,117,0.25)" : "rgba(255,179,71,0.25)"}` }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div>
+                <div style={{ fontSize:13, color: notifStatus === "granted" ? "#1D9E75" : "#ffb347", fontWeight:600 }}>
+                  {notifStatus === "granted" ? "🔔 Notificaciones activas" : "🔕 Notificaciones desactivadas"}
+                </div>
+                <div style={{ fontSize:11, color:"#555", marginTop:2 }}>
+                  {notifStatus === "granted" ? "Recibirás avisos cuando haya órdenes pendientes de autorizar" : "Activa para recibir avisos de nuevas órdenes"}
+                </div>
+              </div>
+              {notifStatus !== "granted" && (
+                <button onClick={activateNotifications} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.15)", border:"1px solid rgba(255,179,71,0.4)", color:"#ffb347" }}>
+                  Activar
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 28 }}>
         <StatCard label="En curso"      value={enCurso}    accent="#00d4aa" />
         <StatCard label="Pendientes"    value={pendiente}  accent="#ffb347" />
