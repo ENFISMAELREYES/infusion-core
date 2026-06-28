@@ -161,7 +161,7 @@ function CalendarView({ appointments, schemes, selectedMonth, onSelectDate }) {
     if (!a.date?.startsWith(monthStr)) return;
     if (!monthEvents[a.date]) monthEvents[a.date] = [];
     const scheme = schemes.find(s => s.id === a.schemeId);
-    monthEvents[a.date].push({ ...a, schemeName: scheme?.name || "", apptId: a.id });
+    monthEvents[a.date].push({ ...a, schemeName: scheme?.name || "", apptId: a.id, patientSchemeId: a.patientSchemeId });
   });
 
   const days = [];
