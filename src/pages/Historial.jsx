@@ -89,6 +89,7 @@ const openEditor = () => {
       sessionType: s.sessionType || "iv",
       infusionNumber: s.infusionNumber || s.imNumber || s.scNumber || s.deliveryNumber || s.procedureNumber || "",
       expedienteNumber: s.expedienteNumber || "",
+      schemeName: s.schemeName || "",
       ingreso: s.events?.ingreso || "",
       retiro: s.events?.retiro || "",
       globalNote: s.globalNote || "",
@@ -121,6 +122,7 @@ const saveEdit = async () => {
         diagnosis:   { stringValue: editDraft.diagnosis },
         sessionType: { stringValue: editDraft.sessionType },
         globalNote:  { stringValue: editDraft.globalNote },
+       schemeName: { stringValue: editDraft.schemeName || "" },
         [numField]:  { integerValue: String(parseInt(editDraft.infusionNumber)||0) },
        expedienteNumber: { integerValue: String(parseInt(editDraft.expedienteNumber)||0) },
         events: toFV({ ingreso: editDraft.ingreso, retiro: editDraft.retiro }),
@@ -340,7 +342,7 @@ const saveEdit = async () => {
 
               {/* Datos generales */}
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:12 }}>
-               {[["Fecha","date","date"],["Ciclo","cycle","text"],["Médico","physician","text"],["Diagnóstico","diagnosis","text"],["# Global","infusionNumber","number"],["No. Expediente","expedienteNumber","number"],["Ingreso","ingreso","time"],["Retiro","retiro","time"]].map(([label,field,type]) => (
+              {[["Fecha","date","date"],["Ciclo","cycle","text"],["Médico","physician","text"],["Diagnóstico","diagnosis","text"],["Esquema","schemeName","text"],["# Global","infusionNumber","number"],["No. Expediente","expedienteNumber","number"],["Ingreso","ingreso","time"],["Retiro","retiro","time"]].map(([label,field,type]) => (
                   <div key={field}>
                     <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>{label}</label>
                     <input type={type} value={editDraft[field]} onChange={e => setEditDraft(d => ({...d,[field]:e.target.value}))}
