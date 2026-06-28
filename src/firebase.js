@@ -1,5 +1,5 @@
-import { initializeApp } from "firebase/app";
-import { getMessaging, getToken, onMessage } from "firebase/messaging";
+import { initializeApp, getApps } from "firebase/app";
+import { getMessaging, getToken } from "firebase/messaging";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw",
@@ -10,7 +10,7 @@ const firebaseConfig = {
   appId: "1:372027565230:web:9c2055e465b9ed7a02b93f"
 };
 
-const app = initializeApp(firebaseConfig);
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 export const messaging = getMessaging(app);
 
 export const VAPID_KEY = "BMLOo1m7MOcerY21MKP-LfhHiQ5BEsVXNJog9Gv_EIklKdC6evUdC7kZQcufIcjPm44R5Bbhx2tJcucSdPNqyqA";
@@ -23,7 +23,6 @@ export async function requestNotificationPermission(userId, token) {
     const fcmToken = await getToken(messaging, { vapidKey: VAPID_KEY });
     if (!fcmToken) return null;
 
-    // Guardar token FCM en Firestore asociado al usuario
     await fetch(
       `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/fcmTokens/${userId}?updateMask.fieldPaths=token&updateMask.fieldPaths=updatedAt`,
       { method: "PATCH",
