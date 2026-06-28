@@ -265,11 +265,11 @@ const saveMeds = async (apptId, confirmAlso) => {
                         body: JSON.stringify({ fields: { schemeStatus: { stringValue: newStatus } } }) }
                     );
                     // Actualizar citas futuras
-                    const futureAppts = appointments.filter(a =>
-                      a.patientSchemeId === ps.id && a.date > today && a.status !== "confirmed"
+                   const futureAppts = appointments.filter(a =>
+                      a.patientSchemeId === ps.id && a.status !== "confirmed"
                     );
                     const suspendedAppts = appointments.filter(a =>
-                      a.patientSchemeId === ps.id && a.date > today && a.status === "suspendida"
+                      a.patientSchemeId === ps.id && a.status === "suspendida"
                     );
                     if (newStatus === "suspendido" || newStatus === "cancelado") {
                       const apptStatus = newStatus === "suspendido" ? "suspendida" : "cancelada";
