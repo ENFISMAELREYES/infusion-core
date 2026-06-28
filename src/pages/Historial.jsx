@@ -82,7 +82,6 @@ const [editDraft, setEditDraft] = useState(null);
 
 const openEditor = () => {
     setEditDraft({
-      setEditDraft({
       date: s.date || "",
       cycle: s.cycle || "",
       physician: s.physician || "",
