@@ -664,17 +664,6 @@ const handleDataEdit = async (patientName, draft) => {
                               <span style={{ color:"#555" }}>{s.center}</span>
                               <span style={{ color:"#555" }}>{s.diagnosis}</span>
                             </div>
-                            {canEdit && !s.schemeName && (
-                              <select defaultValue="" onChange={async e => {
-                                if (!e.target.value) return;
-                                const schemeName = e.target.value;
-                                await updateSessionField(token, s.id, "schemeName", schemeName);
-                                onRefresh();
-                              }} style={{ marginTop:4, fontSize:10, padding:"2px 8px", borderRadius:6, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#555", cursor:"pointer", outline:"none" }}>
-                                <option value="">+ Vincular esquema</option>
-                                {schemes.map(sch => <option key={sch.id} value={sch.name}>{sch.name}</option>)}
-                              </select>
-                            )}
                           </div>
                         ))}
                       </div>
