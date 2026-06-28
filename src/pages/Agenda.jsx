@@ -708,9 +708,10 @@ const handleDeleteScheme = async (id) => {
         {isExpanded && (
           <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid rgba(255,255,255,0.06)", display:"flex", flexDirection:"column", gap:6 }}>
             {myPatients.map(ps => {
-              const myAppts = appointments.filter(a => a.patientSchemeId === ps.id).sort((a,b) => a.date.localeCompare(b.date));
+             const myAppts = appointments.filter(a => a.patientSchemeId === ps.id).sort((a,b) => a.date.localeCompare(b.date));
+              const activeAppts = myAppts.filter(a => a.status !== "cancelada");
               const confirmed = myAppts.filter(a => a.status === "confirmed");
-              const lastDate = myAppts.length ? myAppts[myAppts.length-1].date : null;
+              const lastDate = activeAppts.length ? activeAppts[activeAppts.length-1].date : null;
               return (
                 <div key={ps.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:12 }}>
                   <span style={{ flex:1, color:"#f0f0f0", fontWeight:600 }}>{ps.patientName}</span>
