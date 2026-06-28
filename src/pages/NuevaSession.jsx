@@ -382,6 +382,11 @@ const [form, setForm] = useState({
               <label style={labelStyle}>Alergias</label>
               <input value={form.allergies} onChange={e => setField("allergies", e.target.value)} placeholder="ej: Negadas / Penicilina" style={inputStyle} />
             </div>
+            
+            <div>
+              <label style={labelStyle}>Régimen de atención</label>
+              <input value={form.insurance} onChange={e => setField("insurance", e.target.value)} placeholder="ej: Particular / GNP / Protocolo KEYNOTE-522" style={inputStyle} />
+            </div>
 
             <div style={{ gridColumn:"1/-1" }}>
               <label style={labelStyle}>Diagnóstico</label>
