@@ -11,7 +11,15 @@ const firebaseConfig = {
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-export const messaging = getMessaging(app);
+
+let messaging = null;
+try {
+  messaging = getMessaging(app);
+} catch(e) {
+  console.log("Messaging no soportado:", e);
+}
+
+export { messaging };
 
 export const VAPID_KEY = "BMLOo1m7MOcerY21MKP-LfhHiQ5BEsVXNJog9Gv_EIklKdC6evUdC7kZQcufIcjPm44R5Bbhx2tJcucSdPNqyqA";
 
