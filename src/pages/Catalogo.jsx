@@ -599,13 +599,26 @@ const handleDataEdit = async (patientName, draft) => {
                     <div>
                       <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Sesiones registradas</div>
                       <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:200, overflowY:"auto" }}>
-                        {patientSessions.map((s, j) => (
-                          <div key={j} style={{ display:"flex", justifyContent:"space-between", padding:"7px 10px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:11, gap:8, flexWrap:"wrap" }}>
-                            <span style={{ color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{s.date}</span>
-                            <span style={{ color:"#666" }}>{s.cycle}</span>
-                            {s.schemeName && <span style={{ color:"#00d4aa" }}>{s.schemeName}</span>}
-                            <span style={{ color:"#555" }}>{s.center}</span>
-                            <span style={{ color:"#555" }}>{s.diagnosis}</span>
+                       {patientSessions.map((s, j) => (
+                          <div key={j} style={{ padding:"7px 10px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:11, marginBottom:4 }}>
+                            <div style={{ display:"flex", justifyContent:"space-between", gap:8, flexWrap:"wrap" }}>
+                              <span style={{ color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{s.date}</span>
+                              <span style={{ color:"#666" }}>{s.cycle}</span>
+                              {s.schemeName && <span style={{ color:"#00d4aa" }}>{s.schemeName}</span>}
+                              <span style={{ color:"#555" }}>{s.center}</span>
+                              <span style={{ color:"#555" }}>{s.diagnosis}</span>
+                            </div>
+                            {canEdit && !s.schemeName && (
+                              <select defaultValue="" onChange={async e => {
+                                if (!e.target.value) return;
+                                const schemeName = e.target.value;
+                                await updateSessionField(token, s.id, "schemeName", schemeName);
+                                onRefresh();
+                              }} style={{ marginTop:4, fontSize:10, padding:"2px 8px", borderRadius:6, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#555", cursor:"pointer", outline:"none" }}>
+                                <option value="">+ Vincular esquema</option>
+                                {schemes.map(sch => <option key={sch.id} value={sch.name}>{sch.name}</option>)}
+                              </select>
+                            )}
                           </div>
                         ))}
                       </div>
