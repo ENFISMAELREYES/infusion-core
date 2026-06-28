@@ -393,6 +393,39 @@ setAppointments(appts);
     try {
       const t = await user.getIdToken(true);
       await savePatientScheme(t, { ...data, updatedAt: new Date().toISOString() }, schemes);
+      // Actualizar citas futuras si el esquema cambia de estatus
+      if (data.id && data.schemeStatus) {
+        const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+        const futureAppts = appointments.filter(a =>
+          a.patientSchemeId === data.id &&
+          a.date > today &&
+          a.status !== "confirmed"
+        );
+        if (data.schemeStatus === "suspendido" || data.schemeStatus === "cancelado") {
+          const newStatus = data.schemeStatus === "suspendido" ? "suspendida" : "cancelada";
+          for (const appt of futureAppts) {
+            await fetch(
+              `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
+              { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${t}` },
+                body: JSON.stringify({ fields: { status: { stringValue: newStatus } } }) }
+            );
+          }
+        } else if (data.schemeStatus === "activo") {
+          // Reactivar citas suspendidas
+          const suspendedAppts = appointments.filter(a =>
+            a.patientSchemeId === data.id &&
+            a.date > today &&
+            a.status === "suspendida"
+          );
+          for (const appt of suspendedAppts) {
+            await fetch(
+              `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
+              { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${t}` },
+                body: JSON.stringify({ fields: { status: { stringValue: "scheduled" } } }) }
+            );
+          }
+        }
+      }
       setShowForm(false);
       setEditing(null);
       load();
