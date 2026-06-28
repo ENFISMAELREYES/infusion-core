@@ -74,9 +74,68 @@ const STATUS_META = {
   pendiente:  { label:"Pendiente",  color:"#ffb347" },
 };
 
-function SessionRow({ s, onSelect, selected }) {
+function SessionRow({ s, selected, onSelect, isJefe, token, onRefresh }) {
   const sm = STATUS_META[s.status] || STATUS_META.pendiente;
   const isSelected = selected?.id === s.id;
+  const [editing, setEditing] = useState(false);
+const [editDraft, setEditDraft] = useState(null);
+
+const openEditor = () => {
+    setEditDraft({
+      date: s.date || "",
+      cycle: s.cycle || "",
+      physician: s.physician || "",
+      diagnosis: s.diagnosis || "",
+      infusionNumber: s.infusionNumber || s.imNumber || s.scNumber || s.deliveryNumber || s.procedureNumber || "",
+      ingreso: s.events?.ingreso || "",
+      retiro: s.events?.retiro || "",
+      globalNote: s.globalNote || "",
+      meds: (s.meds || []).map(m => ({
+        ...m,
+        inicio: s.medEvents?.[`med_${m.id}`]?.inicio || "",
+        fin: s.medEvents?.[`med_${m.id}`]?.fin || "",
+        washInicio: s.washEvents?.[`wash_${m.id}`]?.inicio || "",
+        washFin: s.washEvents?.[`wash_${m.id}`]?.fin || "",
+      })),
+    });
+    setEditing(true);
+  };
+
+const saveEdit = async () => {
+    const toFV = (val) => {
+      if (typeof val === "string") return { stringValue: val };
+      if (typeof val === "number") return { integerValue: String(val) };
+      if (val === null) return { nullValue: null };
+      if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
+      if (typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k,v]) => [k, toFV(v)])) } };
+      return { stringValue: String(val) };
+    };
+    try {
+      const numField = s.sessionType === "entrega" ? "deliveryNumber" : s.sessionType === "im" ? "imNumber" : s.sessionType === "sc" ? "scNumber" : s.sessionType === "procedimiento" ? "procedureNumber" : "infusionNumber";
+      const fields = {
+        date:       { stringValue: editDraft.date },
+        cycle:      { stringValue: editDraft.cycle },
+        physician:  { stringValue: editDraft.physician },
+        diagnosis:  { stringValue: editDraft.diagnosis },
+        globalNote: { stringValue: editDraft.globalNote },
+        [numField]:  { integerValue: String(parseInt(editDraft.infusionNumber)||0) },
+        events: toFV({ ingreso: editDraft.ingreso, retiro: editDraft.retiro }),
+        meds: toFV(editDraft.meds.map(m => {
+          const { inicio, fin, washInicio, washFin, ...rest } = m;
+          return rest;
+        })),
+        medEvents: toFV(Object.fromEntries(editDraft.meds.map(m => [`med_${m.id}`, { inicio: m.inicio, fin: m.fin }]))),
+        washEvents: toFV(Object.fromEntries(editDraft.meds.map(m => [`wash_${m.id}`, { inicio: m.washInicio, fin: m.washFin }]))),
+      };
+      const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+      await fetch(
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}?${mask}`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
+      );
+      setEditing(false);
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+  };
 
   // Calcular tiempos
   const ingresoMin  = parseTime(s.events?.ingreso);
@@ -245,9 +304,70 @@ function SessionRow({ s, onSelect, selected }) {
             </div>
           )}
 
-          {s.globalNote && (
+         {s.globalNote && (
             <div style={{ marginTop:10, padding:"8px 12px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:12, color:"#666" }}>
               📋 {s.globalNote}
+            </div>
+          )}
+
+          {isJefe && !editing && (
+            <button onClick={e => { e.stopPropagation(); openEditor(); }} style={{ marginTop:12, padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+              ✏️ Editar sesión
+            </button>
+          )}
+
+          {editing && editDraft && (
+            <div onClick={e => e.stopPropagation()} style={{ marginTop:14, padding:"16px", borderRadius:12, background:"rgba(255,179,71,0.04)", border:"1px solid rgba(255,179,71,0.2)" }}>
+              <div style={{ fontSize:12, color:"#ffb347", fontWeight:600, marginBottom:14 }}>✏️ Editar sesión</div>
+              
+              {/* Datos generales */}
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:12 }}>
+                {[["Fecha","date","date"],["Ciclo","cycle","text"],["Médico","physician","text"],["Diagnóstico","diagnosis","text"],["# Global","infusionNumber","number"],["Ingreso","ingreso","time"],["Retiro","retiro","time"]].map(([label,field,type]) => (
+                  <div key={field}>
+                    <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>{label}</label>
+                    <input type={type} value={editDraft[field]} onChange={e => setEditDraft(d => ({...d,[field]:e.target.value}))}
+                      style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                  </div>
+                ))}
+              </div>
+
+              {/* Nota global */}
+              <div style={{ marginBottom:12 }}>
+                <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>Nota global</label>
+                <textarea rows={2} value={editDraft.globalNote} onChange={e => setEditDraft(d => ({...d,globalNote:e.target.value}))}
+                  style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none", resize:"vertical" }} />
+              </div>
+
+              {/* Medicamentos */}
+              <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>Medicamentos y tiempos</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
+                {editDraft.meds.map((m, idx) => (
+                  <div key={m.id} style={{ padding:"10px 12px", borderRadius:8, background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ fontSize:12, color:"#f0f0f0", fontWeight:600, marginBottom:8 }}>{m.order}. {m.name} {m.dose}</div>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8 }}>
+                      {[["Nombre","name"],["Dosis","dose"],["Dilución","diluent"],["Tiempo (min)","time"]].map(([label,field]) => (
+                        <div key={field}>
+                          <label style={{ fontSize:9, color:"#555", textTransform:"uppercase", display:"block", marginBottom:3 }}>{label}</label>
+                          <input value={m[field]||""} onChange={e => setEditDraft(d => ({...d, meds: d.meds.map((x,i) => i===idx ? {...x,[field]:e.target.value} : x)}))}
+                            style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:6, padding:"5px 8px", color:"#f0f0f0", fontSize:11, outline:"none" }} />
+                        </div>
+                      ))}
+                      {[["Inicio med","inicio"],["Fin med","fin"],["Inicio lavado","washInicio"],["Fin lavado","washFin"]].map(([label,field]) => (
+                        <div key={field}>
+                          <label style={{ fontSize:9, color:"#555", textTransform:"uppercase", display:"block", marginBottom:3 }}>{label}</label>
+                          <input value={m[field]||""} onChange={e => setEditDraft(d => ({...d, meds: d.meds.map((x,i) => i===idx ? {...x,[field]:e.target.value} : x)}))}
+                            style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:6, padding:"5px 8px", color:"#f0f0f0", fontSize:11, outline:"none" }} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={saveEdit} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.15)", border:"1px solid rgba(29,158,117,0.4)", color:"#1D9E75" }}>✓ Guardar cambios</button>
+                <button onClick={e => { e.stopPropagation(); setEditing(false); }} style={{ padding:"9px 16px", borderRadius:9, fontSize:13, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666" }}>Cancelar</button>
+              </div>
             </div>
           )}
         </div>
