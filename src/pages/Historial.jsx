@@ -322,10 +322,23 @@ const saveEdit = async () => {
           {editing && editDraft && (
             <div onClick={e => e.stopPropagation()} style={{ marginTop:14, padding:"16px", borderRadius:12, background:"rgba(255,179,71,0.04)", border:"1px solid rgba(255,179,71,0.2)" }}>
               <div style={{ fontSize:12, color:"#ffb347", fontWeight:600, marginBottom:14 }}>✏️ Editar sesión</div>
-              
+
+              {/* Tipo de sesión */}
+              <div style={{ marginBottom:12 }}>
+                <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>Tipo de sesión</label>
+                <select value={editDraft.sessionType || "iv"} onChange={e => setEditDraft(d => ({...d, sessionType: e.target.value}))}
+                  style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none", cursor:"pointer" }}>
+                  <option value="iv">Infusión IV</option>
+                  <option value="im">Intramuscular</option>
+                  <option value="sc">Subcutánea</option>
+                  <option value="entrega">Entrega de medicamento</option>
+                  <option value="procedimiento">Procedimiento</option>
+                </select>
+              </div>
+
               {/* Datos generales */}
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:12 }}>
-               {[["Fecha","date","date"],["Ciclo","cycle","text"],["Médico","physician","text"],["Diagnóstico","diagnosis","text"],["# Global","infusionNumber","number"],["Ingreso","ingreso","time"],["Retiro","retiro","time"]].map(([label,field,type]) => (
+                {[["Fecha","date","date"],["Ciclo","cycle","text"],["Médico","physician","text"],["Diagnóstico","diagnosis","text"],["# Global","infusionNumber","number"],["Ingreso","ingreso","time"],["Retiro","retiro","time"]].map(([label,field,type]) => (
                   <div key={field}>
                     <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>{label}</label>
                     <input type={type} value={editDraft[field]} onChange={e => setEditDraft(d => ({...d,[field]:e.target.value}))}
