@@ -337,7 +337,7 @@ setToken(t);
               </div>
             );
           })()}
-          {filtered.map(s => <SessionRow key={s.id} s={s} onSelect={setSelected} selected={selected} />)}
+          {filtered.map(s => <SessionRow key={s.id} s={s} onSelect={setSelected} selected={selected} isJefe={isJefe} token={token} onRefresh={load} />)}
         </div>
       )}
     </div>
