@@ -375,39 +375,38 @@ function SessionCard({ session, token, onRefresh, user }) {
       const updates = { [`events.${key}`]: t };
       if (key === "ingreso") {
         updates.status = "en_curso";
+
         // Confirmar cita en agenda si existe
-try {
-  const today = getToday();
-  const apptUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
-  const apptRes = await fetch(apptUrl, {
-    method:"POST",
-    headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
-    body: JSON.stringify({ structuredQuery: {
-      from:[{ collectionId:"appointments" }],
-      where:{ compositeFilter:{ op:"AND", filters:[
-        { fieldFilter:{ field:{ fieldPath:"patientName" }, op:"EQUAL", value:{ stringValue:session.patientName } } },
-        { fieldFilter:{ field:{ fieldPath:"date" }, op:"EQUAL", value:{ stringValue:today } } },
-      ]}},
-      limit:1,
-    }})
-  });
-  const apptData = await apptRes.json();
-  const appt = apptData.find(d => d.document);
-  if (appt) {
-    const apptId = appt.document.name.split("/").pop();
-    await fetch(
-      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/appointments/${apptId}?updateMask.fieldPaths=status&updateMask.fieldPaths=confirmedAt`,
-      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
-        body: JSON.stringify({ fields: {
-          status:      { stringValue:"confirmed" },
-          confirmedAt: { stringValue:new Date().toISOString() },
-        }})
-      }
-    );
-  }
-} catch(err) { console.log("No se pudo confirmar cita:", err); }
-       // Asignar número consecutivo del centro
-       const counterId = session.sessionType === "entrega" 
+        try {
+          const today = getToday();
+          const apptUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+          const apptRes = await fetch(apptUrl, {
+            method:"POST",
+            headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
+            body: JSON.stringify({ structuredQuery: {
+              from:[{ collectionId:"appointments" }],
+              where:{ compositeFilter:{ op:"AND", filters:[
+                { fieldFilter:{ field:{ fieldPath:"patientName" }, op:"EQUAL", value:{ stringValue:session.patientName } } },
+                { fieldFilter:{ field:{ fieldPath:"date" }, op:"EQUAL", value:{ stringValue:today } } },
+              ]}},
+              limit:1,
+            }})
+          });
+          const apptData = await apptRes.json();
+          const appt = apptData.find(d => d.document);
+          if (appt) {
+            const apptId = appt.document.name.split("/").pop();
+            await fetch(
+              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/appointments/${apptId}?updateMask.fieldPaths=status&updateMask.fieldPaths=confirmedAt`,
+              { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
+                body: JSON.stringify({ fields: { status:{ stringValue:"confirmed" }, confirmedAt:{ stringValue:new Date().toISOString() } }})
+              }
+            );
+          }
+        } catch(err) { console.log("No se pudo confirmar cita:", err); }
+
+        // Asignar número consecutivo del centro
+        const counterId = session.sessionType === "entrega"
           ? `counter_${session.center}_entrega`
           : (session.sessionType === "intramuscular" || session.sessionType === "im")
           ? `counter_${session.center}_im`
@@ -422,24 +421,7 @@ try {
         );
         const counterDoc = await counterRes.json();
         const lastNumber = counterDoc.fields?.lastNumber?.integerValue ? parseInt(counterDoc.fields.lastNumber.integerValue) : 0;
-        const newNumber  = lastNumber + 1;
-        await fetch(
-          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${counterId}?updateMask.fieldPaths=lastNumber`,
-          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
-            body: JSON.stringify({ fields: { lastNumber: { integerValue: String(newNumber) } } }) }
-        );
-      if (session.sessionType === "entrega") {
-          updates.deliveryNumber = newNumber;
-        } else if (session.sessionType === "intramuscular" || session.sessionType === "im") {
-          updates.imNumber = newNumber;
-        } else if (session.sessionType === "subcutaneo" || session.sessionType === "sc") {
-          updates.scNumber = newNumber;
-        } else if (session.sessionType === "procedimiento") {
-          updates.procedureNumber = newNumber;
-        } else {
-          updates.infusionNumber = newNumber;
-        }
-        // Actualizar contador
+        const newNumber = lastNumber + 1;
         await fetch(
           `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${counterId}?updateMask.fieldPaths=lastNumber`,
           { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
@@ -496,6 +478,7 @@ try {
             }
           }
         } catch(e) { console.log("Error expediente:", e); }
+      }
 
       if (key === "retiro") updates.status = "completado";
       await patchSession(freshToken, session.id, updates);
