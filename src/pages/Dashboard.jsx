@@ -64,7 +64,6 @@ export default function Dashboard() {
 const activateNotifications = async () => {
     try {
       const token = await user.getIdToken(true);
-    const { requestNotificationPermission } = await import("./firebase.js");
      const fcmToken = await requestNotificationPermission(user.uid, token);
       if (fcmToken) {
         setNotifStatus("granted");
