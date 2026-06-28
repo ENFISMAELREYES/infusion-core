@@ -153,7 +153,7 @@ const [form, setForm] = useState({
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
   const [error, setError]     = useState("");
-  const [catalog, setCatalog] = useState({ patients: [], physicians: [], diagnoses: [], medications: [] });
+  const [catalog, setCatalog] = useState({ patients: [], physicians: [], diagnoses: [], medications: [], schemes: [] });
   const [patientSchemeOptions, setPatientSchemeOptions] = useState([]);
 
   useEffect(() => {
