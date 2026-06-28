@@ -135,13 +135,14 @@ const canCopyPrevious = user?.uid === "IhiRm5Fc5IT8BzzmQLQaq1dFXGs1";
   const [sessionType, setSessionType] = useState(null);
 const [form, setForm] = useState({
     patientName: "", dob: "", diagnosis: "", physician: "",
-    insurance: "", cycle: "", applicationDate: today, allergies: "",
+    insurance: "", cycle: "", applicationDate: today, allergies: "", schemeId: "",
   });
   const [meds, setMeds]       = useState([emptyMed(1)]);
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
   const [error, setError]     = useState("");
   const [catalog, setCatalog] = useState({ patients: [], physicians: [], diagnoses: [], medications: [] });
+  const [patientSchemeOptions, setPatientSchemeOptions] = useState([]);
 
   useEffect(() => {
     if (!user || !profile?.center) return;
@@ -153,15 +154,44 @@ const [form, setForm] = useState({
   const removeMed = (id) => setMeds(m => m.filter(x => x.id !== id).map((x, i) => ({ ...x, order: i + 1 })));
   const setMedField = (id, k, v) => setMeds(m => m.map(x => x.id === id ? { ...x, [k]: v } : x));
 
-  const selectPatient = (s) => setForm(f => ({
-    ...f,
-    patientName: s.patientName || f.patientName,
-    dob:         s.dob         || f.dob,
-    diagnosis:   s.diagnosis   || f.diagnosis,
-    physician:   s.physician   || f.physician,
-    insurance:   s.insurance   || f.insurance,
-    allergies:   s.allergies   || f.allergies,
-  }));
+  const selectPatient = async (s) => {
+    setForm(f => ({
+      ...f,
+      patientName: s.patientName || f.patientName,
+      dob:         s.dob         || f.dob,
+      diagnosis:   s.diagnosis   || f.diagnosis,
+      physician:   s.physician   || f.physician,
+      insurance:   s.insurance   || f.insurance,
+      allergies:   s.allergies   || f.allergies,
+    }));
+    // Buscar esquemas activos del paciente
+    try {
+      const token = await user.getIdToken(true);
+      const res = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
+        { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ structuredQuery: {
+            from:[{ collectionId:"patientSchemes" }],
+            where:{ compositeFilter:{ op:"AND", filters:[
+              { fieldFilter:{ field:{ fieldPath:"patientName" }, op:"EQUAL", value:{ stringValue: s.patientName } } },
+            ]}},
+            limit: 10,
+          }})
+        }
+      );
+      const data = await res.json();
+      const ps = data.filter(d => d.document).map(d => {
+        const f = d.document.fields || {};
+        return {
+          id: d.document.name.split("/").pop(),
+          schemeId: f.schemeId?.stringValue || "",
+          schemeStatus: f.schemeStatus?.stringValue || "activo",
+        };
+      });
+      // Solo activos y suspendidos
+      setPatientSchemeOptions(ps.filter(p => p.schemeStatus === "activo" || p.schemeStatus === "suspendido"));
+    } catch(e) { console.log("Error cargando esquemas:", e); }
+  };
 
   const copyPreviousTreatment = async () => {
     if (!form.patientName) return;
