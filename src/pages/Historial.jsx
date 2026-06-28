@@ -82,10 +82,12 @@ const [editDraft, setEditDraft] = useState(null);
 
 const openEditor = () => {
     setEditDraft({
+      setEditDraft({
       date: s.date || "",
       cycle: s.cycle || "",
       physician: s.physician || "",
       diagnosis: s.diagnosis || "",
+      sessionType: s.sessionType || "iv",
       infusionNumber: s.infusionNumber || s.imNumber || s.scNumber || s.deliveryNumber || s.procedureNumber || "",
       ingreso: s.events?.ingreso || "",
       retiro: s.events?.retiro || "",
@@ -112,12 +114,13 @@ const saveEdit = async () => {
     };
     try {
       const numField = s.sessionType === "entrega" ? "deliveryNumber" : s.sessionType === "im" ? "imNumber" : s.sessionType === "sc" ? "scNumber" : s.sessionType === "procedimiento" ? "procedureNumber" : "infusionNumber";
-      const fields = {
-        date:       { stringValue: editDraft.date },
-        cycle:      { stringValue: editDraft.cycle },
-        physician:  { stringValue: editDraft.physician },
-        diagnosis:  { stringValue: editDraft.diagnosis },
-        globalNote: { stringValue: editDraft.globalNote },
+     const fields = {
+        date:        { stringValue: editDraft.date },
+        cycle:       { stringValue: editDraft.cycle },
+        physician:   { stringValue: editDraft.physician },
+        diagnosis:   { stringValue: editDraft.diagnosis },
+        sessionType: { stringValue: editDraft.sessionType },
+        globalNote:  { stringValue: editDraft.globalNote },
         [numField]:  { integerValue: String(parseInt(editDraft.infusionNumber)||0) },
         events: toFV({ ingreso: editDraft.ingreso, retiro: editDraft.retiro }),
         meds: toFV(editDraft.meds.map(m => {
