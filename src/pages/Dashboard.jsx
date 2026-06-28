@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useNavigate } from "react-router-dom";
+import { requestNotificationPermission } from "../firebase.js";
 
 const PROJECT_ID = "infusion-core";
 const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
@@ -64,7 +65,7 @@ const activateNotifications = async () => {
     try {
       const token = await user.getIdToken(true);
     const { requestNotificationPermission } = await import("./firebase.js");
-      const fcmToken = await requestNotificationPermission(user.uid, token);
+     const fcmToken = await requestNotificationPermission(user.uid, token);
       if (fcmToken) {
         setNotifStatus("granted");
         alert("✅ Notificaciones activadas correctamente");
