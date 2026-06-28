@@ -468,6 +468,14 @@ const handleDataEdit = async (patientName, draft) => {
                 <div style={{ fontSize:13, color:"#aaa", marginTop:2 }}>{sample.allergies}</div>
               </div>
             )}
+            {sample.expedienteNumber && (
+              <div>
+                <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>No. Expediente</div>
+                <div style={{ fontSize:13, color:"#AFA9EC", fontFamily:"'IBM Plex Mono', monospace", marginTop:2 }}>
+                  {String(sample.expedienteNumber).padStart(3,"0")}
+                </div>
+              </div>
+            )}
           </div>
          {canEdit && (
             <button onClick={() => { setEditingData(g.canonical); setEditDraft({ dob:sample.dob||"", diagnosis:sample.diagnosis||"", physician:sample.physician||"", allergies:sample.allergies||"" }); }}
