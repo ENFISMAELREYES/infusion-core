@@ -418,6 +418,21 @@ const [form, setForm] = useState({
               <input type="date" value={form.applicationDate} onChange={e => setField("applicationDate", e.target.value)} style={inputStyle} />
             </div>
 
+            <div style={{ gridColumn:"1/-1" }}>
+              <label style={labelStyle}>Esquema</label>
+              {patientSchemeOptions.length > 0 ? (
+                <select value={form.schemeId} onChange={e => setField("schemeId", e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
+                  <option value="">Sin esquema / definir después</option>
+                  {patientSchemeOptions.map(ps => {
+                    const scheme = catalog.schemes?.find(s => s.id === ps.schemeId);
+                    return <option key={ps.id} value={ps.schemeId}>{scheme?.name || ps.schemeId}{ps.schemeStatus === "suspendido" ? " (suspendido)" : ""}</option>;
+                  })}
+                </select>
+              ) : (
+                <div style={{ fontSize:12, color:"#555", padding:"10px 13px", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:9 }}>Sin esquema asignado — se puede definir después en Catálogo</div>
+              )}
+            </div>
+
           </div>
         </section>
 
