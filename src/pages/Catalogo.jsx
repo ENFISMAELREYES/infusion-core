@@ -793,7 +793,6 @@ schemeOnlyNames.forEach(name => {
               patientSchemes={patientSchemes}
               appointments={appointments}
               canEdit={canEdit}
-             console.log("Sample:", patientSessions[0]?.patientName, "expediente:", patientSessions[0]?.expedienteNumber);
             />
           )}
           {tab === "physicians" && (
