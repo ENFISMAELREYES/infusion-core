@@ -20,11 +20,17 @@ const NAV = {
     { to:"/catalogo",  icon:"◈", label:"Catálogo"  },
     { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
   ],
- visualizador: [
+  visualizador: [
     { to:"/monitor",   icon:"◎", label:"Monitor"   },
     { to:"/catalogo",  icon:"◈", label:"Catálogo"  },
     { to:"/agenda",    icon:"📅", label:"Agenda"    },
   ],
+};
+
+const ROLE_LABEL = {
+  jefe: "Jefe de Enfermería",
+  enfermera: "Enfermería",
+  visualizador: "Visualizador",
 };
 
 export default function Layout() {
@@ -34,7 +40,6 @@ export default function Layout() {
 
   return (
     <div style={{ display:"flex", minHeight:"100vh", background:"#080a0f", color:"#f0f0f0", fontFamily:"'Inter', sans-serif" }}>
-
       {/* Sidebar — solo en desktop */}
       <aside style={{
         width:220, flexShrink:0, borderRight:"1px solid rgba(255,255,255,0.06)",
@@ -42,13 +47,12 @@ export default function Layout() {
         position:"sticky", top:0, height:"100vh", overflowY:"auto",
       }} className="desktop-only">
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:32, padding:"0 8px" }}>
-          <div style={{ width:34, height:34, borderRadius:10, background:"linear-gradient(135deg,#00d4aa,#0099ff)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>+</div>
+          <img src="/icon-192-white.png" alt="InfusionCore" style={{ width:36, height:36, borderRadius:8, objectFit:"contain" }} />
           <div>
             <div style={{ fontSize:14, fontWeight:700, color:"#fff", letterSpacing:-0.3 }}>InfusionCore</div>
             <div style={{ fontSize:10, color:"#555", letterSpacing:1, textTransform:"uppercase" }}>{profile?.center}</div>
           </div>
         </div>
-
         <nav style={{ display:"flex", flexDirection:"column", gap:4, flex:1 }}>
           {nav.map(item => (
             <NavLink key={item.to} to={item.to} end={item.to === "/"}
@@ -64,10 +68,9 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-
         <div style={{ borderTop:"1px solid rgba(255,255,255,0.06)", paddingTop:16, marginTop:16 }}>
-          <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600, padding:"0 8px", marginBottom:4 }}>{profile?.name}</div>
-          <div style={{ fontSize:11, color:"#555", padding:"0 8px", marginBottom:12, textTransform:"uppercase", letterSpacing:1 }}>{role}</div>
+          <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600, padding:"0 8px", marginBottom:2 }}>{profile?.name}</div>
+          <div style={{ fontSize:11, color:"#555", padding:"0 8px", marginBottom:12, textTransform:"uppercase", letterSpacing:1 }}>{ROLE_LABEL[role] || role}</div>
           <button onClick={logout} style={{ width:"100%", padding:"9px", borderRadius:9, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", color:"#555" }}>
             Cerrar sesión
           </button>
@@ -79,7 +82,7 @@ export default function Layout() {
         {/* Header móvil */}
         <div className="mobile-only" style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", borderBottom:"1px solid rgba(255,255,255,0.06)", position:"sticky", top:0, background:"#080a0f", zIndex:50 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-            <div style={{ width:28, height:28, borderRadius:8, background:"linear-gradient(135deg,#00d4aa,#0099ff)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>+</div>
+            <img src="/icon-192-white.png" alt="InfusionCore" style={{ width:28, height:28, borderRadius:6, objectFit:"contain" }} />
             <div>
               <div style={{ fontSize:13, fontWeight:700, color:"#fff" }}>InfusionCore</div>
               <div style={{ fontSize:10, color:"#555" }}>{profile?.center} · {profile?.name}</div>
@@ -89,7 +92,6 @@ export default function Layout() {
             Salir
           </button>
         </div>
-
         <Outlet />
       </main>
 
@@ -114,7 +116,6 @@ export default function Layout() {
           </NavLink>
         ))}
       </nav>
-
     </div>
   );
 }
