@@ -10,12 +10,14 @@ const PROFILES = {
   "JRYVuMW3fidrrlQcvDc5KSm00XT2": { name: "Paola Vargas",      role: "enfermera",    center: "CIPI"  },
   "gHEOTAoTe8fZCR4EjetuzqA59Uu1": { name: "Danna Ramírez",     role: "enfermera",    center: "CITIO" },
   "iwAUACSAqWYhol991xMDxgq30vq1": { name: "Yessica Madera",    role: "enfermera",    center: "CITIO" },
+  "IhiRm5Fc5IT8BzzmQLQaq1dFXGs1": { name: "Ismael Reyes",      role: "enfermera",    center: "CITIO" },
   "IC2Tegxjijc6icyaGXZUSjAFrxR2": { name: "Carlos Sorroza",    role: "visualizador", center: "CIPI"  },
   "0lah1NsefnR5GSpjfTX7D1qc4rh1": { name: "Jonathan Martínez", role: "visualizador", center: "CITIO" },
+  "dmMg7E4GfteR3Huc9hVYu9G4v5s1": { name: "Ana Flores",        role: "visualizador", center: "CIPI"  },
   "Ms8W1cGrrtY7bDDeSkt3RISvDZM2": { name: "Paola Itzel Sandre", role: "visualizador", center: "CIPI"  },
   "GstGhEoU7AbfbNwU8Lq2KZ2wiL52": { name: "Maricruz Zorrosa",  role: "visualizador", center: "CITIO" },
-  "IhiRm5Fc5IT8BzzmQLQaq1dFXGs1": { name: "Ismael Reyes",      role: "enfermera",    center: "CITIO" },
-  "dmMg7E4GfteR3Huc9hVYu9G4v5s1": { name: "Ana Flores",        role: "visualizador", center: "CIPI"  },
+
+  
 };
 
 export function AuthProvider({ children }) {
