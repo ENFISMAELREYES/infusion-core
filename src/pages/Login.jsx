@@ -34,16 +34,17 @@ export default function Login() {
         background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
         borderRadius: 20, padding: "36px 32px",
       }}>
-        {/* Logo */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 11,
-            background: "linear-gradient(135deg, #00d4aa, #0099ff)",
-            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20,
-          }}>⊕</div>
+       {/* Logos centrados arriba */}
+        <div style={{ display:"flex", justifyContent:"center", gap:24, marginBottom:24 }}>
+          <img src="/icon-192-white.png" alt="InfusionCore" style={{ width:64, height:64, objectFit:"contain" }} />
+          <img src="/icon-192-white.png" alt="InfusionCore" style={{ width:64, height:64, objectFit:"contain" }} />
+        </div>
+
+        {/* Logo texto */}
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:32 }}>
           <div>
-            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, color: "#fff" }}>InfusionCore</div>
-            <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>Sistema de infusiones</div>
+            <div style={{ fontFamily:"'DM Serif Display', serif", fontSize:20, color:"#fff" }}>InfusionCore</div>
+            <div style={{ fontSize:10, color:"#555", letterSpacing:2, textTransform:"uppercase" }}>CITIO · CIPI</div>
           </div>
         </div>
 
