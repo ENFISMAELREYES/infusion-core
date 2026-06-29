@@ -4,16 +4,16 @@
   "description": "Sistema de gestión clínica CITIO / CIPI",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0d0f14",
+  "background_color": "#ffffff",
   "theme_color": "#00d4aa",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "/icon-192-white.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/icon-512-white.png",
       "sizes": "512x512",
       "type": "image/png"
     }
