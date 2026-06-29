@@ -99,17 +99,20 @@ export default function Layout() {
       <nav className="mobile-only" style={{
         position:"fixed", bottom:0, left:0, right:0, zIndex:100,
         background:"rgba(8,10,15,0.95)", borderTop:"1px solid rgba(255,255,255,0.08)",
-        display:"flex", alignItems:"center", justifyContent:"space-around",
+        display:"flex", alignItems:"center",
+        overflowX:"auto", overflowY:"hidden",
         padding:"8px 0 max(8px, env(safe-area-inset-bottom))",
         backdropFilter:"blur(12px)",
+        scrollbarWidth:"none",
+        WebkitOverflowScrolling:"touch",
       }}>
         {nav.map(item => (
           <NavLink key={item.to} to={item.to} end={item.to === "/"}
             style={({ isActive }) => ({
               display:"flex", flexDirection:"column", alignItems:"center", gap:3,
-              textDecoration:"none", padding:"6px 16px", borderRadius:10,
+              textDecoration:"none", padding:"6px 12px", borderRadius:10,
               color: isActive ? "#00d4aa" : "#555", transition:"all 0.15s",
-              minWidth:60,
+              minWidth:56, flexShrink:0,
             })}>
             <span style={{ fontSize:20 }}>{item.icon}</span>
             <span style={{ fontSize:10, fontWeight:500, letterSpacing:0.5 }}>{item.label}</span>
