@@ -37,7 +37,6 @@ export default function Login() {
        {/* Logos centrados arriba */}
         <div style={{ display:"flex", justifyContent:"center", gap:24, marginBottom:24 }}>
           <img src="/icon-192-white.png" alt="InfusionCore" style={{ width:64, height:64, objectFit:"contain" }} />
-          <img src="/icon-192-white.png" alt="InfusionCore" style={{ width:64, height:64, objectFit:"contain" }} />
         </div>
 
         {/* Logo texto */}
