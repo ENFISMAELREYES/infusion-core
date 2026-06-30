@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!firebase-messaging-sw.js|manifest.json|icon-192.png|icon-512.png|icon-192-white.png|icon-512-white.png).*)", "destination": "/index.html" }
   ]
 }
