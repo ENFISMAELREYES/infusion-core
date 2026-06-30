@@ -34,9 +34,9 @@ export async function requestNotificationPermission(userId, token) {
     const fcmToken = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
     if (!fcmToken) return null;
 
-    const res = await fetch(
-      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/fcmTokens?documentId=${userId}`,
-      { method: "POST",
+    await fetch(
+      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/fcmTokens/${userId}?updateMask.fieldPaths=token&updateMask.fieldPaths=updatedAt`,
+      { method: "PATCH",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ fields: {
           token: { stringValue: fcmToken },
