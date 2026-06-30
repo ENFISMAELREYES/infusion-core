@@ -32,7 +32,7 @@ async function fetchSessions(token, filters) {
   const query = {
     from: [{ collectionId: "sessions" }],
     orderBy: [{ field: { fieldPath: "date" }, direction: "DESCENDING" }],
-    limit: 100,
+    limit: 1000,
   };
   if (where) query.where = where;
 
