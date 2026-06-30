@@ -31,9 +31,9 @@ export async function requestNotificationPermission(userId, token) {
     const fcmToken = await getToken(messaging, { vapidKey: VAPID_KEY });
     if (!fcmToken) return null;
 
-    await fetch(
-      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/fcmTokens/${userId}?updateMask.fieldPaths=token&updateMask.fieldPaths=updatedAt`,
-      { method: "PATCH",
+    const res = await fetch(
+      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/fcmTokens?documentId=${userId}`,
+      { method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ fields: {
           token: { stringValue: fcmToken },
@@ -41,7 +41,8 @@ export async function requestNotificationPermission(userId, token) {
         }})
       }
     );
-    console.log("FCM token guardado:", fcmToken);
+    const result = await res.json();
+    console.log("FCM token guardado:", result);
     return fcmToken;
   } catch(e) {
     console.error("Error FCM:", e);
