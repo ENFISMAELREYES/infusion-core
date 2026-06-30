@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 const requestNotificationPermission = async (userId, token) => {
-  {profile?.role === "jefe" && (
+  try {
+    {profile?.role === "jefe" && (
   <button onClick={async () => {
     try {
       const token = await user.getIdToken(true);
@@ -38,7 +39,6 @@ const requestNotificationPermission = async (userId, token) => {
     📥 Importar historial CITIO (180 sesiones)
   </button>
 )}
-  try {
     const mod = await import("../firebase.js");
     return await mod.requestNotificationPermission(userId, token);
   } catch(e) {
