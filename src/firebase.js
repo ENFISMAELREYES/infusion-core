@@ -45,7 +45,7 @@ export async function requestNotificationPermission(userId, token) {
     console.log("FCM token guardado:", result);
     return fcmToken;
   } catch(e) {
-    console.error("Error FCM:", e);
+    console.error("Error FCM completo:", e.code, e.message, e);
     return null;
   }
 }
