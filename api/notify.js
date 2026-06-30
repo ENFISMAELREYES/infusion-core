@@ -28,7 +28,7 @@ export default async function handler(req, res) {
     const tokenDoc = await tokenRes.json();
     const fcmToken = tokenDoc.fields?.token?.stringValue;
 
-    if (!fcmToken) return res.status(200).json({ ok: false, reason: "No FCM token", debug: tokenDoc, status: tokenRes.status });
+    if (!fcmToken) return res.status(200).json({ ok: false, reason: "No FCM token" });
 
     // Enviar notificación
     const notifRes = await fetch(
