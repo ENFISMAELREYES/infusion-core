@@ -281,7 +281,21 @@ const [form, setForm] = useState({
         { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
       );
       if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "Error al guardar"); }
-      console.log("Guardado:", (await res.json()).name);
+     console.log("Guardado:", (await res.json()).name);
+
+      // Enviar notificación push al jefe
+      try {
+        await fetch("/api/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            patientName: form.patientName,
+            center: profile?.center,
+            nurseName: profile?.name,
+          }),
+        });
+      } catch(notifErr) { console.log("Error notificación:", notifErr); }
+
       setSaved(true);
     } catch(err) {
       setError(err.message);
