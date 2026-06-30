@@ -13,7 +13,10 @@ export default async function handler(req, res) {
     const { GoogleAuth } = await import("google-auth-library");
     const auth = new GoogleAuth({
       credentials: serviceAccount,
-      scopes: ["https://www.googleapis.com/auth/firebase.messaging"],
+      scopes: [
+        "https://www.googleapis.com/auth/firebase.messaging",
+        "https://www.googleapis.com/auth/datastore",
+      ],
     });
     const accessToken = await auth.getAccessToken();
 
