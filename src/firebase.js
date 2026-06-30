@@ -20,7 +20,6 @@ try {
 }
 
 export { messaging };
-
 export const VAPID_KEY = "BMLOo1m7MOcerY21MKP-LfhHiQ5BEsVXNJog9Gv_EIklKdC6evUdC7kZQcufIcjPm44R5Bbhx2tJcucSdPNqyqA";
 
 export async function requestNotificationPermission(userId, token) {
@@ -44,8 +43,7 @@ export async function requestNotificationPermission(userId, token) {
         }})
       }
     );
-    const result = await res.json();
-    console.log("FCM token guardado:", result);
+    console.log("FCM token guardado:", fcmToken);
     return fcmToken;
   } catch(e) {
     console.error("Error FCM completo:", e.code, e.message, e);
