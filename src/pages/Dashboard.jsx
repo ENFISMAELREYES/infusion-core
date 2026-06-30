@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useNavigate } from "react-router-dom";
+
 const requestNotificationPermission = async (userId, token) => {
   try {
     const mod = await import("../firebase.js");
@@ -10,6 +11,7 @@ const requestNotificationPermission = async (userId, token) => {
     return null;
   }
 };
+
 const PROJECT_ID = "infusion-core";
 const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
 
@@ -67,10 +69,10 @@ function StatCard({ label, value, accent }) {
 export default function Dashboard() {
   const { user, profile } = useAuth();
   const [notifStatus, setNotifStatus] = useState(() => {
-  try { return Notification?.permission || "default"; } catch(e) { return "default"; }
-});
+    try { return Notification?.permission || "default"; } catch(e) { return "default"; }
+  });
 
-const activateNotifications = async () => {
+  const activateNotifications = async () => {
     try {
       const token = await user.getIdToken(true);
       const fcmToken = await requestNotificationPermission(user.uid, token);
@@ -86,6 +88,7 @@ const activateNotifications = async () => {
       alert("Error: " + e.message);
     }
   };
+
   const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -124,24 +127,59 @@ const activateNotifications = async () => {
       </div>
 
       {profile?.role === "jefe" && (
-          <div style={{ marginBottom:20, padding:"12px 16px", borderRadius:10, background: notifStatus === "granted" ? "rgba(29,158,117,0.08)" : "rgba(255,179,71,0.08)", border:`1px solid ${notifStatus === "granted" ? "rgba(29,158,117,0.25)" : "rgba(255,179,71,0.25)"}` }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-              <div>
-                <div style={{ fontSize:13, color: notifStatus === "granted" ? "#1D9E75" : "#ffb347", fontWeight:600 }}>
-                  {notifStatus === "granted" ? "🔔 Notificaciones activas" : "🔕 Notificaciones desactivadas"}
-                </div>
-                <div style={{ fontSize:11, color:"#555", marginTop:2 }}>
-                  {notifStatus === "granted" ? "Recibirás avisos cuando haya órdenes pendientes de autorizar" : "Activa para recibir avisos de nuevas órdenes"}
-                </div>
+        <div style={{ marginBottom:20, padding:"12px 16px", borderRadius:10, background: notifStatus === "granted" ? "rgba(29,158,117,0.08)" : "rgba(255,179,71,0.08)", border:`1px solid ${notifStatus === "granted" ? "rgba(29,158,117,0.25)" : "rgba(255,179,71,0.25)"}` }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div>
+              <div style={{ fontSize:13, color: notifStatus === "granted" ? "#1D9E75" : "#ffb347", fontWeight:600 }}>
+                {notifStatus === "granted" ? "🔔 Notificaciones activas" : "🔕 Notificaciones desactivadas"}
               </div>
-              {notifStatus !== "granted" && (
-                <button onClick={activateNotifications} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.15)", border:"1px solid rgba(255,179,71,0.4)", color:"#ffb347" }}>
-                  Activar
-                </button>
-              )}
+              <div style={{ fontSize:11, color:"#555", marginTop:2 }}>
+                {notifStatus === "granted" ? "Recibirás avisos cuando haya órdenes pendientes de autorizar" : "Activa para recibir avisos de nuevas órdenes"}
+              </div>
             </div>
+            {notifStatus !== "granted" && (
+              <button onClick={activateNotifications} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.15)", border:"1px solid rgba(255,179,71,0.4)", color:"#ffb347" }}>
+                Activar
+              </button>
+            )}
           </div>
-        )}
+        </div>
+      )}
+
+      {profile?.role === "jefe" && (
+        <button onClick={async () => {
+          try {
+            const token = await user.getIdToken(true);
+            const res = await fetch('/import-sessions.json');
+            const importSessions = await res.json();
+            const toFV = (val) => {
+              if (typeof val === "string") return { stringValue: val };
+              if (typeof val === "boolean") return { booleanValue: val };
+              if (typeof val === "number") return { integerValue: String(val) };
+              if (val === null) return { nullValue: null };
+              if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
+              if (typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k,v]) => [k, toFV(v)])) } };
+              return { stringValue: String(val) };
+            };
+            let ok = 0, errors = 0;
+            for (const s of importSessions) {
+              try {
+                const fields = Object.fromEntries(Object.entries(s).map(([k,v]) => [k, toFV(v)]));
+                await fetch(
+                  `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions?key=${API_KEY}`,
+                  { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) }
+                );
+                ok++;
+                if (ok % 10 === 0) console.log(`Importadas: ${ok}/${importSessions.length}`);
+                await new Promise(r => setTimeout(r, 150));
+              } catch(e) { errors++; console.error(e); }
+            }
+            alert(`✓ ${ok} sesiones importadas, ${errors} errores`);
+          } catch(e) { alert("Error: " + e.message); }
+        }} style={{ marginBottom:16, padding:"8px 16px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+          📥 Importar historial CITIO (180 sesiones)
+        </button>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 28 }}>
         <StatCard label="En curso"      value={enCurso}    accent="#00d4aa" />
@@ -167,7 +205,7 @@ const activateNotifications = async () => {
           </div>
         ))}
       </div>
-      
+
       <div style={{ fontSize: 11, color: "#555", letterSpacing: 2, textTransform: "uppercase", marginBottom: 14 }}>Sesiones del día</div>
 
       {loading ? (
