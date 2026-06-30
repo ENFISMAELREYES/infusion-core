@@ -73,7 +73,8 @@ export default function Dashboard() {
 const activateNotifications = async () => {
     try {
       const token = await user.getIdToken(true);
-     const fcmToken = await requestNotificationPermission(user.uid, token);
+      const fcmToken = await requestNotificationPermission(user.uid, token);
+      console.log("FCM Token resultado:", fcmToken);
       if (fcmToken) {
         setNotifStatus("granted");
         alert("✅ Notificaciones activadas correctamente");
@@ -81,6 +82,7 @@ const activateNotifications = async () => {
         alert("⚠️ No se pudieron activar las notificaciones");
       }
     } catch(e) {
+      console.error("Error completo:", e);
       alert("Error: " + e.message);
     }
   };
