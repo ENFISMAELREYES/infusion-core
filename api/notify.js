@@ -18,14 +18,14 @@ export default async function handler(req, res) {
     const accessToken = await auth.getAccessToken();
 
     // Obtener token FCM del jefe desde Firestore
-    const tokenRes = await fetch(
+   const tokenRes = await fetch(
       `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/fcmTokens/${JEFE_UID}`,
       { headers: { "Authorization": `Bearer ${accessToken}` } }
     );
     const tokenDoc = await tokenRes.json();
     const fcmToken = tokenDoc.fields?.token?.stringValue;
 
-    if (!fcmToken) return res.status(200).json({ ok: false, reason: "No FCM token" });
+    if (!fcmToken) return res.status(200).json({ ok: false, reason: "No FCM token", debug: tokenDoc, status: tokenRes.status });
 
     // Enviar notificación
     const notifRes = await fetch(
