@@ -664,13 +664,10 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
           </div>
 {session.sessionType === "procedimiento" ? (
             <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-              {/* Tipo de procedimiento */}
               <div style={{ padding:"10px 14px", borderRadius:10, background:"rgba(255,179,71,0.06)", border:"1px solid rgba(255,179,71,0.2)" }}>
                 <div style={{ fontSize:11, color:"#ffb347", textTransform:"uppercase", letterSpacing:1, marginBottom:4 }}>🔧 Procedimiento</div>
                 <div style={{ fontSize:14, color:"#f0f0f0", fontWeight:600 }}>{session.procedureType || "Procedimiento"}</div>
               </div>
-
-              {/* Inicio y término */}
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
                 <TimeBtn label="Inicio del procedimiento" time={medEvents["proc_inicio"]?.inicio} onRecord={async () => {
                   const freshToken = await user.getIdToken(true);
@@ -683,8 +680,6 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                   onRefresh();
                 }} disabled={!medEvents["proc_inicio"]?.inicio || !!medEvents["proc_inicio"]?.fin} />
               </div>
-
-              {/* Nota del procedimiento */}
               {medEvents["proc_inicio"]?.fin && (
                 <div>
                   <div style={{ fontSize:11, color:"#555", textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Nota del procedimiento</div>
@@ -694,98 +689,90 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
             </div>
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            {(session.meds||[]).map(med => {
-          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            {(session.meds||[]).map(med => {
-              const ev       = medEvents[`med_${med.id}`] || {};
-              const color    = CAT_COLOR[med.category] || "#888";
-              const started  = !!ev.inicio;
-              const ended    = !!ev.fin;
-              const canStart = canStartMed(med);
-              const isEditing = editingId === med.id;
-
-              return (
-                <div key={med.id}>
-                  <div style={{ borderRadius:11, overflow:"hidden", border:`1px solid ${ended?"rgba(79,195,247,0.2)":started?"rgba(29,158,117,0.2)":"rgba(255,255,255,0.07)"}`, borderLeft:`3px solid ${color}`, background:"rgba(255,255,255,0.02)" }}>
-                    <div style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:10 }}>
-                      <span style={{ width:22, height:22, borderRadius:"50%", background:"rgba(255,255,255,0.06)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, color:"#888", fontFamily:"'IBM Plex Mono', monospace", flexShrink:0 }}>{med.order}</span>
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{med.name} {med.dose}</div>
-                        <div style={{ fontSize:11, color:"#666", marginTop:1 }}>{med.diluent}{med.time?` · ${med.time} min`:""}</div>
-                        {med.parallelType && med.parallelType !== "secuencial" && (
-                          <div style={{ fontSize:10, color:"#AFA9EC", marginTop:2 }}>
-                            ⚡ {med.parallelType==="junto"?"Simultáneo con anterior":`Inicia ${med.startOffset} min después del anterior`}
-                          </div>
-                        )}
-                      </div>
-                      <span style={{ fontSize:14 }}>{ended?"✓":started?"⏳":"○"}</span>
-                    </div>
-
-                    {med.correction && (
-                      <div style={{ margin:"0 14px 8px", padding:"7px 11px", borderRadius:8, background:"rgba(186,117,23,0.09)", border:"1px solid rgba(186,117,23,0.22)" }}>
-                        <div style={{ fontSize:11, color:"#EF9F27", fontWeight:600, marginBottom:3 }}>⚠ Corrección del Jefe</div>
-                        {med.correction.diluent && <div style={{ fontSize:11, color:"#aaa" }}>Dilución: {med.correction.diluent}</div>}
-                        {med.correction.time    && <div style={{ fontSize:11, color:"#aaa" }}>Tiempo: {med.correction.time}</div>}
-                        {med.correction.general && <div style={{ fontSize:11, color:"#aaa" }}>Nota: {med.correction.general}</div>}
-                      </div>
-                    )}
-                    
-{(med.category === "domicilio" || session.sessionType === "entrega" || session.sessionType === "im" || session.sessionType === "sc") && (
-  <div style={{ padding:"0 14px 10px" }}>
-    {!medEvents[`med_${med.id}`]?.inicio ? (
-      <button onClick={() => recordMedEvent(med.id, "inicio")} style={{ width:"100%", padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.15)", border:"1px solid rgba(175,169,236,0.4)", color:"#AFA9EC" }}>
-        {session.sessionType === "entrega" || med.category === "domicilio" ? "📦 Marcar como entregado" : "✅ Marcar como aplicado"}
-      </button>
-    ) : (
-      <div style={{ padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(175,169,236,0.08)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC" }}>
-        {session.sessionType === "entrega" || med.category === "domicilio" ? "✓ Entregado" : "✓ Aplicado"} a las {medEvents[`med_${med.id}`]?.inicio}
-      </div>
-    )}
-  </div>
-)}
-                    {med.time && (
-                      <div style={{ padding:"0 14px 10px", display:"flex", gap:8 }}>
-                        {!started && <button onClick={() => recordMedEvent(med.id,"inicio")} disabled={!canStart} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:canStart?"pointer":"not-allowed", background:canStart?"rgba(29,158,117,0.12)":"rgba(255,255,255,0.03)", border:`1px solid ${canStart?"rgba(29,158,117,0.3)":"rgba(255,255,255,0.06)"}`, color:canStart?"#1D9E75":"#444" }}>▶ Iniciar</button>}
-                        {started && !ended && (
-                          <>
-                            <div style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(29,158,117,0.07)", border:"1px solid rgba(29,158,117,0.18)", color:"#1D9E75" }}>
-                              ▶ {ev.inicio}<ElapsedTimer startTime={ev.inicio} />
+              {(session.meds||[]).map(med => {
+                const ev       = medEvents[`med_${med.id}`] || {};
+                const color    = CAT_COLOR[med.category] || "#888";
+                const started  = !!ev.inicio;
+                const ended    = !!ev.fin;
+                const canStart = canStartMed(med);
+                const isEditing = editingId === med.id;
+                return (
+                  <div key={med.id}>
+                    <div style={{ borderRadius:11, overflow:"hidden", border:`1px solid ${ended?"rgba(79,195,247,0.2)":started?"rgba(29,158,117,0.2)":"rgba(255,255,255,0.07)"}`, borderLeft:`3px solid ${color}`, background:"rgba(255,255,255,0.02)" }}>
+                      <div style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:10 }}>
+                        <span style={{ width:22, height:22, borderRadius:"50%", background:"rgba(255,255,255,0.06)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, color:"#888", fontFamily:"'IBM Plex Mono', monospace", flexShrink:0 }}>{med.order}</span>
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{med.name} {med.dose}</div>
+                          <div style={{ fontSize:11, color:"#666", marginTop:1 }}>{med.diluent}{med.time?` · ${med.time} min`:""}</div>
+                          {med.parallelType && med.parallelType !== "secuencial" && (
+                            <div style={{ fontSize:10, color:"#AFA9EC", marginTop:2 }}>
+                              ⚡ {med.parallelType==="junto"?"Simultáneo con anterior":`Inicia ${med.startOffset} min después del anterior`}
                             </div>
-                            <button onClick={() => recordMedEvent(med.id,"fin")} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(79,195,247,0.12)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7" }}>■ Terminar</button>
-                          </>
-                        )}
-                        {ended && (
-                          <div style={{ flex:1, display:"flex", gap:8 }}>
-                            <div style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(29,158,117,0.06)", border:"1px solid rgba(29,158,117,0.15)", color:"#1D9E75" }}>▶ {ev.inicio}</div>
-                            <div style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(79,195,247,0.06)", border:"1px solid rgba(79,195,247,0.15)", color:"#4fc3f7" }}>■ {ev.fin}</div>
-                          </div>
-                        )}
+                          )}
+                        </div>
+                        <span style={{ fontSize:14 }}>{ended?"✓":started?"⏳":"○"}</span>
                       </div>
-                    )}
-
-                    {!started && (
-                      <div style={{ padding:"0 14px 10px", display:"flex", gap:6 }}>
-                        <button onClick={() => setEditingId(isEditing ? null : med.id)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️ Editar</button>
-                        <button onClick={() => handleDelete(med.id)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑 Eliminar</button>
-                      </div>
-                        )}
-                      </div>
-                    )}
-                  {isEditing && !started && (
-                    <EditMedForm med={med} onSave={handleEdit} onCancel={() => setEditingId(null)} />
-                  )}
-
-                  {med.wash && med.category !== "domicilio" && (
-                    <div style={{ paddingLeft:16 }}>
-                      <WashCard wash={med.wash} washEvents={washEvents} medId={med.id}
-                        onStart={() => recordWashEvent(med.id,"inicio")}
-                        onEnd={()   => recordWashEvent(med.id,"fin")}
-                        canStart={canStartWash(med)} />
+                      {med.correction && (
+                        <div style={{ margin:"0 14px 8px", padding:"7px 11px", borderRadius:8, background:"rgba(186,117,23,0.09)", border:"1px solid rgba(186,117,23,0.22)" }}>
+                          <div style={{ fontSize:11, color:"#EF9F27", fontWeight:600, marginBottom:3 }}>⚠ Corrección del Jefe</div>
+                          {med.correction.diluent && <div style={{ fontSize:11, color:"#aaa" }}>Dilución: {med.correction.diluent}</div>}
+                          {med.correction.time    && <div style={{ fontSize:11, color:"#aaa" }}>Tiempo: {med.correction.time}</div>}
+                          {med.correction.general && <div style={{ fontSize:11, color:"#aaa" }}>Nota: {med.correction.general}</div>}
+                        </div>
+                      )}
+                      {(med.category === "domicilio" || session.sessionType === "entrega" || session.sessionType === "im" || session.sessionType === "sc") && (
+                        <div style={{ padding:"0 14px 10px" }}>
+                          {!medEvents[`med_${med.id}`]?.inicio ? (
+                            <button onClick={() => recordMedEvent(med.id, "inicio")} style={{ width:"100%", padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.15)", border:"1px solid rgba(175,169,236,0.4)", color:"#AFA9EC" }}>
+                              {session.sessionType === "entrega" || med.category === "domicilio" ? "📦 Marcar como entregado" : "✅ Marcar como aplicado"}
+                            </button>
+                          ) : (
+                            <div style={{ padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(175,169,236,0.08)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC" }}>
+                              {session.sessionType === "entrega" || med.category === "domicilio" ? "✓ Entregado" : "✓ Aplicado"} a las {medEvents[`med_${med.id}`]?.inicio}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {med.time && (
+                        <div style={{ padding:"0 14px 10px", display:"flex", gap:8 }}>
+                          {!started && <button onClick={() => recordMedEvent(med.id,"inicio")} disabled={!canStart} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:canStart?"pointer":"not-allowed", background:canStart?"rgba(29,158,117,0.12)":"rgba(255,255,255,0.03)", border:`1px solid ${canStart?"rgba(29,158,117,0.3)":"rgba(255,255,255,0.06)"}`, color:canStart?"#1D9E75":"#444" }}>▶ Iniciar</button>}
+                          {started && !ended && (
+                            <>
+                              <div style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(29,158,117,0.07)", border:"1px solid rgba(29,158,117,0.18)", color:"#1D9E75" }}>
+                                ▶ {ev.inicio}<ElapsedTimer startTime={ev.inicio} />
+                              </div>
+                              <button onClick={() => recordMedEvent(med.id,"fin")} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(79,195,247,0.12)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7" }}>■ Terminar</button>
+                            </>
+                          )}
+                          {ended && (
+                            <div style={{ flex:1, display:"flex", gap:8 }}>
+                              <div style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(29,158,117,0.06)", border:"1px solid rgba(29,158,117,0.15)", color:"#1D9E75" }}>▶ {ev.inicio}</div>
+                              <div style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(79,195,247,0.06)", border:"1px solid rgba(79,195,247,0.15)", color:"#4fc3f7" }}>■ {ev.fin}</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {!started && (
+                        <div style={{ padding:"0 14px 10px", display:"flex", gap:6 }}>
+                          <button onClick={() => setEditingId(isEditing ? null : med.id)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️ Editar</button>
+                          <button onClick={() => handleDelete(med.id)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑 Eliminar</button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-          })}
+                    {isEditing && !started && (
+                      <EditMedForm med={med} onSave={handleEdit} onCancel={() => setEditingId(null)} />
+                    )}
+                    {med.wash && med.category !== "domicilio" && (
+                      <div style={{ paddingLeft:16 }}>
+                        <WashCard wash={med.wash} washEvents={washEvents} medId={med.id}
+                          onStart={() => recordWashEvent(med.id,"inicio")}
+                          onEnd={()   => recordWashEvent(med.id,"fin")}
+                          canStart={canStartWash(med)} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
           {!showAdd ? (
