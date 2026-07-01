@@ -3,7 +3,6 @@ import { useAuth } from "../hooks/useAuth";
 
 const PROJECT_ID = "infusion-core";
 const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
-
 const CATEGORIES = ["premedicacion","inmunoterapia","quimioterapia","adicional","especialidad","hidratacion","domicilio"];
 const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", hidratacion:"Hidratación", domicilio:"Domicilio" };
 const emptyMed = (order) => ({ id: Date.now() + order, order, name: "", dose: "", diluent: "", time: "", category: "premedicacion", parallelType: "secuencial", startOffset: null });
@@ -48,16 +47,15 @@ async function fetchCatalog(token, center) {
     })
   });
   const data = await res.json();
-  if (!Array.isArray(data)) return { patients: [], physicians: [], diagnoses: [] };
+  if (!Array.isArray(data)) return { patients: [], physicians: [], diagnoses: [], medications: [], schemes: [] };
 
-const sessions = data.filter(d => d.document).map(d => {
+  const sessions = data.filter(d => d.document).map(d => {
     const f = d.document.fields || {};
     const g = (k) => f[k]?.stringValue || "";
     const medNames = (f.meds?.arrayValue?.values || []).map(m => m.mapValue?.fields?.name?.stringValue).filter(Boolean);
-   return { patientName: g("patientName"), dob: g("dob"), diagnosis: g("diagnosis"), physician: g("physician"), insurance: g("insurance"), center: g("center"), medNames, allergies: g("allergies") };
+    return { patientName: g("patientName"), dob: g("dob"), diagnosis: g("diagnosis"), physician: g("physician"), insurance: g("insurance"), center: g("center"), medNames, allergies: g("allergies") };
   });
-  
-  // Deduplicar por similitud
+
   const dedupe = (items, key) => {
     const unique = [];
     items.forEach(item => {
@@ -69,32 +67,31 @@ const sessions = data.filter(d => d.document).map(d => {
     return unique;
   };
 
-const filtered   = center ? sessions.filter(s => s.center === center) : sessions;
-const patients   = dedupe(filtered, "patientName");
-const physicians = [...new Set(filtered.map(s => s.physician).filter(Boolean))].map(p => ({ physician: p }));
-const diagnoses  = [...new Set(filtered.map(s => s.diagnosis).filter(Boolean))].map(d => ({ diagnosis: d }));
-const medications = [...new Set(filtered.flatMap(s => s.medNames || []))].map(m => ({ medication: m }));
-// Cargar esquemas
-      const schemesRes = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
-        { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-          body: JSON.stringify({ structuredQuery: { from:[{ collectionId:"schemes" }], limit:100 } }) }
-      );
-      const schemesData = await schemesRes.json();
-      const schemes = schemesData.filter(d=>d.document).map(d => {
-        const f = d.document.fields || {};
-        return { id: d.document.name.split("/").pop(), name: f.name?.stringValue || "" };
-      });
+  const filtered   = center ? sessions.filter(s => s.center === center) : sessions;
+  const patients   = dedupe(filtered, "patientName");
+  const physicians = [...new Set(filtered.map(s => s.physician).filter(Boolean))].map(p => ({ physician: p }));
+  const diagnoses  = [...new Set(filtered.map(s => s.diagnosis).filter(Boolean))].map(d => ({ diagnosis: d }));
+  const medications = [...new Set(filtered.flatMap(s => s.medNames || []))].map(m => ({ medication: m }));
 
-      return { patients: dedupe(patients, "patientName"), physicians: dedupe(physicians, "physician"), diagnoses: dedupe(diagnoses, "diagnosis"), medications: dedupe(medications, "medication"), schemes };
+  const schemesRes = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
+    { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+      body: JSON.stringify({ structuredQuery: { from:[{ collectionId:"schemes" }], limit:100 } }) }
+  );
+  const schemesData = await schemesRes.json();
+  const schemes = schemesData.filter(d=>d.document).map(d => {
+    const f = d.document.fields || {};
+    return { id: d.document.name.split("/").pop(), name: f.name?.stringValue || "" };
+  });
+
+  return { patients: dedupe(patients, "patientName"), physicians: dedupe(physicians, "physician"), diagnoses: dedupe(diagnoses, "diagnosis"), medications: dedupe(medications, "medication"), schemes };
 }
 
 function Autocomplete({ value, onChange, suggestions, onSelect, placeholder, field }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
-  console.log("Suggestions:", suggestions.length, "Value:", value, "Field:", field);
-const filtered = suggestions
+  const filtered = suggestions
     .map(s => ({ ...s, score: similarity(s[field], value) }))
     .filter(s => s.score > 0.05)
     .sort((a, b) => b.score - a.score)
@@ -138,14 +135,14 @@ const filtered = suggestions
 }
 
 export default function NuevaSession() {
- const { user, profile } = useAuth();
-const canCopyPrevious = user?.uid === "IhiRm5Fc5IT8BzzmQLQaq1dFXGs1";
+  const { user, profile } = useAuth();
+  const canCopyPrevious = user?.uid === "IhiRm5Fc5IT8BzzmQLQaq1dFXGs1";
   const today = getToday();
 
   const [sessionType, setSessionType] = useState(null);
-const [form, setForm] = useState({
+  const [form, setForm] = useState({
     patientName: "", dob: "", diagnosis: "", physician: "",
-    insurance: "", cycle: "", applicationDate: today, allergies: "", schemeId: "",
+    insurance: "", cycle: "", applicationDate: today, allergies: "", schemeId: "", procedureType: "",
   });
   const [meds, setMeds]       = useState([emptyMed(1)]);
   const [saving, setSaving]   = useState(false);
@@ -174,7 +171,6 @@ const [form, setForm] = useState({
       insurance:   s.insurance   || f.insurance,
       allergies:   s.allergies   || f.allergies,
     }));
-    // Buscar esquemas activos del paciente
     try {
       const token = await user.getIdToken(true);
       const res = await fetch(
@@ -198,7 +194,6 @@ const [form, setForm] = useState({
           schemeStatus: f.schemeStatus?.stringValue || "activo",
         };
       });
-      // Solo activos y suspendidos
       setPatientSchemeOptions(ps.filter(p => p.schemeStatus === "activo" || p.schemeStatus === "suspendido"));
     } catch(e) { console.log("Error cargando esquemas:", e); }
   };
@@ -207,8 +202,7 @@ const [form, setForm] = useState({
     if (!form.patientName) return;
     try {
       const token = await user.getIdToken(true);
-      const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
-      const res = await fetch(url, {
+      const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
@@ -244,7 +238,7 @@ const [form, setForm] = useState({
       setMeds(copiedMeds);
     } catch(e) { alert("Error: " + e.message); }
   };
-  
+
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true); setError("");
@@ -259,7 +253,6 @@ const [form, setForm] = useState({
         if (typeof val === "object")  return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k, v]) => [k, toFV(v)])) } };
         return { stringValue: String(val) };
       };
-
       const data = {
         ...form,
         sessionType: sessionType || "iv",
@@ -271,31 +264,22 @@ const [form, setForm] = useState({
         status:    "pendiente",
         authorized: false,
         createdAt: new Date().toISOString(),
-        meds: meds.map(m => ({ ...m, time: m.time ? parseInt(m.time) : null })),
+        meds: sessionType === "procedimiento" ? [] : meds.map(m => ({ ...m, time: m.time ? parseInt(m.time) : null })),
         events: {}, medEvents: {}, washEvents: {},
       };
-
       const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toFV(v)]));
       const res = await fetch(
         `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions?key=${API_KEY}`,
         { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
       );
       if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "Error al guardar"); }
-     console.log("Guardado:", (await res.json()).name);
-
-      // Enviar notificación push al jefe
       try {
         await fetch("/api/notify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            patientName: form.patientName,
-            center: profile?.center,
-            nurseName: profile?.name,
-          }),
+          body: JSON.stringify({ patientName: form.patientName, center: profile?.center, nurseName: profile?.name }),
         });
       } catch(notifErr) { console.log("Error notificación:", notifErr); }
-
       setSaved(true);
     } catch(err) {
       setError(err.message);
@@ -303,7 +287,7 @@ const [form, setForm] = useState({
   };
 
   const reset = () => {
-    setForm({ patientName:"", dob:"", diagnosis:"", physician:"", insurance:"", cycle:"", applicationDate:today });
+    setForm({ patientName:"", dob:"", diagnosis:"", physician:"", insurance:"", cycle:"", applicationDate:today, allergies:"", schemeId:"", procedureType:"" });
     setMeds([emptyMed(1)]); setSaved(false); setError("");
     setSessionType(null);
   };
@@ -334,232 +318,179 @@ const [form, setForm] = useState({
           ⚠ {error}
         </div>
       )}
-{!sessionType && (
-  <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-    <div style={{ fontSize:13, color:"#555", marginBottom:8 }}>Selecciona el tipo de atención:</div>
-    {[
-     { id:"iv",           icon:"💉", label:"Infusión IV",          desc:"Medicamentos intravenosos" },
-      { id:"im",           icon:"💊", label:"Intramuscular",         desc:"Aplicación intramuscular" },
-      { id:"sc",           icon:"🩺", label:"Subcutánea",            desc:"Aplicación subcutánea" },
-      { id:"entrega",      icon:"📦", label:"Entrega de medicamento", desc:"Medicamento para domicilio" },
-      { id:"procedimiento",icon:"🔧", label:"Procedimiento",          desc:"Heparinización, retiro de infusor" },
-    ].map(t => (
-      <div key={t.id} onClick={() => setSessionType(t.id)}
-        style={{ padding:"18px 20px", borderRadius:13, cursor:"pointer", background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", display:"flex", alignItems:"center", gap:14, transition:"all 0.15s" }}
-        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
-        onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}>
-        <span style={{ fontSize:28 }}>{t.icon}</span>
-        <div>
-          <div style={{ fontSize:15, color:"#f0f0f0", fontWeight:600 }}>{t.label}</div>
-          <div style={{ fontSize:12, color:"#555", marginTop:2 }}>{t.desc}</div>
-        </div>
-        <span style={{ marginLeft:"auto", color:"#555" }}>›</span>
-      </div>
-    ))}
-  </div>
-)}
-      {sessionType && (
-  <>
-    <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
-      <button onClick={() => setSessionType(null)} style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"6px 12px", color:"#666", fontSize:12, cursor:"pointer" }}>← Volver</button>
-      <span style={{ fontSize:13, color:"#00d4aa", fontWeight:600 }}>
-       {sessionType === "iv" ? "💉 Infusión IV" : sessionType === "im" ? "💊 Intramuscular" : sessionType === "sc" ? "🩺 Subcutánea" : sessionType === "entrega" ? "📦 Entrega" : "🔧 Procedimiento"}
-      </span>
-    </div>
-    {/* aquí va todo el formulario existente */}
-  </>
-)}
-{sessionType && (
-      <form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:24 }}>
-        <section style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
-          <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:16 }}>Datos del paciente</div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
 
-            <div style={{ gridColumn:"1/-1" }}>
-              <label style={labelStyle}>Nombre completo</label>
-              <Autocomplete
-                value={form.patientName}
-                onChange={v => setField("patientName", v)}
-                suggestions={catalog.patients}
-                onSelect={selectPatient}
-                placeholder="ej: Juan Pérez García"
-                field="patientName"
-              />
-            </div>
-
-            <div>
-              <label style={labelStyle}>Fecha de nacimiento</label>
-              <input type="date" required value={form.dob} onChange={e => setField("dob", e.target.value)} style={inputStyle} />
-            </div>
-
-           <div>
-              <label style={labelStyle}>Alergias</label>
-              <input value={form.allergies} onChange={e => setField("allergies", e.target.value)} placeholder="ej: Negadas / Penicilina" style={inputStyle} />
-            </div>
-            
-            <div>
-              <label style={labelStyle}>Régimen de atención</label>
-              <input value={form.insurance} onChange={e => setField("insurance", e.target.value)} placeholder="ej: Particular / GNP / Protocolo KEYNOTE-522" style={inputStyle} />
-            </div>
-
-            <div style={{ gridColumn:"1/-1" }}>
-              <label style={labelStyle}>Diagnóstico</label>
-              <Autocomplete
-                value={form.diagnosis}
-                onChange={v => setField("diagnosis", v)}
-                suggestions={catalog.diagnoses}
-                onSelect={s => setField("diagnosis", s.diagnosis)}
-                placeholder="ej: Cáncer de ovario"
-                field="diagnosis"
-              />
-            </div>
-
-            <div>
-              <label style={labelStyle}>Médico tratante</label>
-              <Autocomplete
-                value={form.physician}
-                onChange={v => setField("physician", v)}
-                suggestions={catalog.physicians}
-                onSelect={s => setField("physician", s.physician)}
-                placeholder="ej: Dr. López"
-                field="physician"
-              />
-            </div>
-
-            <div>
-              <label style={labelStyle}>Ciclo / Día</label>
-              <input required value={form.cycle} onChange={e => setField("cycle", e.target.value)} placeholder="ej: Ciclo 5 Día 1" style={inputStyle} />
-            </div>
-
-            <div>
-              <label style={labelStyle}>Fecha de aplicación</label>
-              <input type="date" value={form.applicationDate} onChange={e => setField("applicationDate", e.target.value)} style={inputStyle} />
-            </div>
-
-            <div style={{ gridColumn:"1/-1" }}>
-              <label style={labelStyle}>Esquema</label>
-              {patientSchemeOptions.length > 0 ? (
-                <select value={form.schemeId} onChange={e => setField("schemeId", e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
-                  <option value="">Sin esquema / definir después</option>
-                  {patientSchemeOptions.map(ps => {
-                    const scheme = catalog.schemes?.find(s => s.id === ps.schemeId);
-                    return <option key={ps.id} value={ps.schemeId}>{scheme?.name || ps.schemeId}{ps.schemeStatus === "suspendido" ? " (suspendido)" : ""}</option>;
-                  })}
-                </select>
-              ) : (
-                <div style={{ fontSize:12, color:"#555", padding:"10px 13px", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:9 }}>Sin esquema asignado — se puede definir después en Catálogo</div>
-              )}
-            </div>
-
-          </div>
-        </section>
-
-       {sessionType === "procedimiento" ? (
-        <section style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
-          <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:16 }}>Procedimiento</div>
-          <div>
-            <label style={labelStyle}>Tipo de procedimiento</label>
-            <input required value={form.procedureType || ""} onChange={e => setField("procedureType", e.target.value)}
-              placeholder="ej: Heparinización, Retiro de infusor elastomérico" style={inputStyle} />
-          </div>
-        </section>
-      ) : (
-        <section style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <div style={{ fontSize: 11, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>Medicamentos</div>
-            <div style={{ display:"flex", gap:8 }}>
-              {canCopyPrevious && (
-                <button type="button" onClick={copyPreviousTreatment} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(175,169,236,0.1)", border: "1px solid rgba(175,169,236,0.25)", color: "#AFA9EC", cursor: "pointer" }}>📋 Copiar anterior</button>
-              )}
-              <button type="button" onClick={addMed} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(0,212,170,0.1)", border: "1px solid rgba(0,212,170,0.25)", color: "#00d4aa", cursor: "pointer" }}>+ Agregar</button>
-            </div>
-          </div>
-          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-            {meds.map(med => (
-            <div style={{ display:"flex", gap:8 }}>
-              {canCopyPrevious && (
-                <button type="button" onClick={copyPreviousTreatment} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(175,169,236,0.1)", border: "1px solid rgba(175,169,236,0.25)", color: "#AFA9EC", cursor: "pointer" }}>📋 Copiar anterior</button>
-              )}
-              <button type="button" onClick={addMed} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(0,212,170,0.1)", border: "1px solid rgba(0,212,170,0.25)", color: "#00d4aa", cursor: "pointer" }}>+ Agregar</button>
-            </div>
-          </div>
-          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-            {meds.map(med => (
-              <div key={med.id} style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:11, padding:"14px 16px" }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-                  <span style={{ fontSize:12, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>#{med.order}</span>
-                  {meds.length > 1 && <button type="button" onClick={() => removeMed(med.id)} style={{ background:"none", border:"none", color:"#555", fontSize:16, cursor:"pointer" }}>✕</button>}
-                </div>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-                  <div style={{ gridColumn:"1/-1" }}>
-                    <label style={labelStyle}>Tipo</label>
-                    <select value={med.category} onChange={e => setMedField(med.id, "category", e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
-                      {CATEGORIES.map(c => <option key={c} value={c}>{CAT_LABEL[c]}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Medicamento</label>
-                    <Autocomplete
-                      value={med.name}
-                      onChange={v => setMedField(med.id, "name", v)}
-                      suggestions={catalog.medications}
-                      onSelect={s => setMedField(med.id, "name", s.medication)}
-                      placeholder="ej: Bevacizumab"
-                      field="medication"
-                    />
-                  </div>
-                  <div><label style={labelStyle}>Dosis</label><input required value={med.dose} onChange={e => setMedField(med.id, "dose", e.target.value)} placeholder="ej: 780 mg" style={inputStyle} /></div>
-                  {med.category !== "domicilio" && <div><label style={labelStyle}>Dilución</label><input required value={med.diluent} onChange={e => setMedField(med.id, "diluent", e.target.value)} placeholder="ej: 100 ml SF" style={inputStyle} /></div>}
-{med.category !== "domicilio" && <div><label style={labelStyle}>Tiempo (minutos)</label><input type="number" min="1" value={med.time} onChange={e => setMedField(med.id, "time", e.target.value)} placeholder="ej: 30" style={inputStyle} /></div>}
-                 {meds.indexOf(meds.find(m => m.id === med.id)) > 0 && (
-  <div style={{ gridColumn:"1/-1" }}>
-    <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-      <input type="checkbox" id={`parallel_${med.id}`}
-        checked={med.parallelType !== "secuencial"}
-        onChange={e => setMedField(med.id, "parallelType", e.target.checked ? "junto" : "secuencial")}
-        style={{ width:16, height:16, cursor:"pointer" }} />
-      <label htmlFor={`parallel_${med.id}`} style={{ fontSize:12, color:"#aaa", cursor:"pointer" }}>
-        ⚡ Infusión simultánea con medicamento anterior
-      </label>
-    </div>
-    {med.parallelType !== "secuencial" && (
-      <div style={{ marginTop:10, display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-        <div>
-          <label style={labelStyle}>Tipo de inicio</label>
-          <select value={med.parallelType} onChange={e => setMedField(med.id, "parallelType", e.target.value)}
-            style={{ ...inputStyle, cursor:"pointer" }}>
-            <option value="junto">Simultáneo — inicia al mismo tiempo</option>
-            <option value="offset">Con retraso — X minutos después</option>
-          </select>
-        </div>
-        {med.parallelType === "offset" && (
-          <div>
-            <label style={labelStyle}>Minutos de retraso</label>
-            <input type="number" min="1" value={med.startOffset || ""}
-              onChange={e => setMedField(med.id, "startOffset", parseInt(e.target.value))}
-              placeholder="ej: 30" style={inputStyle} />
-          </div>
-        )}
-      </div>
-    )}
-  </div>
-)}
-                </div>
+      {!sessionType && (
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          <div style={{ fontSize:13, color:"#555", marginBottom:8 }}>Selecciona el tipo de atención:</div>
+          {[
+            { id:"iv",           icon:"💉", label:"Infusión IV",          desc:"Medicamentos intravenosos" },
+            { id:"im",           icon:"💊", label:"Intramuscular",         desc:"Aplicación intramuscular" },
+            { id:"sc",           icon:"🩺", label:"Subcutánea",            desc:"Aplicación subcutánea" },
+            { id:"entrega",      icon:"📦", label:"Entrega de medicamento", desc:"Medicamento para domicilio" },
+            { id:"procedimiento",icon:"🔧", label:"Procedimiento",          desc:"Heparinización, retiro de infusor" },
+          ].map(t => (
+            <div key={t.id} onClick={() => setSessionType(t.id)}
+              style={{ padding:"18px 20px", borderRadius:13, cursor:"pointer", background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", display:"flex", alignItems:"center", gap:14, transition:"all 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
+              onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}>
+              <span style={{ fontSize:28 }}>{t.icon}</span>
+              <div>
+                <div style={{ fontSize:15, color:"#f0f0f0", fontWeight:600 }}>{t.label}</div>
+                <div style={{ fontSize:12, color:"#555", marginTop:2 }}>{t.desc}</div>
               </div>
-            ))}
-          </div>
-        </section>
+              <span style={{ marginLeft:"auto", color:"#555" }}>›</span>
+            </div>
+          ))}
+        </div>
+      )}
 
-        <button type="submit" disabled={saving} style={{
-          padding:"14px", borderRadius:12, fontSize:15, fontWeight:700,
-          background: saving ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#00d4aa,#0099ff)",
-          border:"none", color: saving ? "#555" : "#000", cursor: saving ? "not-allowed" : "pointer",
-        }}>
-          {saving ? "Guardando..." : "Enviar para autorización →"}
-        </button>
-      </form>
-)}
+      {sessionType && (
+        <>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
+            <button onClick={() => setSessionType(null)} style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"6px 12px", color:"#666", fontSize:12, cursor:"pointer" }}>← Volver</button>
+            <span style={{ fontSize:13, color:"#00d4aa", fontWeight:600 }}>
+              {sessionType === "iv" ? "💉 Infusión IV" : sessionType === "im" ? "💊 Intramuscular" : sessionType === "sc" ? "🩺 Subcutánea" : sessionType === "entrega" ? "📦 Entrega" : "🔧 Procedimiento"}
+            </span>
+          </div>
+
+          <form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:24 }}>
+            <section style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
+              <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:16 }}>Datos del paciente</div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+                <div style={{ gridColumn:"1/-1" }}>
+                  <label style={labelStyle}>Nombre completo</label>
+                  <Autocomplete value={form.patientName} onChange={v => setField("patientName", v)} suggestions={catalog.patients} onSelect={selectPatient} placeholder="ej: Juan Pérez García" field="patientName" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Fecha de nacimiento</label>
+                  <input type="date" required value={form.dob} onChange={e => setField("dob", e.target.value)} style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Alergias</label>
+                  <input value={form.allergies} onChange={e => setField("allergies", e.target.value)} placeholder="ej: Negadas / Penicilina" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Régimen de atención</label>
+                  <input value={form.insurance} onChange={e => setField("insurance", e.target.value)} placeholder="ej: Particular / GNP / Protocolo KEYNOTE-522" style={inputStyle} />
+                </div>
+                <div style={{ gridColumn:"1/-1" }}>
+                  <label style={labelStyle}>Diagnóstico</label>
+                  <Autocomplete value={form.diagnosis} onChange={v => setField("diagnosis", v)} suggestions={catalog.diagnoses} onSelect={s => setField("diagnosis", s.diagnosis)} placeholder="ej: Cáncer de ovario" field="diagnosis" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Médico tratante</label>
+                  <Autocomplete value={form.physician} onChange={v => setField("physician", v)} suggestions={catalog.physicians} onSelect={s => setField("physician", s.physician)} placeholder="ej: Dr. López" field="physician" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Ciclo / Día</label>
+                  <input required value={form.cycle} onChange={e => setField("cycle", e.target.value)} placeholder="ej: Ciclo 5 Día 1" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Fecha de aplicación</label>
+                  <input type="date" value={form.applicationDate} onChange={e => setField("applicationDate", e.target.value)} style={inputStyle} />
+                </div>
+                {sessionType !== "procedimiento" && (
+                  <div style={{ gridColumn:"1/-1" }}>
+                    <label style={labelStyle}>Esquema</label>
+                    {patientSchemeOptions.length > 0 ? (
+                      <select value={form.schemeId} onChange={e => setField("schemeId", e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
+                        <option value="">Sin esquema / definir después</option>
+                        {patientSchemeOptions.map(ps => {
+                          const scheme = catalog.schemes?.find(s => s.id === ps.schemeId);
+                          return <option key={ps.id} value={ps.schemeId}>{scheme?.name || ps.schemeId}{ps.schemeStatus === "suspendido" ? " (suspendido)" : ""}</option>;
+                        })}
+                      </select>
+                    ) : (
+                      <div style={{ fontSize:12, color:"#555", padding:"10px 13px", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:9 }}>Sin esquema asignado — se puede definir después en Catálogo</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {sessionType === "procedimiento" ? (
+              <section style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
+                <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:16 }}>Procedimiento</div>
+                <div>
+                  <label style={labelStyle}>Tipo de procedimiento</label>
+                  <input required value={form.procedureType || ""} onChange={e => setField("procedureType", e.target.value)}
+                    placeholder="ej: Heparinización, Retiro de infusor elastomérico" style={inputStyle} />
+                </div>
+              </section>
+            ) : (
+              <section style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+                  <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase" }}>Medicamentos</div>
+                  <div style={{ display:"flex", gap:8 }}>
+                    {canCopyPrevious && (
+                      <button type="button" onClick={copyPreviousTreatment} style={{ padding:"6px 14px", borderRadius:8, fontSize:12, fontWeight:600, background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC", cursor:"pointer" }}>📋 Copiar anterior</button>
+                    )}
+                    <button type="button" onClick={addMed} style={{ padding:"6px 14px", borderRadius:8, fontSize:12, fontWeight:600, background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa", cursor:"pointer" }}>+ Agregar</button>
+                  </div>
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                  {meds.map(med => (
+                    <div key={med.id} style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:11, padding:"14px 16px" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+                        <span style={{ fontSize:12, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>#{med.order}</span>
+                        {meds.length > 1 && <button type="button" onClick={() => removeMed(med.id)} style={{ background:"none", border:"none", color:"#555", fontSize:16, cursor:"pointer" }}>✕</button>}
+                      </div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                        <div style={{ gridColumn:"1/-1" }}>
+                          <label style={labelStyle}>Tipo</label>
+                          <select value={med.category} onChange={e => setMedField(med.id, "category", e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
+                            {CATEGORIES.map(c => <option key={c} value={c}>{CAT_LABEL[c]}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Medicamento</label>
+                          <Autocomplete value={med.name} onChange={v => setMedField(med.id, "name", v)} suggestions={catalog.medications} onSelect={s => setMedField(med.id, "name", s.medication)} placeholder="ej: Bevacizumab" field="medication" />
+                        </div>
+                        <div><label style={labelStyle}>Dosis</label><input required value={med.dose} onChange={e => setMedField(med.id, "dose", e.target.value)} placeholder="ej: 780 mg" style={inputStyle} /></div>
+                        {med.category !== "domicilio" && <div><label style={labelStyle}>Dilución</label><input value={med.diluent} onChange={e => setMedField(med.id, "diluent", e.target.value)} placeholder="ej: 100 ml SF" style={inputStyle} /></div>}
+                        {med.category !== "domicilio" && <div><label style={labelStyle}>Tiempo (minutos)</label><input type="number" min="1" value={med.time} onChange={e => setMedField(med.id, "time", e.target.value)} placeholder="ej: 30" style={inputStyle} /></div>}
+                        {meds.indexOf(meds.find(m => m.id === med.id)) > 0 && (
+                          <div style={{ gridColumn:"1/-1" }}>
+                            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                              <input type="checkbox" id={`parallel_${med.id}`} checked={med.parallelType !== "secuencial"} onChange={e => setMedField(med.id, "parallelType", e.target.checked ? "junto" : "secuencial")} style={{ width:16, height:16, cursor:"pointer" }} />
+                              <label htmlFor={`parallel_${med.id}`} style={{ fontSize:12, color:"#aaa", cursor:"pointer" }}>⚡ Infusión simultánea con medicamento anterior</label>
+                            </div>
+                            {med.parallelType !== "secuencial" && (
+                              <div style={{ marginTop:10, display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                                <div>
+                                  <label style={labelStyle}>Tipo de inicio</label>
+                                  <select value={med.parallelType} onChange={e => setMedField(med.id, "parallelType", e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
+                                    <option value="junto">Simultáneo — inicia al mismo tiempo</option>
+                                    <option value="offset">Con retraso — X minutos después</option>
+                                  </select>
+                                </div>
+                                {med.parallelType === "offset" && (
+                                  <div>
+                                    <label style={labelStyle}>Minutos de retraso</label>
+                                    <input type="number" min="1" value={med.startOffset || ""} onChange={e => setMedField(med.id, "startOffset", parseInt(e.target.value))} placeholder="ej: 30" style={inputStyle} />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <button type="submit" disabled={saving} style={{
+              padding:"14px", borderRadius:12, fontSize:15, fontWeight:700,
+              background: saving ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#00d4aa,#0099ff)",
+              border:"none", color: saving ? "#555" : "#000", cursor: saving ? "not-allowed" : "pointer",
+            }}>
+              {saving ? "Guardando..." : "Enviar para autorización →"}
+            </button>
+          </form>
+        </>
+      )}
     </div>
   );
 }
-
