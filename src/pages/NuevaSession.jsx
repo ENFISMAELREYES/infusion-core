@@ -454,9 +454,28 @@ const [form, setForm] = useState({
           </div>
         </section>
 
+       {sessionType === "procedimiento" ? (
+        <section style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
+          <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase", marginBottom:16 }}>Procedimiento</div>
+          <div>
+            <label style={labelStyle}>Tipo de procedimiento</label>
+            <input required value={form.procedureType || ""} onChange={e => setField("procedureType", e.target.value)}
+              placeholder="ej: Heparinización, Retiro de infusor elastomérico" style={inputStyle} />
+          </div>
+        </section>
+      ) : (
         <section style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div style={{ fontSize: 11, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>Medicamentos</div>
+            <div style={{ display:"flex", gap:8 }}>
+              {canCopyPrevious && (
+                <button type="button" onClick={copyPreviousTreatment} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(175,169,236,0.1)", border: "1px solid rgba(175,169,236,0.25)", color: "#AFA9EC", cursor: "pointer" }}>📋 Copiar anterior</button>
+              )}
+              <button type="button" onClick={addMed} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(0,212,170,0.1)", border: "1px solid rgba(0,212,170,0.25)", color: "#00d4aa", cursor: "pointer" }}>+ Agregar</button>
+            </div>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            {meds.map(med => (
             <div style={{ display:"flex", gap:8 }}>
               {canCopyPrevious && (
                 <button type="button" onClick={copyPreviousTreatment} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "rgba(175,169,236,0.1)", border: "1px solid rgba(175,169,236,0.25)", color: "#AFA9EC", cursor: "pointer" }}>📋 Copiar anterior</button>
