@@ -624,7 +624,39 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
             <TimeBtn label="Ingreso del paciente" time={events.ingreso} onRecord={() => recordEvent("ingreso")} disabled={!session.authorized} />
             <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={() => recordEvent("retiro")} disabled={!events.ingreso || completedMeds < totalTimed || !allWashDone} />
           </div>
+{session.sessionType === "procedimiento" ? (
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              {/* Tipo de procedimiento */}
+              <div style={{ padding:"10px 14px", borderRadius:10, background:"rgba(255,179,71,0.06)", border:"1px solid rgba(255,179,71,0.2)" }}>
+                <div style={{ fontSize:11, color:"#ffb347", textTransform:"uppercase", letterSpacing:1, marginBottom:4 }}>🔧 Procedimiento</div>
+                <div style={{ fontSize:14, color:"#f0f0f0", fontWeight:600 }}>{session.procedureType || "Procedimiento"}</div>
+              </div>
 
+              {/* Inicio y término */}
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                <TimeBtn label="Inicio del procedimiento" time={medEvents["proc_inicio"]?.inicio} onRecord={async () => {
+                  const freshToken = await user.getIdToken(true);
+                  await patchSession(freshToken, session.id, { "medEvents.proc_inicio.inicio": nowStr() });
+                  onRefresh();
+                }} disabled={!events.ingreso || !!medEvents["proc_inicio"]?.inicio} />
+                <TimeBtn label="Término del procedimiento" time={medEvents["proc_inicio"]?.fin} onRecord={async () => {
+                  const freshToken = await user.getIdToken(true);
+                  await patchSession(freshToken, session.id, { "medEvents.proc_inicio.fin": nowStr() });
+                  onRefresh();
+                }} disabled={!medEvents["proc_inicio"]?.inicio || !!medEvents["proc_inicio"]?.fin} />
+              </div>
+
+              {/* Nota del procedimiento */}
+              {medEvents["proc_inicio"]?.fin && (
+                <div>
+                  <div style={{ fontSize:11, color:"#555", textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Nota del procedimiento</div>
+                  <ProcedureNote session={session} token={token} onRefresh={onRefresh} user={user} />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {(session.meds||[]).map(med => {
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
             {(session.meds||[]).map(med => {
               const ev       = medEvents[`med_${med.id}`] || {};
