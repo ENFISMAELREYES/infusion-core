@@ -785,9 +785,9 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                   )}
                 </div>
               );
-            })}
-          </div>
-
+          })}
+            </div>
+          )}
           {!showAdd ? (
             <button onClick={() => setShowAdd(true)} style={{ width:"100%", padding:"9px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.08)", border:"1px dashed rgba(0,212,170,0.3)", color:"#00d4aa", marginTop:10 }}>
               + Agregar medicamento
