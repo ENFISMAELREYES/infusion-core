@@ -317,10 +317,25 @@ const saveEdit = async () => {
             </div>
           )}
 
-          {isJefe && !editing && (
-            <button onClick={e => { e.stopPropagation(); openEditor(); }} style={{ marginTop:12, padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
-              ✏️ Editar sesión
-            </button>
+         {isJefe && !editing && (
+            <div style={{ display:"flex", gap:8, marginTop:12 }}>
+              <button onClick={e => { e.stopPropagation(); openEditor(); }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+                ✏️ Editar sesión
+              </button>
+              <button onClick={async e => {
+                e.stopPropagation();
+                if (!confirm(`¿Eliminar sesión de ${s.patientName} del ${s.date}?`)) return;
+                try {
+                  await fetch(
+                    `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}`,
+                    { method:"DELETE", headers:{ "Authorization":`Bearer ${token}` } }
+                  );
+                  onRefresh();
+                } catch(err) { alert("Error: " + err.message); }
+              }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
+                🗑 Eliminar
+              </button>
+            </div>
           )}
 
           {editing && editDraft && (
