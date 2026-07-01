@@ -359,6 +359,40 @@ function PendingSessionCard({ session, user, onRefresh }) {
     </div>
   );
 }
+function ProcedureNote({ session, token, onRefresh, user }) {
+  const [note, setNote] = useState(session.procedureNote || "");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!note.trim()) return;
+    setSaving(true);
+    try {
+      const freshToken = await user.getIdToken(true);
+      await patchSession(freshToken, session.id, { procedureNote: note });
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  if (session.procedureNote) {
+    return (
+      <div style={{ padding:"10px 14px", borderRadius:10, background:"rgba(29,158,117,0.06)", border:"1px solid rgba(29,158,117,0.2)", fontSize:13, color:"#aaa" }}>
+        ✓ {session.procedureNote}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+      <textarea rows={3} value={note} onChange={e => setNote(e.target.value)}
+        placeholder="Describe el procedimiento realizado (obligatorio para registrar retiro)..."
+        style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"10px 13px", color:"#f0f0f0", fontSize:13, outline:"none", resize:"vertical" }} />
+      <button onClick={save} disabled={!note.trim() || saving} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor: note.trim() ? "pointer" : "not-allowed", background: note.trim() ? "rgba(29,158,117,0.15)" : "rgba(255,255,255,0.05)", border:`1px solid ${note.trim() ? "rgba(29,158,117,0.4)" : "rgba(255,255,255,0.09)"}`, color: note.trim() ? "#1D9E75" : "#444" }}>
+        {saving ? "Guardando..." : "✓ Guardar nota"}
+      </button>
+    </div>
+  );
+}
 
 function SessionCard({ session, token, onRefresh, user }) {
   const [open, setOpen]       = useState(false);
@@ -622,7 +656,11 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
 
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
             <TimeBtn label="Ingreso del paciente" time={events.ingreso} onRecord={() => recordEvent("ingreso")} disabled={!session.authorized} />
-            <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={() => recordEvent("retiro")} disabled={!events.ingreso || completedMeds < totalTimed || !allWashDone} />
+          <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={() => recordEvent("retiro")} disabled={
+                session.sessionType === "procedimiento"
+                  ? !events.ingreso || !medEvents["proc_inicio"]?.fin || !session.procedureNote
+                  : !events.ingreso || completedMeds < totalTimed || !allWashDone
+              } />
           </div>
 {session.sessionType === "procedimiento" ? (
             <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
