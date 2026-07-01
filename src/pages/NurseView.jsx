@@ -768,10 +768,9 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                         <button onClick={() => setEditingId(isEditing ? null : med.id)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️ Editar</button>
                         <button onClick={() => handleDelete(med.id)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑 Eliminar</button>
                       </div>
-                 })}
-          </div>
-          )}
-
+                        )}
+                      </div>
+                    )}
                   {isEditing && !started && (
                     <EditMedForm med={med} onSave={handleEdit} onCancel={() => setEditingId(null)} />
                   )}
