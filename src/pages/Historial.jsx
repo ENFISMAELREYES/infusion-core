@@ -363,7 +363,10 @@ const saveEdit = async () => {
               <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
                 {editDraft.meds.map((m, idx) => (
                   <div key={m.id} style={{ padding:"10px 12px", borderRadius:8, background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)" }}>
-                    <div style={{ fontSize:12, color:"#f0f0f0", fontWeight:600, marginBottom:8 }}>{m.order}. {m.name} {m.dose}</div>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                      <div style={{ fontSize:12, color:"#f0f0f0", fontWeight:600 }}>{m.order}. {m.name} {m.dose}</div>
+                      <button onClick={() => setEditDraft(d => ({...d, meds: d.meds.filter((_,i) => i!==idx).map((x,i) => ({...x, order:i+1}))}))} style={{ background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11 }}>✕</button>
+                    </div>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8 }}>
                       {[["Nombre","name"],["Dosis","dose"],["Dilución","diluent"],["Tiempo (min)","time"]].map(([label,field]) => (
                         <div key={field}>
