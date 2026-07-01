@@ -100,11 +100,10 @@ const openEditor = () => {
         washInicio: s.washEvents?.[`wash_${m.id}`]?.inicio || "",
         washFin: s.washEvents?.[`wash_${m.id}`]?.fin || "",
       })),
-      console.log("washEvents:", s.washEvents, "medEvents:", s.medEvents);
     });
     setEditing(true);
   };
-
+console.log("washEvents:", s.washEvents, "medEvents:", s.medEvents);
 const saveEdit = async () => {
     const toFV = (val) => {
       if (typeof val === "string") return { stringValue: val };
