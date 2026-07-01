@@ -103,7 +103,6 @@ const openEditor = () => {
     });
     setEditing(true);
   };
-console.log("washEvents:", s.washEvents, "medEvents:", s.medEvents);
 const saveEdit = async () => {
     const toFV = (val) => {
       if (typeof val === "string") return { stringValue: val };
