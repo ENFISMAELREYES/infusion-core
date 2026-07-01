@@ -371,6 +371,18 @@ const saveEdit = async () => {
                           <input value={m[field]||""} onChange={e => setEditDraft(d => ({...d, meds: d.meds.map((x,i) => i===idx ? {...x,[field]:e.target.value} : x)}))}
                             style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:6, padding:"5px 8px", color:"#f0f0f0", fontSize:11, outline:"none" }} />
                         </div>
+                    <button onClick={() => setEditDraft(d => ({
+                  ...d,
+                  meds: [...d.meds, {
+                    id: Date.now(),
+                    order: d.meds.length + 1,
+                    name: "", dose: "", diluent: "", time: "",
+                    category: "premedicacion",
+                    inicio: "", fin: "", washInicio: "", washFin: "",
+                  }]
+                }))} style={{ padding:"6px 14px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa", marginBottom:8 }}>
+                  + Agregar medicamento
+                </button>
                       ))}
                       {[["Inicio med","inicio"],["Fin med","fin"],["Inicio lavado","washInicio"],["Fin lavado","washFin"]].map(([label,field]) => (
                         <div key={field}>
