@@ -100,6 +100,7 @@ const openEditor = () => {
         washInicio: s.washEvents?.[`wash_${m.id}`]?.inicio || "",
         washFin: s.washEvents?.[`wash_${m.id}`]?.fin || "",
       })),
+      console.log("washEvents:", s.washEvents, "medEvents:", s.medEvents);
     });
     setEditing(true);
   };
