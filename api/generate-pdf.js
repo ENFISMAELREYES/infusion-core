@@ -192,8 +192,7 @@ export default async function handler(req, res) {
         col++;
         if (col >= COLS) { col = 0; rowY += rowMaxH + 6; rowMaxH = 0; }
       });
-      doc.y = col === 0 ? rowY : rowY + rowMaxH + 6;
-      });
+     doc.y = col === 0 ? rowY : rowY + rowMaxH + 6;
 
       // Nota
       if (s.globalNote) {
