@@ -1,957 +1,236 @@
-import { useEffect, useState } from "react";
-import { useAuth } from "../hooks/useAuth";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
 
-const PROJECT_ID = "infusion-core";
-const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ASSETS_DIR = path.join(__dirname, "assets");
 
-const PATIENT_STATUS = {
-  activo:      { label:"Activo",      color:"#1D9E75" },
-  alta:        { label:"Alta",        color:"#4fc3f7" },
-  suspendido:  { label:"Suspendido",  color:"#ffb347" },
-  institucion: { label:"Institución", color:"#AFA9EC" },
-  defuncion:   { label:"Defunción",   color:"#ff6b6b" },
+// Logos institucionales por centro (se agregan conforme estén disponibles)
+const CENTER_LOGOS = {
+  CITIO: {
+    header: path.join(ASSETS_DIR, "logo-citio-header.png"),
+    watermark: path.join(ASSETS_DIR, "logo-citio-watermark.png"),
+  },
+  // CIPI: { header: path.join(ASSETS_DIR, "logo-cipi-header.png"), watermark: path.join(ASSETS_DIR, "logo-cipi-watermark.png") },
 };
 
-function parseDoc(doc) {
-  const parse = (v) => {
-    if (!v) return null;
-    if (v.stringValue !== undefined) return v.stringValue;
-    if (v.booleanValue !== undefined) return v.booleanValue;
-    if (v.integerValue !== undefined) return parseInt(v.integerValue);
-    if (v.doubleValue !== undefined) return v.doubleValue;
-    if (v.nullValue !== undefined) return null;
-    if (v.arrayValue) return (v.arrayValue.values || []).map(parse);
-    if (v.mapValue) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, val]) => [k, parse(val)]));
-    return null;
-  };
-  const id = doc.name.split("/").pop();
-  return { id, ...Object.fromEntries(Object.entries(doc.fields || {}).map(([k, v]) => [k, parse(v)])) };
-}
+export const config = { api: { responseLimit: '10mb' } };
 
-function normalize(str) {
-  return str?.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9 ]/g, "").trim() || "";
-}
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).end();
 
-function similarity(a, b) {
-  const na = normalize(a), nb = normalize(b);
-  if (!na || !nb) return 0;
-  if (na === nb) return 1;
-  if (na.includes(nb) || nb.includes(na)) return 0.85;
-  const words = nb.split(" ");
-  const matches = words.filter(w => w.length > 2 && na.includes(w)).length;
-  return matches / words.length;
-}
+  const { patientName, sessionIds, center, token } = req.body;
 
-async function fetchAllSessions(token) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-    body: JSON.stringify({
-      structuredQuery: {
-        from: [{ collectionId: "sessions" }],
-       select: { fields: [
-          { fieldPath: "patientName" }, { fieldPath: "dob" },
-          { fieldPath: "diagnosis" }, { fieldPath: "physician" },
-          { fieldPath: "insurance" }, { fieldPath: "center" },
-          { fieldPath: "date" }, { fieldPath: "cycle" },
-         { fieldPath: "allergies" }, { fieldPath: "expedienteNumber" }, { fieldPath: "schemeName" },
-        ]},
-        orderBy: [{ field: { fieldPath: "date" }, direction: "DESCENDING" }],
-        limit: 500,
-      }
-    })
-  });
-  const data = await res.json();
-  if (!Array.isArray(data)) return [];
-  return data.filter(d => d.document).map(d => parseDoc(d.document));
-}
-
-async function fetchCollection(token, collection) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: collection }], limit: 1000 } })
-  });
-  const data = await res.json();
-  if (!Array.isArray(data)) return [];
-  return data.filter(d => d.document).map(d => parseDoc(d.document));
-}
-
-async function fetchPatientCatalog(token) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: "patients" }], limit: 500 } })
-  });
-  const data = await res.json();
-  if (!Array.isArray(data)) return [];
-  return data.filter(d => d.document).map(d => parseDoc(d.document));
-}
-
-async function savePatientStatus(token, patientName, status) {
-  const toFV = (val) => ({ stringValue: val });
-  // Buscar si ya existe
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-    body: JSON.stringify({
-      structuredQuery: {
-        from: [{ collectionId: "patients" }],
-        where: { fieldFilter: { field: { fieldPath: "name" }, op: "EQUAL", value: { stringValue: patientName } } },
-        limit: 1,
-      }
-    })
-  });
-  const data = await res.json();
-  const existing = data.find(d => d.document);
-
-  if (existing) {
-    // Actualizar
-    const docId = existing.document.name.split("/").pop();
-    await fetch(
-      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/patients/${docId}?updateMask.fieldPaths=status`,
-      { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ fields: { status: toFV(status) } }) }
-    );
-  } else {
-    // Crear nuevo
-    await fetch(
-      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/patients?key=${API_KEY}`,
-      { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ fields: { name: toFV(patientName), status: toFV(status) } }) }
-    );
-  }
-}
-
-async function updateSessionField(token, sessionId, field, value) {
-  await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?updateMask.fieldPaths=${field}`,
-    { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-      body: JSON.stringify({ fields: { [field]: { stringValue: value } } }) }
-  );
-}
-
-async function bulkUpdate(token, sessions, field, oldValue, newValue) {
-  const targets = sessions.filter(s => s[field] === oldValue);
-  for (const s of targets) await updateSessionField(token, s.id, field, newValue);
-  return targets.length;
-}
-
-function groupSimilar(items, key) {
-  const groups = [];
-  items.forEach(item => {
-    const val = item[key];
-    if (!val) return;
-    const existing = groups.find(g => similarity(g.canonical, val) > 0.75);
-    if (existing) {
-      if (!existing.variants.includes(val)) existing.variants.push(val);
-      existing.count += 1;
-      if (!existing.sessions) existing.sessions = [];
-      existing.sessions.push(item);
-    } else {
-      groups.push({ canonical: val, variants: [val], count: 1, sessions: [item] });
-    }
-  });
-  return groups.sort((a, b) => b.count - a.count);
-}
-
-async function updateAppointment(token, apptId, fields) {
-  const toFV = (val) => {
-    if (typeof val === "string") return { stringValue: val };
-    if (typeof val === "boolean") return { booleanValue: val };
-    if (typeof val === "number") return { integerValue: String(val) };
-    return { stringValue: String(val) };
-  };
-  const body = Object.fromEntries(Object.entries(fields).map(([k,v]) => [k, toFV(v)]));
-  const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
-  await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/appointments/${apptId}?${mask}`,
-    { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields: body }) }
-  );
-}
-
-async function deleteAppointment(token, apptId) {
-  await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/appointments/${apptId}`,
-    { method:"DELETE", headers:{ "Authorization":`Bearer ${token}` } }
-  );
-}
-
-function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appointments, sessions, token, onRefresh, canEdit }) {
-  const mySchemes = patientSchemes.filter(ps => ps.patientName === patientName);
-  if (mySchemes.length === 0) return null;
- 
-  const STATUS_META = {
-    scheduled:  { label:"Programada", color:"#888" },
-    confirmed:  { label:"Confirmada", color:"#1D9E75" },
-    past:       { label:"No confirmada", color:"#ffb347" },
-  };
-
-  const handleConfirm = async (apptId, currentDate) => {
-    await updateAppointment(token, apptId, { status:"confirmed", confirmedAt:new Date().toISOString() });
-    onRefresh();
-  };
-  const handleChangeDate = async (apptId, currentDate) => {
-    const newDate = prompt("Nueva fecha (YYYY-MM-DD):", currentDate);
-    if (!newDate || newDate === currentDate) return;
-    await updateAppointment(token, apptId, { date:newDate, rescheduled:true });
-    onRefresh();
-  };
-  const handleRemove = async (apptId) => {
-    if (!confirm("¿Quitar esta cita? (no se completó)")) return;
-    await deleteAppointment(token, apptId);
-    onRefresh();
-  };
-
-  const handleLink = async (appt, session) => {
-    if (!confirm(`¿Vincular cita ${appt.label} con sesión del ${session.date} (${session.cycle})?`)) return;
-    // Guardar schemeName en la sesión
-    const scheme = schemes.find(s => s.id === appt.schemeId);
-    if (scheme) {
-      await fetch(
-        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${session.id}?updateMask.fieldPaths=schemeName&updateMask.fieldPaths=schemeId`,
-        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-          body: JSON.stringify({ fields: {
-            schemeName: { stringValue: scheme.name },
-            schemeId:   { stringValue: appt.schemeId },
-          }})
-        }
-      );
-    }
-    // Confirmar la cita
-    await updateAppointment(token, appt.id, { status:"confirmed", confirmedAt: new Date().toISOString() });
-    onRefresh();
-  };
-  
-const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", domicilio:"Domicilio" };
-const CATEGORIES = Object.keys(CAT_LABEL);
-const [editingMeds, setEditingMeds] = useState(null);
-const [medsDraft, setMedsDraft] = useState([]);
-
-const openMedsEditor = (appt, template) => {
-  setEditingMeds(appt.id);
-  setMedsDraft(appt.meds && appt.meds.length ? appt.meds : (template || []).map(m => ({ ...m, id: Date.now()+Math.random() })));
-};
-const addMedDraft = () => setMedsDraft(m => [...m, { id:Date.now(), name:"", dose:"", category:"premedicacion" }]);
-const updateMedDraft = (id,k,v) => setMedsDraft(m => m.map(x => x.id===id ? {...x,[k]:v} : x));
-const removeMedDraft = (id) => setMedsDraft(m => m.filter(x => x.id!==id));
-
-const saveMeds = async (apptId, confirmAlso) => {
-  const toFV = (val) => {
-    if (typeof val === "string") return { stringValue: val };
-    if (typeof val === "number") return { integerValue: String(val) };
-    if (val === null) return { nullValue: null };
-    if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
-    if (typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k,v]) => [k,toFV(v)])) } };
-    return { stringValue: String(val) };
-  };
-  const fields = { meds: toFV(medsDraft.map(m => ({ id:String(m.id), name:m.name, dose:m.dose, category:m.category }))) };
-  const mask = "updateMask.fieldPaths=meds" + (confirmAlso ? "&updateMask.fieldPaths=status&updateMask.fieldPaths=confirmedAt" : "");
-  if (confirmAlso) { fields.status = toFV("confirmed"); fields.confirmedAt = toFV(new Date().toISOString()); }
-  await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/appointments/${apptId}?${mask}`,
-    { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
-  );
-  setEditingMeds(null);
-  onRefresh();
-};
-  
-  return (
-    <div>
-      <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Esquemas y citas</div>
-      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-        {mySchemes.map(ps => {
-          const scheme = schemes.find(s => s.id === ps.schemeId);
-          const myAppts = appointments.filter(a => a.patientSchemeId === ps.id && a.status !== "confirmed").sort((a,b) => a.date.localeCompare(b.date));
-          return (
-            <div key={ps.id} style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)", borderRadius:10, padding:"10px 12px" }}>
-             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, flexWrap:"wrap" }}>
-                <span style={{ fontSize:12, color:"#00d4aa", fontWeight:600 }}>{scheme?.name || ps.schemeId}</span>
-                <span style={{ fontSize:10, color:"#666" }}>C{ps.currentCycle||1}/{ps.totalCyclesOverride || scheme?.totalCycles}</span>
-                {canEdit ? (
-                  <select value={ps.schemeStatus || "activo"} onChange={async e => {
-                    const newStatus = e.target.value;
-                    const today = new Date().toLocaleDateString("en-CA", { timeZone:"America/Mexico_City" });
-                    // Actualizar schemeStatus
-                    await fetch(
-                      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/patientSchemes/${ps.id}?updateMask.fieldPaths=schemeStatus`,
-                      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-                        body: JSON.stringify({ fields: { schemeStatus: { stringValue: newStatus } } }) }
-                    );
-                    // Actualizar citas futuras
-                   const futureAppts = appointments.filter(a =>
-                      a.patientSchemeId === ps.id && a.status !== "confirmed"
-                    );
-                    const suspendedAppts = appointments.filter(a =>
-                      a.patientSchemeId === ps.id && a.status === "suspendida"
-                    );
-                    if (newStatus === "suspendido" || newStatus === "cancelado") {
-                      const apptStatus = newStatus === "suspendido" ? "suspendida" : "cancelada";
-                      for (const appt of futureAppts) {
-                        await fetch(
-                          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
-                          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-                            body: JSON.stringify({ fields: { status: { stringValue: apptStatus } } }) }
-                        );
-                      }
-                    } else if (newStatus === "activo") {
-                      for (const appt of suspendedAppts) {
-                        await fetch(
-                          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
-                          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-                            body: JSON.stringify({ fields: { status: { stringValue: "scheduled" } } }) }
-                        );
-                      }
-                    }
-                    onRefresh();
-                  }} style={{ fontSize:10, padding:"2px 8px", borderRadius:99, background:"rgba(255,255,255,0.05)", color:"#888", border:"1px solid rgba(255,255,255,0.1)", cursor:"pointer", outline:"none" }}>
-                    <option value="activo">Activo</option>
-                    <option value="suspendido">Suspendido</option>
-                    <option value="completado">Completado</option>
-                    <option value="cancelado">Cancelado</option>
-                  </select>
-                ) : (
-                  <span style={{ fontSize:10, padding:"1px 8px", borderRadius:99, background:"rgba(255,255,255,0.05)", color:"#888" }}>{ps.schemeStatus || "activo"}</span>
-                )}
-              </div>
-              <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:220, overflowY:"auto" }}>
-                {myAppts.map(a => {
-                  const sm = STATUS_META[a.status] || STATUS_META.scheduled;
-                  return (
-                    <div key={a.id}>
-                    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:11 }}>
-                      <span style={{ color:"#888", fontFamily:"'IBM Plex Mono', monospace", width:90 }}>{a.date}</span>
-                      <span style={{ color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace", width:50 }}>{a.label}</span>
-                      <span style={{ fontSize:10, padding:"1px 8px", borderRadius:99, background:`${sm.color}18`, color:sm.color, border:`1px solid ${sm.color}44` }}>{sm.label}</span>
-                      {a.rescheduled && <span style={{ fontSize:10, color:"#ffb347" }}>↻</span>}
-                      {a.meds?.length > 0 && <span style={{ fontSize:10, color:"#AFA9EC" }}>💊{a.meds.length}</span>}
-                      <div style={{ flex:1 }} />
-                      {canEdit && (
-                        <>
-                          {(() => {
-                        const matchingSessions = (sessions||[]).filter(s => 
-                          s.date === a.date && !s.schemeName && a.status !== "confirmed"
-                        );
-                        if (!canEdit || matchingSessions.length === 0) return null;
-                        return matchingSessions.map(s => (
-                          <button key={s.id} onClick={() => handleLink(a, s)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
-                            🔗 {s.date} {s.cycle}
-                          </button>
-                        ));
-                      })()}
-                          <button onClick={() => editingMeds===a.id ? setEditingMeds(null) : openMedsEditor(a, ps.medTemplate)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC" }}>💊</button>
-                          {a.status !== "confirmed" && (
-                            <button onClick={() => handleConfirm(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.25)", color:"#1D9E75" }}>✓ Confirmar</button>
-                          )}
-                         <button onClick={async () => {
-                            const newDate = prompt(`Nueva fecha para ${a.label}:`, a.date);
-                            if (!newDate || newDate === a.date) return;
-                            const oldD = new Date(a.date + "T12:00:00");
-                            const newD = new Date(newDate + "T12:00:00");
-                            const diffDays = Math.round((newD - oldD) / (1000*60*60*24));
-                            await updateAppointment(token, a.id, { date: newDate, rescheduled: true });
-                            if (diffDays !== 0) {
-                              const today = new Date().toLocaleDateString("en-CA", { timeZone:"America/Mexico_City" });
-                              const recalc = confirm(`¿Recorrer ${diffDays > 0 ? "+" : ""}${diffDays} días a las citas futuras?\n\nAceptar = Sí\nCancelar = Solo esta cita`);
-                              if (recalc) {
-                                const futureAppts = appointments.filter(fa =>
-                                  fa.patientSchemeId === ps.id &&
-                                  fa.id !== a.id &&
-                                  fa.date >= today &&
-                                  fa.status !== "confirmed"
-                                );
-                                for (const fa of futureAppts) {
-                                  const fd = new Date(fa.date + "T12:00:00");
-                                  fd.setDate(fd.getDate() + diffDays);
-                                  await updateAppointment(token, fa.id, { date: fd.toISOString().split("T")[0], rescheduled: true });
-                                }
-                              }
-                            }
-                            onRefresh();
-                          }} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>📅</button>
-                          <button onClick={() => handleRemove(a.id)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
-                        </>
-                      )}
-                    </div>
-
-                    {editingMeds === a.id && (
-                      <div style={{ marginTop:6, marginLeft:10, padding:"10px", borderRadius:8, background:"rgba(175,169,236,0.04)", border:"1px dashed rgba(175,169,236,0.25)" }}>
-                        <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:8 }}>
-                          {medsDraft.map(m => (
-                            <div key={m.id} style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr auto", gap:6 }}>
-                              <select value={m.category} onChange={e => updateMedDraft(m.id,"category",e.target.value)} style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"5px 8px", color:"#f0f0f0", fontSize:11 }}>
-                                {CATEGORIES.map(c => <option key={c} value={c}>{CAT_LABEL[c]}</option>)}
-                              </select>
-                              <input value={m.name} onChange={e => updateMedDraft(m.id,"name",e.target.value)} placeholder="Medicamento" style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"5px 8px", color:"#f0f0f0", fontSize:11 }} />
-                              <input value={m.dose} onChange={e => updateMedDraft(m.id,"dose",e.target.value)} placeholder="Dosis" style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"5px 8px", color:"#f0f0f0", fontSize:11 }} />
-                              <button onClick={() => removeMedDraft(m.id)} style={{ background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b", borderRadius:6, padding:"5px 8px", cursor:"pointer", fontSize:11 }}>✕</button>
-                            </div>
-                          ))}
-                        </div>
-                        <div style={{ display:"flex", gap:6 }}>
-                          <button onClick={addMedDraft} style={{ padding:"5px 10px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>+ Agregar</button>
-                          <div style={{ flex:1 }} />
-                          <button onClick={() => saveMeds(a.id, a.status!=="confirmed")} style={{ padding:"5px 12px", borderRadius:6, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.15)", border:"1px solid rgba(29,158,117,0.4)", color:"#1D9E75" }}>✓ Guardar{a.status!=="confirmed" ? " y confirmar" : ""}</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRefresh, centerFilter, schemes, patientSchemes, appointments, canEdit }) {
-  const [editing, setEditing]   = useState(null);
-  const [newName, setNewName]   = useState("");
-  const [saving, setSaving]     = useState(false);
-  const [search, setSearch]     = useState("");
-  const [expanded, setExpanded] = useState(null);
-  const [editingData, setEditingData] = useState(null);
-const [editDraft, setEditDraft] = useState({ dob:"", diagnosis:"", physician:"", allergies:"" });
-const [printing, setPrinting] = useState(null);
-
-const handleDataEdit = async (patientName, draft) => {
   try {
-    const targets = sessions.filter(s => s.patientName === patientName);
-    for (const s of targets) {
-      if (draft.dob && draft.dob !== s.dob) await updateSessionField(token, s.id, "dob", draft.dob);
-      if (draft.diagnosis && draft.diagnosis !== s.diagnosis) await updateSessionField(token, s.id, "diagnosis", draft.diagnosis);
-      if (draft.physician && draft.physician !== s.physician) await updateSessionField(token, s.id, "physician", draft.physician);
-      if (draft.allergies !== s.allergies) await updateSessionField(token, s.id, "allergies", draft.allergies || "");
-    }
-    setEditingData(null);
-    onRefresh();
-  } catch(e) { alert("Error: " + e.message); }
-};
+    const PROJECT_ID = "infusion-core";
 
-  const filtered = groups.filter(g => {
-    if (centerFilter !== "Todos") {
-      const hasSessions = (g.sessions||[]).some(s => s.center === centerFilter);
-      if (!hasSessions) return false;
-    }
-    if (!search) return true;
-    return normalize(g.canonical).includes(normalize(search)) ||
-           g.variants.some(v => normalize(v).includes(normalize(search)));
-  });
+    // Obtener access token
+    const { GoogleAuth } = await import("google-auth-library");
+    const auth = new GoogleAuth({
+      credentials: JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT),
+      scopes: ["https://www.googleapis.com/auth/datastore"],
+    });
+    const accessToken = await auth.getAccessToken();
 
-  const handleEdit = async (oldVal) => {
-    if (!newName.trim() || newName === oldVal) { setEditing(null); return; }
-    setSaving(true);
-    try {
-      const count = await bulkUpdate(token, sessions, "patientName", oldVal, newName.trim());
-      alert(`✓ Actualizado en ${count} sesión${count !== 1 ? "es" : ""}`);
-      onRefresh();
-    } catch(e) { alert("Error: " + e.message); }
-    finally { setSaving(false); setEditing(null); setNewName(""); }
-  };
-
-  const handleMerge = async (fromVal, toVal) => {
-    if (!confirm(`¿Fusionar "${fromVal}" → "${toVal}"?`)) return;
-    setSaving(true);
-    try {
-      const count = await bulkUpdate(token, sessions, "patientName", fromVal, toVal);
-      alert(`✓ Fusionado en ${count} sesión${count !== 1 ? "es" : ""}`);
-      onRefresh();
-    } catch(e) { alert("Error: " + e.message); }
-    finally { setSaving(false); }
-  };
-
-  const handleStatusChange = async (patientName, status) => {
-    try {
-      await savePatientStatus(token, patientName, status);
-      onRefresh();
-    } catch(e) { alert("Error: " + e.message); }
-  };
-
-  const handlePrint = async (patientName, center) => {
-    setPrinting(patientName);
-    try {
-      const res = await fetch("/api/generate-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patientName, center, token }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "No se pudo generar el PDF");
+    // Fetch sesiones del paciente
+    const queryRes = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
+      { method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${accessToken}` },
+        body: JSON.stringify({ structuredQuery: {
+          from: [{ collectionId: "sessions" }],
+          where: { compositeFilter: { op: "AND", filters: [
+            { fieldFilter: { field: { fieldPath: "patientName" }, op: "EQUAL", value: { stringValue: patientName } } },
+            { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "completado" } } },
+          ]}},
+          orderBy: [{ field: { fieldPath: "date" }, direction: "ASCENDING" }],
+          limit: 200,
+        }})
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `tratamiento-${patientName.replace(/\s+/g, "_")}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch(e) {
-      alert("Error al generar PDF: " + e.message);
-    } finally {
-      setPrinting(null);
-    }
-  };
-
-  return (
-    <div>
-      <input placeholder="Buscar paciente..." value={search} onChange={e => setSearch(e.target.value)}
-        style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"9px 13px", color:"#f0f0f0", fontSize:13, outline:"none", marginBottom:12 }} />
-
-      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-        {filtered.map((g, i) => {
-          const isEditing   = editing === g.canonical;
-          const isExpanded  = expanded === g.canonical;
-          const status      = patientStatuses[g.canonical] || "activo";
-          const statusMeta  = PATIENT_STATUS[status] || PATIENT_STATUS.activo;
-          const hasDups     = g.variants.length > 1;
-          const patientSessions = (g.sessions||[]).sort((a,b) => (b.date||"").localeCompare(a.date||""));
-          const patientCenter = patientSessions[0]?.center || (centerFilter !== "Todos" ? centerFilter : "CITIO");
-
-          return (
-            <div key={i} style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${hasDups ? "rgba(255,179,71,0.25)" : "rgba(255,255,255,0.07)"}`, borderRadius:12, overflow:"hidden" }}>
-              <div onClick={() => setExpanded(isExpanded ? null : g.canonical)} style={{ padding:"14px 16px", cursor:"pointer", display:"flex", alignItems:"flex-start", gap:12 }}>
-                <div style={{ flex:1 }}>
-                  {isEditing ? (
-                    <div style={{ display:"flex", gap:8 }} onClick={e => e.stopPropagation()}>
-                      <input value={newName} onChange={e => setNewName(e.target.value)} autoFocus
-                        style={{ flex:1, background:"rgba(255,255,255,0.07)", border:"1px solid rgba(0,212,170,0.4)", borderRadius:8, padding:"7px 12px", color:"#f0f0f0", fontSize:13, outline:"none" }} />
-                      <button onClick={() => handleEdit(g.canonical)} disabled={saving} style={{ padding:"7px 14px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.15)", border:"1px solid rgba(29,158,117,0.4)", color:"#1D9E75" }}>✓</button>
-                      <button onClick={() => { setEditing(null); setNewName(""); }} style={{ padding:"7px 12px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", color:"#666" }}>✕</button>
-                    </div>
-                  ) : (
-                    <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-                      <span style={{ fontSize:14, color:"#f0f0f0", fontWeight:600 }}>{g.canonical}</span>
-                      <span style={{ fontSize:11, padding:"2px 10px", borderRadius:99, background:`${statusMeta.color}18`, color:statusMeta.color, border:`1px solid ${statusMeta.color}44` }}>{statusMeta.label}</span>
-                      {hasDups && <span style={{ fontSize:10, color:"#ffb347" }}>⚠ {g.variants.length} variantes</span>}
-                    </div>
-                  )}
-                  <div style={{ fontSize:11, color:"#555", marginTop:4 }}>{g.count} sesión{g.count !== 1 ? "es" : ""}</div>
-                </div>
-                <div style={{ display:"flex", gap:6, flexShrink:0 }} onClick={e => e.stopPropagation()}>
-                  <button onClick={() => handlePrint(g.canonical, patientCenter)} disabled={printing === g.canonical}
-                    title="Imprimir hoja de tratamiento"
-                    style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor: printing === g.canonical ? "wait" : "pointer", background:"rgba(0,51,159,0.1)", border:"1px solid rgba(0,51,159,0.3)", color:"#4f7fe0", opacity: printing === g.canonical ? 0.5 : 1 }}>
-                    {printing === g.canonical ? "…" : "🖨️"}
-                  </button>
-                 {canEdit && (
-                    <button onClick={() => { setEditing(g.canonical); setNewName(g.canonical); }}
-                      style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666" }}>✏️</button>
-                  )}
-                  <span style={{ color:"#555", fontSize:12, padding:"5px 4px" }}>{isExpanded?"▲":"▼"}</span>
-                </div>
-              </div>
-
-              {isExpanded && (
-                <div style={{ padding:"0 16px 16px", borderTop:"1px solid rgba(255,255,255,0.05)" }}>
-                  <div style={{ paddingTop:12, display:"flex", flexDirection:"column", gap:12 }}>
-
-                    {/* Datos del paciente */}
-{(() => {
-  const sample = patientSessions[0] || {};
-  const isEditingData = editingData === g.canonical;
-  const [draft, setDraftLocal] = [editDraft, setEditDraft];
-
-  if (!isEditingData) {
-    return (
-      <div style={{ padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-          <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
-            {sample.dob && (
-              <div>
-                <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Fecha de nacimiento</div>
-                <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace", marginTop:2 }}>
-                  {sample.dob}
-                  {(() => {
-                    try {
-                      const [y,m,d] = sample.dob.split("-").map(Number);
-                      const today = new Date();
-                      let age = today.getFullYear() - y;
-                      if (today.getMonth()+1 < m || (today.getMonth()+1 === m && today.getDate() < d)) age--;
-                      return <span style={{ fontSize:11, color:"#666", marginLeft:8 }}>{age} años</span>;
-                    } catch(e) { return null; }
-                  })()}
-                </div>
-              </div>
-            )}
-            {sample.diagnosis && (
-              <div>
-                <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Diagnóstico</div>
-                <div style={{ fontSize:13, color:"#aaa", marginTop:2 }}>{sample.diagnosis}</div>
-              </div>
-            )}
-            {sample.physician && (
-              <div>
-                <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Médico tratante</div>
-                <div style={{ fontSize:13, color:"#aaa", marginTop:2 }}>{sample.physician}</div>
-              </div>
-            )}
-           {sample.allergies && (
-              <div>
-                <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>Alergias</div>
-                <div style={{ fontSize:13, color:"#aaa", marginTop:2 }}>{sample.allergies}</div>
-              </div>
-            )}
-            {sample.expedienteNumber && (
-              <div>
-                <div style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>No. Expediente</div>
-                <div style={{ fontSize:13, color:"#AFA9EC", fontFamily:"'IBM Plex Mono', monospace", marginTop:2 }}>
-                  {String(sample.expedienteNumber).padStart(3,"0")}
-                </div>
-              </div>
-            )}
-          </div>
-         {canEdit && (
-            <button onClick={() => { setEditingData(g.canonical); setEditDraft({ dob:sample.dob||"", diagnosis:sample.diagnosis||"", physician:sample.physician||"", allergies:sample.allergies||"" }); }}
-              style={{ padding:"4px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347", flexShrink:0 }}>✏️ Editar</button>
-          )}
-        </div>
-      </div>
     );
-  }
+    const queryData = await queryRes.json();
 
-  return (
-    <div style={{ padding:"12px 14px", borderRadius:10, background:"rgba(255,179,71,0.05)", border:"1px solid rgba(255,179,71,0.2)" }}>
-      <div style={{ fontSize:11, color:"#ffb347", fontWeight:600, marginBottom:10 }}>✏️ Editar datos del paciente</div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:10, marginBottom:10 }}>
-        <div>
-          <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>Fecha de nacimiento</label>
-          <input type="date" value={draft.dob} onChange={e => setEditDraft(d=>({...d,dob:e.target.value}))}
-            style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
-        </div>
-        <div>
-          <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>Diagnóstico</label>
-          <input value={draft.diagnosis} onChange={e => setEditDraft(d=>({...d,diagnosis:e.target.value}))}
-            style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
-        </div>
-        <div>
-          <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>Médico tratante</label>
-          <input value={draft.physician} onChange={e => setEditDraft(d=>({...d,physician:e.target.value}))}
-            style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
-        </div>
-        <div>
-          <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>Alergias</label>
-          <input value={draft.allergies} onChange={e => setEditDraft(d=>({...d,allergies:e.target.value}))}
-            style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
-        </div>
-      </div>
-      <div style={{ display:"flex", gap:8 }}>
-        <button onClick={() => handleDataEdit(g.canonical, draft)} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.15)", border:"1px solid rgba(29,158,117,0.4)", color:"#1D9E75" }}>✓ Guardar cambios</button>
-        <button onClick={() => setEditingData(null)} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666" }}>Cancelar</button>
-      </div>
-    </div>
-  );
-})()}
-                    
-                    {/* Estatus */}
-                    <div>
-                      <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Estatus del paciente</div>
-                      <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                        {Object.entries(PATIENT_STATUS).map(([k, v]) => (
-                         <button key={k} onClick={() => canEdit && handleStatusChange(g.canonical, k)} disabled={!canEdit} style={{
-                            padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor: canEdit ? "pointer" : "default",
-                            background: status === k ? `${v.color}20` : "rgba(255,255,255,0.04)",
-                            border:`1px solid ${status === k ? v.color : "rgba(255,255,255,0.07)"}`,
-                            color: status === k ? v.color : "#666",
-                          }}>{v.label}</button>
-                        ))}
-                      </div>
-                    </div>
+    const parse = (v) => {
+      if (!v) return null;
+      if (v.stringValue !== undefined) return v.stringValue;
+      if (v.booleanValue !== undefined) return v.booleanValue;
+      if (v.integerValue !== undefined) return parseInt(v.integerValue);
+      if (v.arrayValue) return (v.arrayValue.values || []).map(parse);
+      if (v.mapValue) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, val]) => [k, parse(val)]));
+      return null;
+    };
 
-                    {/* Variantes duplicadas */}
-                    {hasDups && (
-                      <div>
-                        <div style={{ fontSize:11, color:"#ffb347", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>⚠ Variantes similares</div>
-                        {g.variants.filter(v => v !== g.canonical).map((v, j) => (
-                          <div key={j} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                            <span style={{ fontSize:12, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{v}</span>
-                            {canEdit && (
-                            <button onClick={() => handleMerge(v, g.canonical)} style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
-                              Fusionar
-                            </button>
-                          )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+    let sessions = queryData.filter(d => d.document).map(d => {
+      const id = d.document.name.split("/").pop();
+      return { id, ...Object.fromEntries(Object.entries(d.document.fields || {}).map(([k, v]) => [k, parse(v)])) };
+    });
 
-                   {/* Sesiones del paciente */}
-                    <div>
-                      <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Sesiones registradas</div>
-                      <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:200, overflowY:"auto" }}>
-                       {patientSessions.map((s, j) => (
-                          <div key={j} style={{ padding:"7px 10px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:11, marginBottom:4 }}>
-                            <div style={{ display:"flex", justifyContent:"space-between", gap:8, flexWrap:"wrap" }}>
-                              <span style={{ color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{s.date}</span>
-                              <span style={{ color:"#666" }}>{s.cycle}</span>
-                              {s.schemeName && <span style={{ color:"#00d4aa" }}>{s.schemeName}</span>}
-                              <span style={{ color:"#555" }}>{s.center}</span>
-                              <span style={{ color:"#555" }}>{s.diagnosis}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Esquemas y citas */}
-                   <SchemeAppointmentsSection
-                      patientName={g.canonical}
-                      schemes={schemes}
-                      patientSchemes={patientSchemes}
-                      appointments={appointments}
-                      sessions={patientSessions}
-                      token={token}
-                      onRefresh={onRefresh}
-                      canEdit={canEdit}
-                    />
-
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function CatalogSection({ title, icon, groups, field, sessions, token, onRefresh, centerFilter, canEdit }) {
-  const [editing, setEditing]   = useState(null);
-  const [newName, setNewName]   = useState("");
-  const [saving, setSaving]     = useState(false);
-  const [search, setSearch]     = useState("");
-
-  const filtered = groups.filter(g => {
-    if (centerFilter !== "Todos") {
-      const hasSessions = (g.sessions||[]).some(s => s.center === centerFilter);
-      if (!hasSessions) return false;
+    // Filtrar por sessionIds si se proporcionaron
+    if (sessionIds && sessionIds.length > 0) {
+      sessions = sessions.filter(s => sessionIds.includes(s.id));
     }
-    if (!search) return true;
-    return normalize(g.canonical).includes(normalize(search)) ||
-           g.variants.some(v => normalize(v).includes(normalize(search)));
-  });
 
-  const handleEdit = async (oldVal) => {
-    if (!newName.trim() || newName === oldVal) { setEditing(null); return; }
-    setSaving(true);
-    try {
-      const count = await bulkUpdate(token, sessions, field, oldVal, newName.trim());
-      alert(`✓ Actualizado en ${count} sesión${count !== 1 ? "es" : ""}`);
-      onRefresh();
-    } catch(e) { alert("Error: " + e.message); }
-    finally { setSaving(false); setEditing(null); setNewName(""); }
-  };
+    if (sessions.length === 0) return res.status(404).json({ error: "No hay sesiones" });
 
-  const handleMerge = async (fromVal, toVal) => {
-    if (!confirm(`¿Fusionar "${fromVal}" → "${toVal}"?`)) return;
-    setSaving(true);
-    try {
-      const count = await bulkUpdate(token, sessions, field, fromVal, toVal);
-      alert(`✓ Fusionado en ${count} sesión${count !== 1 ? "es" : ""}`);
-      onRefresh();
-    } catch(e) { alert("Error: " + e.message); }
-    finally { setSaving(false); }
-  };
+    // Generar PDF
+    const PDFDocument = (await import("pdfkit")).default;
+    const chunks = [];
+    const doc = new PDFDocument({ size: "LETTER", margin: 45, bufferPages: true });
+    doc.on("data", chunk => chunks.push(chunk));
 
-  return (
-    <div>
-      <input placeholder={`Buscar en ${title.toLowerCase()}...`} value={search} onChange={e => setSearch(e.target.value)}
-        style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"9px 13px", color:"#f0f0f0", fontSize:13, outline:"none", marginBottom:12 }} />
+    const sample = sessions[0];
+    const NAVY = "#00339F";
+    const TEAL = "#16C2D5";
+    const W = 612 - 90; // ancho útil
+    const centerKey = (center || "CITIO").toUpperCase();
+    const logos = CENTER_LOGOS[centerKey] || {};
+    const hasHeaderLogo = logos.header && fs.existsSync(logos.header);
+    const hasWatermarkLogo = logos.watermark && fs.existsSync(logos.watermark);
 
-      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-        {filtered.map((g, i) => {
-          const isEditing  = editing === g.canonical;
-          const hasDups    = g.variants.length > 1;
+    const drawHeader = () => {
+      // Línea superior
+      doc.rect(45, 40, W, 3).fill(NAVY);
 
-          return (
-            <div key={i} style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${hasDups ? "rgba(255,179,71,0.25)" : "rgba(255,255,255,0.07)"}`, borderRadius:12, padding:"14px 16px" }}>
-              <div style={{ display:"flex", alignItems:"flex-start", gap:12 }}>
-                <div style={{ flex:1 }}>
-                  {isEditing ? (
-                    <div style={{ display:"flex", gap:8 }}>
-                      <input value={newName} onChange={e => setNewName(e.target.value)} autoFocus
-                        style={{ flex:1, background:"rgba(255,255,255,0.07)", border:"1px solid rgba(0,212,170,0.4)", borderRadius:8, padding:"7px 12px", color:"#f0f0f0", fontSize:13, outline:"none" }} />
-                      <button onClick={() => handleEdit(g.canonical)} disabled={saving} style={{ padding:"7px 14px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.15)", border:"1px solid rgba(29,158,117,0.4)", color:"#1D9E75" }}>✓</button>
-                      <button onClick={() => { setEditing(null); setNewName(""); }} style={{ padding:"7px 12px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", color:"#666" }}>✕</button>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize:14, color:"#f0f0f0", fontWeight:600 }}>{g.canonical}</div>
-                  )}
-                  <div style={{ fontSize:11, color:"#555", marginTop:4 }}>{g.count} sesión{g.count !== 1 ? "es" : ""}</div>
-                  {hasDups && (
-                    <div style={{ marginTop:6 }}>
-                      <div style={{ fontSize:10, color:"#ffb347", letterSpacing:1, textTransform:"uppercase", marginBottom:4 }}>⚠ Variantes similares:</div>
-                      {g.variants.filter(v => v !== g.canonical).map((v, j) => (
-                        <div key={j} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                          <span style={{ fontSize:12, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{v}</span>
-                          <button onClick={() => handleMerge(v, g.canonical)} style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>Fusionar</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {!isEditing && canEdit && (
-                  <button onClick={() => { setEditing(g.canonical); setNewName(g.canonical); }}
-                    style={{ padding:"6px 12px", borderRadius:8, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666", flexShrink:0 }}>
-                    ✏️ Editar
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+      // Logo institucional del centro (fallback a texto si aún no está disponible, ej. CIPI)
+      if (hasHeaderLogo) {
+        doc.image(logos.header, 45, 44, { width: 90 });
+      } else {
+        doc.fontSize(14).fillColor(NAVY).font("Helvetica-Bold")
+          .text("InfusionCore", 45, 60);
+      }
 
-export default function Catalogo() {
-  const { user, profile } = useAuth();
-  const canEdit = profile?.role !== "visualizador";
-  const [sessions, setSessions]         = useState([]);
-  const [patientCatalog, setPatientCatalog] = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [token, setToken]               = useState(null);
-  const [tab, setTab]                   = useState("patients");
-  const [centerFilter, setCenterFilter] = useState("Todos");
-  const [schemes, setSchemes] = useState([]);
-const [patientSchemes, setPatientSchemes] = useState([]);
-const [appointments, setAppointments] = useState([]);
+      // Título + centro (alineados a la misma altura que el logo)
+      doc.fontSize(15).fillColor(NAVY).font("Helvetica-Bold")
+        .text("HOJA DE TRATAMIENTO", 45, 60, { align: "center", width: W });
+      doc.fontSize(8).fillColor(TEAL).font("Helvetica")
+        .text(centerKey, 45, 80, { align: "center", width: W });
 
-  const load = async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const t = await user.getIdToken(true);
-      setToken(t);
-      const [data, catalog, schemesData, patientSchemesData, appointmentsData] = await Promise.all([
-        fetchAllSessions(t), fetchPatientCatalog(t),
-        fetchCollection(t, "schemes"), fetchCollection(t, "patientSchemes"), fetchCollection(t, "appointments"),
-      ]);
-      setSessions(data);
-      setPatientCatalog(catalog);
-      setSchemes(schemesData);
-      setPatientSchemes(patientSchemesData);
-      setAppointments(appointmentsData);
-    } catch(e) { console.error(e); }
-    finally { setLoading(false); }
-  };
+      // Datos del paciente
+      doc.rect(45, 100, W, 1).fill("#cccccc");
+      doc.fontSize(9).fillColor("#333").font("Helvetica");
+      const col1 = 45, col2 = 320;
+      const dob = sample.dob || "";
+      let age = "";
+      if (dob) {
+        const [y,m,d] = dob.split("-").map(Number);
+        const today = new Date();
+        age = today.getFullYear() - y - (today.getMonth()+1 < m || (today.getMonth()+1===m && today.getDate()<d) ? 1 : 0);
+      }
+      doc.font("Helvetica-Bold").text("Paciente:", col1, 107, { continued: true }).font("Helvetica").text(`  ${sample.patientName || ""}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("F. Nac:", col2, 107, { continued: true }).font("Helvetica").text(`  ${dob}  (${age} años)`);
+      doc.font("Helvetica-Bold").text("Diagnóstico:", col1, 121, { continued: true }).font("Helvetica").text(`  ${sample.diagnosis || ""}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("Médico:", col2, 121, { continued: true }).font("Helvetica").text(`  ${sample.physician || ""}`);
+      doc.font("Helvetica-Bold").text("Alergias:", col1, 135, { continued: true }).font("Helvetica").text(`  ${sample.allergies || "Negadas"}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("Régimen:", col2, 135, { continued: true }).font("Helvetica").text(`  ${sample.insurance || "Particular"}`);
+      doc.rect(45, 148, W, 1).fill("#cccccc");
+      doc.y = 155;
+    };
 
-  useEffect(() => { load(); }, [user]);
+    const drawWatermark = () => {
+      doc.save();
+      if (hasWatermarkLogo) {
+        const size = 300;
+        doc.image(logos.watermark,
+          (doc.page.width - size) / 2, (doc.page.height - size) / 2,
+          { width: size });
+      } else {
+        doc.opacity(0.06);
+        doc.fontSize(80).fillColor(NAVY).font("Helvetica-Bold")
+          .text("InfusionCore", 80, 320, { width: W, align: "center" });
+      }
+      doc.restore();
+    };
 
-  const filteredSessions  = centerFilter === "Todos" ? sessions : sessions.filter(s => s.center === centerFilter);
-const patientGroups     = groupSimilar(filteredSessions, "patientName");
+    const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", hidratacion:"Hidratación", domicilio:"Domicilio" };
 
-// Agregar pacientes que solo existen en patientSchemes (sin sesiones aún)
-const sessionPatientNames = new Set(patientGroups.map(g => normalize(g.canonical)));
-const schemeOnlyPatients = patientSchemes.filter(ps => {
-  if (centerFilter !== "Todos" && ps.center !== centerFilter) return false;
-  return !sessionPatientNames.has(normalize(ps.patientName));
-});
-const schemeOnlyNames = [...new Set(schemeOnlyPatients.map(ps => ps.patientName))];
-schemeOnlyNames.forEach(name => {
-  patientGroups.push({ canonical: name, variants: [name], count: 0, sessions: [] });
-});
-  const physicianGroups   = groupSimilar(filteredSessions, "physician");
-  const diagnosisGroups   = groupSimilar(filteredSessions, "diagnosis");
+    drawHeader();
+    drawWatermark();
 
-  // Mapa de estatus por nombre de paciente
-  const patientStatuses = {};
-  patientCatalog.forEach(p => { if (p.name) patientStatuses[p.name] = p.status || "activo"; });
+    sessions.forEach((s, idx) => {
+      // Verificar espacio — si falta menos de 180pts, nueva página
+      if (doc.y > 580) {
+        doc.addPage();
+        drawHeader();
+        drawWatermark();
+      }
 
-  const tabs = [
-    { id:"patients",   label:"Pacientes",   icon:"👤", count: patientGroups.filter(g => g.variants.length > 1).length },
-    { id:"physicians", label:"Médicos",      icon:"🩺", count: physicianGroups.filter(g => g.variants.length > 1).length },
-    { id:"diagnoses",  label:"Diagnósticos", icon:"📋", count: diagnosisGroups.filter(g => g.variants.length > 1).length },
-  ];
+      const blockY = doc.y + 6;
+      doc.rect(45, blockY, W, 14).fill(NAVY);
+      doc.fontSize(8).fillColor("white").font("Helvetica-Bold")
+        .text(`Fecha: ${s.date || ""}    Ciclo: ${s.cycle || ""}    Esquema: ${s.schemeName || ""}    Ingreso: ${s.events?.ingreso || "__:__"}    Retiro: ${s.events?.retiro || "__:__"}`,
+          47, blockY + 3, { width: W - 4 });
 
-  const duplicateCount = tabs.reduce((acc, t) => acc + t.count, 0);
+      doc.y = blockY + 18;
+      doc.fillColor("#333").font("Helvetica").fontSize(8);
 
-  return (
-    <div style={{ padding:"24px 28px", maxWidth:900, margin:"0 auto" }}>
-      <div style={{ marginBottom:24 }}>
-        <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Catálogo</h1>
-        <p style={{ fontSize:13, color:"#555" }}>
-          Gestiona pacientes, médicos y diagnósticos
-          {duplicateCount > 0 && <span style={{ marginLeft:10, color:"#ffb347" }}>⚠ {duplicateCount} posible{duplicateCount !== 1 ? "s" : ""} duplicado{duplicateCount !== 1 ? "s" : ""}</span>}
-        </p>
-      </div>
+      // Agrupar medicamentos por categoría
+      const meds = s.meds || [];
+      const groups = {};
+      meds.forEach(m => {
+        const cat = m.category || "adicional";
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(m);
+      });
 
-      {/* Tabs */}
-      <div style={{ display:"flex", gap:8, marginBottom:16 }}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
-            padding:"8px 18px", borderRadius:10, fontSize:13, fontWeight:600, cursor:"pointer",
-            background: tab===t.id ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
-            border:`1px solid ${tab===t.id ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.07)"}`,
-            color: tab===t.id ? "#00d4aa" : "#666",
-          }}>
-            {t.icon} {t.label}
-            {t.count > 0 && <span style={{ marginLeft:6, fontSize:10, color:"#ffb347" }}>{t.count}</span>}
-          </button>
-        ))}
-      </div>
+      const catOrder = ["premedicacion", "inmunoterapia", "quimioterapia", "adicional", "especialidad", "hidratacion", "domicilio"];
+      catOrder.forEach(cat => {
+        if (!groups[cat]) return;
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(TEAL)
+          .text(CAT_LABEL[cat] || cat, 47, doc.y, { width: W });
+        groups[cat].forEach(m => {
+          doc.font("Helvetica").fontSize(8).fillColor("#333")
+            .text(`  • ${m.name || ""}  ${m.dose || ""}`,
+              52, doc.y, { width: W - 10 });
+        });
+      });
 
-      {/* Filtro por centro */}
-      <div style={{ display:"flex", gap:8, marginBottom:20 }}>
-        {["Todos","CIPI","CITIO"].map(c => (
-          <button key={c} onClick={() => setCenterFilter(c)} style={{
-            padding:"5px 14px", borderRadius:99, fontSize:11, fontWeight:600, cursor:"pointer",
-            background: centerFilter===c ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
-            border:`1px solid ${centerFilter===c ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.07)"}`,
-            color: centerFilter===c ? "#00d4aa" : "#666",
-          }}>{c}</button>
-        ))}
-      </div>
+      // Nota
+      if (s.globalNote) {
+        doc.font("Helvetica-BoldOblique").fontSize(8).fillColor("#555")
+          .text(`Nota: ${s.globalNote}`, 47, doc.y, { width: W });
+      }
 
-      {loading ? (
-        <div style={{ color:"#555", fontSize:14, padding:24 }}>Cargando catálogo...</div>
-      ) : (
-        <>
-          {tab === "patients" && (
-           <PatientCatalogSection
-              groups={patientGroups}
-              sessions={sessions}
-              token={token}
-              patientStatuses={patientStatuses}
-              onRefresh={load}
-              centerFilter={centerFilter}
-              schemes={schemes}
-              patientSchemes={patientSchemes}
-              appointments={appointments}
-              canEdit={canEdit}
-            />
-          )}
-          {tab === "physicians" && (
-            <CatalogSection
-              title="Médicos" icon="🩺"
-              groups={physicianGroups} field="physician"
-              sessions={sessions} token={token}
-              onRefresh={load} centerFilter={centerFilter}
-            />
-          )}
-          {tab === "diagnoses" && (
-            <CatalogSection
-              title="Diagnósticos" icon="📋"
-              groups={diagnosisGroups} field="diagnosis"
-              sessions={sessions} token={token}
-              onRefresh={load} centerFilter={centerFilter}
-            />
-          )}
-        </>
-      )}
-    </div>
-  );
+      // Firmas
+      doc.y += 6;
+      const firmaY = doc.y;
+      const fw = W / 3 - 5;
+      ["Enfermería", "Paciente / Familiar", "Médico"].forEach((label, i) => {
+        const fx = 45 + i * (fw + 7);
+        doc.rect(fx, firmaY, fw, 28).stroke("#cccccc");
+        doc.fontSize(7).fillColor("#999").font("Helvetica")
+          .text(label, fx, firmaY + 20, { width: fw, align: "center" });
+      });
+      doc.y = firmaY + 34;
+
+      // Línea separadora
+      doc.rect(45, doc.y, W, 0.5).fill("#e0e0e0");
+      doc.y += 4;
+    });
+
+    // Numeración de páginas
+    const pages = doc.bufferedPageRange();
+    for (let i = 0; i < pages.count; i++) {
+      doc.switchToPage(pages.start + i);
+      doc.fontSize(7).fillColor("#aaa").font("Helvetica")
+        .text(`Página ${i + 1} de ${pages.count}  ·  InfusionCore  ·  ${center || "CITIO"}`,
+          45, 752, { width: W, align: "center" });
+    }
+
+    doc.end();
+
+    await new Promise((resolve, reject) => {
+      doc.on("end", resolve);
+      doc.on("error", reject);
+    });
+
+    const pdfBuffer = Buffer.concat(chunks);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="tratamiento-${patientName.replace(/\s+/g, "_")}.pdf"`);
+    res.send(pdfBuffer);
+
+  } catch(e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
 }
