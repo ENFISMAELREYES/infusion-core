@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
@@ -53,7 +52,7 @@ async function fetchAllSessions(token) {
     body: JSON.stringify({
       structuredQuery: {
         from: [{ collectionId: "sessions" }],
-      select: { fields: [
+       select: { fields: [
           { fieldPath: "patientName" }, { fieldPath: "dob" },
           { fieldPath: "diagnosis" }, { fieldPath: "physician" },
           { fieldPath: "insurance" }, { fieldPath: "center" },
