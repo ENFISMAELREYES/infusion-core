@@ -174,15 +174,25 @@ export default async function handler(req, res) {
       });
 
       const catOrder = ["premedicacion", "inmunoterapia", "quimioterapia", "adicional", "especialidad", "hidratacion", "domicilio"];
-      catOrder.forEach(cat => {
-        if (!groups[cat]) return;
+      const activeCats = catOrder.filter(cat => groups[cat]);
+      const COLS = 3, GAP = 10;
+      const colW = (W - GAP * (COLS - 1)) / COLS;
+
+      let rowY = doc.y, col = 0, rowMaxH = 0;
+      activeCats.forEach(cat => {
+        const x = 47 + col * (colW + GAP);
+        doc.y = rowY;
         doc.font("Helvetica-Bold").fontSize(8).fillColor(TEAL)
-          .text(CAT_LABEL[cat] || cat, 47, doc.y, { width: W });
+          .text(CAT_LABEL[cat] || cat, x, doc.y, { width: colW });
         groups[cat].forEach(m => {
           doc.font("Helvetica").fontSize(8).fillColor("#333")
-            .text(`  • ${m.name || ""}  ${m.dose || ""}`,
-              52, doc.y, { width: W - 10 });
+            .text(`• ${m.name || ""} ${m.dose || ""}`, x, doc.y, { width: colW });
         });
+        rowMaxH = Math.max(rowMaxH, doc.y - rowY);
+        col++;
+        if (col >= COLS) { col = 0; rowY += rowMaxH + 6; rowMaxH = 0; }
+      });
+      doc.y = col === 0 ? rowY : rowY + rowMaxH + 6;
       });
 
       // Nota
