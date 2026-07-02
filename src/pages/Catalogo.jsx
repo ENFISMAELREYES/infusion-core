@@ -425,6 +425,7 @@ const [editDraft, setEditDraft] = useState({ dob:"", diagnosis:"", physician:"",
 const [printing, setPrinting] = useState(null);
 const [printModal, setPrintModal] = useState(null); // { patientName, center, sessions }
 const [selectedIds, setSelectedIds] = useState(new Set());
+const [templateOnly, setTemplateOnly] = useState(false);
 
 const handleDataEdit = async (patientName, draft) => {
   try {
@@ -479,7 +480,7 @@ const handleDataEdit = async (patientName, draft) => {
     } catch(e) { alert("Error: " + e.message); }
   };
 
-  const handlePrint = async (patientName, center, sessionIds) => {
+  const handlePrint = async (patientName, center, sessionIds, headerOnly) => {
     // Abrir la pestaña de inmediato (síncrono con el click) para que el navegador
     // no bloquee el pop-up; luego apuntamos su location al PDF ya generado.
     const win = window.open("", "_blank");
@@ -488,7 +489,7 @@ const handleDataEdit = async (patientName, draft) => {
       const res = await fetch("/api/generate-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patientName, center, sessionIds, token }),
+        body: JSON.stringify({ patientName, center, sessionIds, headerOnly, token }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -514,6 +515,7 @@ const handleDataEdit = async (patientName, draft) => {
     if (completed.length === 0) { alert("Este paciente no tiene sesiones completadas para imprimir."); return; }
     setPrintModal({ patientName, center, sessions: completed });
     setSelectedIds(new Set(completed.map(s => s.id)));
+    setTemplateOnly(false);
   };
 
   const toggleSelected = (id) => {
@@ -754,7 +756,12 @@ const handleDataEdit = async (patientName, draft) => {
               <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{printModal.patientName} · {printModal.center}</div>
             </div>
 
-            <div style={{ display:"flex", gap:8 }}>
+            <label style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", borderRadius:8, background:"rgba(0,51,159,0.06)", border:"1px solid rgba(0,51,159,0.2)", cursor:"pointer", fontSize:12 }}>
+              <input type="checkbox" checked={templateOnly} onChange={e => setTemplateOnly(e.target.checked)} />
+              <span style={{ color:"#8fa8e8" }}>Solo plantilla — encabezado, logo y marca de agua, sin contenido de sesiones</span>
+            </label>
+
+            <div style={{ display:"flex", gap:8, opacity: templateOnly ? 0.4 : 1, pointerEvents: templateOnly ? "none" : "auto" }}>
               <button onClick={() => setSelectedIds(new Set(printModal.sessions.map(s => s.id)))}
                 style={{ fontSize:11, padding:"4px 10px", borderRadius:7, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#aaa" }}>
                 Seleccionar todo
@@ -766,7 +773,7 @@ const handleDataEdit = async (patientName, draft) => {
               <span style={{ fontSize:11, color:"#555", marginLeft:"auto", alignSelf:"center" }}>{selectedIds.size} seleccionada{selectedIds.size!==1?"s":""}</span>
             </div>
 
-            <div style={{ overflowY:"auto", display:"flex", flexDirection:"column", gap:6, paddingRight:4 }}>
+            <div style={{ overflowY:"auto", display:"flex", flexDirection:"column", gap:6, paddingRight:4, opacity: templateOnly ? 0.4 : 1, pointerEvents: templateOnly ? "none" : "auto" }}>
               {printModal.sessions.map(s => (
                 <label key={s.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", borderRadius:8, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)", cursor:"pointer", fontSize:12 }}>
                   <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelected(s.id)} />
@@ -783,10 +790,10 @@ const handleDataEdit = async (patientName, draft) => {
                 Cancelar
               </button>
               <button
-                onClick={() => handlePrint(printModal.patientName, printModal.center, Array.from(selectedIds))}
-                disabled={selectedIds.size === 0 || printing === printModal.patientName}
-                style={{ flex:2, padding:"9px", borderRadius:8, fontSize:12, fontWeight:600, cursor: selectedIds.size === 0 ? "not-allowed" : "pointer", background:"rgba(0,51,159,0.15)", border:"1px solid rgba(0,51,159,0.4)", color:"#4f7fe0", opacity: selectedIds.size === 0 ? 0.5 : 1 }}>
-                {printing === printModal.patientName ? "Generando…" : `Generar PDF (${selectedIds.size})`}
+                onClick={() => handlePrint(printModal.patientName, printModal.center, Array.from(selectedIds), templateOnly)}
+                disabled={(!templateOnly && selectedIds.size === 0) || printing === printModal.patientName}
+                style={{ flex:2, padding:"9px", borderRadius:8, fontSize:12, fontWeight:600, cursor: (!templateOnly && selectedIds.size === 0) ? "not-allowed" : "pointer", background:"rgba(0,51,159,0.15)", border:"1px solid rgba(0,51,159,0.4)", color:"#4f7fe0", opacity: (!templateOnly && selectedIds.size === 0) ? 0.5 : 1 }}>
+                {printing === printModal.patientName ? "Generando…" : templateOnly ? "Generar plantilla" : `Generar PDF (${selectedIds.size})`}
               </button>
             </div>
           </div>
