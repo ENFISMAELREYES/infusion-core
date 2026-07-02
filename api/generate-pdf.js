@@ -20,7 +20,7 @@ export const config = { api: { responseLimit: '10mb' } };
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { patientName, sessionIds, center, token } = req.body;
+  const { patientName, sessionIds, headerOnly, center, token } = req.body;
 
   try {
     const PROJECT_ID = "infusion-core";
@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     // las demás reservan su espacio en blanco. Así, al reinsertar una hoja ya
     // impresa, la sesión nueva cae exactamente donde le corresponde.
     const selectedSet = sessionIds && sessionIds.length > 0 ? new Set(sessionIds) : null;
-    const isOverlay = !!selectedSet && selectedSet.size < sessions.length;
+    const isOverlay = !headerOnly && !!selectedSet && selectedSet.size < sessions.length;
 
     if (sessions.length === 0) return res.status(404).json({ error: "No hay sesiones" });
 
@@ -191,7 +191,7 @@ export default async function handler(req, res) {
         drawHeaderOrReserve();
       }
 
-      const included = !selectedSet || selectedSet.has(s.id);
+      const included = !headerOnly && (!selectedSet || selectedSet.has(s.id));
       // Si la sesión no está seleccionada, se ejecutan exactamente los mismos
       // trazos (misma posición, mismo alto) pero con opacidad 0: así se
       // reserva su espacio sin imprimir tinta sobre la hoja ya impresa.
@@ -281,7 +281,7 @@ export default async function handler(req, res) {
 
     const pdfBuffer = Buffer.concat(chunks);
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="tratamiento-${patientName.replace(/\s+/g, "_")}.pdf"`);
+    res.setHeader("Content-Disposition", `attachment; filename="tratamiento-${patientName.replace(/\s+/g, "_")}${headerOnly ? "-plantilla" : ""}.pdf"`);
     res.send(pdfBuffer);
 
   } catch(e) {
