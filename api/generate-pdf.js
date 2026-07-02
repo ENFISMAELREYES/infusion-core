@@ -102,7 +102,7 @@ export default async function handler(req, res) {
 
       // Título + centro (alineados a la misma altura que el logo)
       doc.fontSize(15).fillColor(NAVY).font("Helvetica-Bold")
-        .text("HOJA DE TRATAMIENTO", 45, 60, { align: "center", width: W });
+        .text("BITACORA DE TRATAMIENTO", 45, 60, { align: "center", width: W });
       doc.fontSize(8).fillColor(TEAL).font("Helvetica")
         .text(centerKey, 45, 80, { align: "center", width: W });
 
