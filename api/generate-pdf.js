@@ -1,3 +1,20 @@
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ASSETS_DIR = path.join(__dirname, "assets");
+
+// Logos institucionales por centro (se agregan conforme estén disponibles)
+const CENTER_LOGOS = {
+  CITIO: {
+    header: path.join(ASSETS_DIR, "logo-citio-header.png"),
+    watermark: path.join(ASSETS_DIR, "logo-citio-watermark.png"),
+  },
+  // CIPI: { header: path.join(ASSETS_DIR, "logo-cipi-header.png"), watermark: path.join(ASSETS_DIR, "logo-cipi-watermark.png") },
+};
+
 export const config = { api: { responseLimit: '10mb' } };
 
 export default async function handler(req, res) {
@@ -66,22 +83,31 @@ export default async function handler(req, res) {
     const NAVY = "#00339F";
     const TEAL = "#16C2D5";
     const W = 612 - 90; // ancho útil
+    const centerKey = (center || "CITIO").toUpperCase();
+    const logos = CENTER_LOGOS[centerKey] || {};
+    const hasHeaderLogo = logos.header && fs.existsSync(logos.header);
+    const hasWatermarkLogo = logos.watermark && fs.existsSync(logos.watermark);
 
     const drawHeader = () => {
       // Línea superior
       doc.rect(45, 40, W, 3).fill(NAVY);
 
-      // Título
-      doc.fontSize(16).fillColor(NAVY).font("Helvetica-Bold")
-        .text("InfusionCore", 45, 52, { continued: true })
-        .fontSize(10).fillColor(TEAL).font("Helvetica")
-        .text(`  ·  ${center || "CITIO"}`, { align: "left" });
+      // Logo institucional del centro (fallback a texto si aún no está disponible, ej. CIPI)
+      if (hasHeaderLogo) {
+        doc.image(logos.header, 45, 46, { width: 100 });
+      } else {
+        doc.fontSize(16).fillColor(NAVY).font("Helvetica-Bold")
+          .text("InfusionCore", 45, 52);
+      }
 
+      // Título + centro
       doc.fontSize(14).fillColor(NAVY).font("Helvetica-Bold")
-        .text("HOJA DE TRATAMIENTO", 45, 72, { align: "center", width: W });
+        .text("HOJA DE TRATAMIENTO", 45, 108, { align: "center", width: W });
+      doc.fontSize(9).fillColor(TEAL).font("Helvetica")
+        .text(centerKey, 45, 124, { align: "center", width: W });
 
       // Datos del paciente
-      doc.rect(45, 95, W, 1).fill("#cccccc");
+      doc.rect(45, 138, W, 1).fill("#cccccc");
       doc.fontSize(9).fillColor("#333").font("Helvetica");
       const col1 = 45, col2 = 320;
       const dob = sample.dob || "";
@@ -91,21 +117,28 @@ export default async function handler(req, res) {
         const today = new Date();
         age = today.getFullYear() - y - (today.getMonth()+1 < m || (today.getMonth()+1===m && today.getDate()<d) ? 1 : 0);
       }
-      doc.font("Helvetica-Bold").text("Paciente:", col1, 102, { continued: true }).font("Helvetica").text(`  ${sample.patientName || ""}`, { width: 250 });
-      doc.font("Helvetica-Bold").text("F. Nac:", col2, 102, { continued: true }).font("Helvetica").text(`  ${dob}  (${age} años)`);
-      doc.font("Helvetica-Bold").text("Diagnóstico:", col1, 116, { continued: true }).font("Helvetica").text(`  ${sample.diagnosis || ""}`, { width: 250 });
-      doc.font("Helvetica-Bold").text("Médico:", col2, 116, { continued: true }).font("Helvetica").text(`  ${sample.physician || ""}`);
-      doc.font("Helvetica-Bold").text("Alergias:", col1, 130, { continued: true }).font("Helvetica").text(`  ${sample.allergies || "Negadas"}`, { width: 250 });
-      doc.font("Helvetica-Bold").text("Régimen:", col2, 130, { continued: true }).font("Helvetica").text(`  ${sample.insurance || "Particular"}`);
-      doc.rect(45, 143, W, 1).fill("#cccccc");
-      doc.y = 150;
+      doc.font("Helvetica-Bold").text("Paciente:", col1, 145, { continued: true }).font("Helvetica").text(`  ${sample.patientName || ""}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("F. Nac:", col2, 145, { continued: true }).font("Helvetica").text(`  ${dob}  (${age} años)`);
+      doc.font("Helvetica-Bold").text("Diagnóstico:", col1, 159, { continued: true }).font("Helvetica").text(`  ${sample.diagnosis || ""}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("Médico:", col2, 159, { continued: true }).font("Helvetica").text(`  ${sample.physician || ""}`);
+      doc.font("Helvetica-Bold").text("Alergias:", col1, 173, { continued: true }).font("Helvetica").text(`  ${sample.allergies || "Negadas"}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("Régimen:", col2, 173, { continued: true }).font("Helvetica").text(`  ${sample.insurance || "Particular"}`);
+      doc.rect(45, 186, W, 1).fill("#cccccc");
+      doc.y = 193;
     };
 
     const drawWatermark = () => {
       doc.save();
-      doc.opacity(0.06);
-      doc.fontSize(80).fillColor(NAVY).font("Helvetica-Bold")
-        .text("InfusionCore", 80, 320, { width: W, align: "center" });
+      if (hasWatermarkLogo) {
+        const size = 300;
+        doc.image(logos.watermark,
+          (doc.page.width - size) / 2, (doc.page.height - size) / 2,
+          { width: size });
+      } else {
+        doc.opacity(0.06);
+        doc.fontSize(80).fillColor(NAVY).font("Helvetica-Bold")
+          .text("InfusionCore", 80, 320, { width: W, align: "center" });
+      }
       doc.restore();
     };
 
