@@ -1,9 +1,7 @@
 {
   "rewrites": [
     { "source": "/((?!firebase-messaging-sw.js|manifest.json|icon-192.png|icon-512.png|icon-192-white.png|icon-512-white.png).*)", "destination": "/index.html" }
-  ]
-}
-{
+  ],
   "functions": {
     "api/generate-pdf.js": {
       "includeFiles": "api/assets/**"
