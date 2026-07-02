@@ -423,6 +423,9 @@ useEffect(() => { loadUnfinished(); }, [user]);
             <div style={{ marginBottom: 20 }}>
               <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: isMobile ? 18 : 22, color: "#fff", marginBottom: 4 }}>{selected.patientName}</h2>
               <p style={{ fontSize: 13, color: "#666" }}>{selected.diagnosis} · {selected.cycle} · {selected.physician} · {selected.center}</p>
+              {selected.sessionType === "procedimiento" && selected.procedureType && (
+  <p style={{ fontSize: 13, color: "#ffb347", marginTop: 4 }}>🔧 {selected.procedureType}</p>
+)}
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
                 <p style={{ fontSize: 12, color: "#555" }}>Enfermera: {selected.nurseName}</p>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
