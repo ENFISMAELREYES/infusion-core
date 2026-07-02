@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
@@ -422,6 +423,8 @@ function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRef
   const [editingData, setEditingData] = useState(null);
 const [editDraft, setEditDraft] = useState({ dob:"", diagnosis:"", physician:"", allergies:"" });
 const [printing, setPrinting] = useState(null);
+const [printModal, setPrintModal] = useState(null); // { patientName, center, sessions }
+const [selectedIds, setSelectedIds] = useState(new Set());
 
 const handleDataEdit = async (patientName, draft) => {
   try {
@@ -476,13 +479,16 @@ const handleDataEdit = async (patientName, draft) => {
     } catch(e) { alert("Error: " + e.message); }
   };
 
-  const handlePrint = async (patientName, center) => {
+  const handlePrint = async (patientName, center, sessionIds) => {
+    // Abrir la pestaña de inmediato (síncrono con el click) para que el navegador
+    // no bloquee el pop-up; luego apuntamos su location al PDF ya generado.
+    const win = window.open("", "_blank");
     setPrinting(patientName);
     try {
       const res = await fetch("/api/generate-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patientName, center, token }),
+        body: JSON.stringify({ patientName, center, sessionIds, token }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -490,18 +496,32 @@ const handleDataEdit = async (patientName, draft) => {
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `tratamiento-${patientName.replace(/\s+/g, "_")}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      if (win) win.location = url;
+      else window.open(url, "_blank");
+      // Liberar memoria una vez que la pestaña tuvo tiempo de cargar el PDF
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch(e) {
+      if (win) win.close();
       alert("Error al generar PDF: " + e.message);
     } finally {
       setPrinting(null);
+      setPrintModal(null);
     }
+  };
+
+  const openPrintModal = (patientName, center, patientSessionsList) => {
+    const completed = patientSessionsList.filter(s => s.status === "completado");
+    if (completed.length === 0) { alert("Este paciente no tiene sesiones completadas para imprimir."); return; }
+    setPrintModal({ patientName, center, sessions: completed });
+    setSelectedIds(new Set(completed.map(s => s.id)));
+  };
+
+  const toggleSelected = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   };
 
   return (
@@ -540,7 +560,7 @@ const handleDataEdit = async (patientName, draft) => {
                   <div style={{ fontSize:11, color:"#555", marginTop:4 }}>{g.count} sesión{g.count !== 1 ? "es" : ""}</div>
                 </div>
                 <div style={{ display:"flex", gap:6, flexShrink:0 }} onClick={e => e.stopPropagation()}>
-                  <button onClick={() => handlePrint(g.canonical, patientCenter)} disabled={printing === g.canonical}
+                  <button onClick={() => openPrintModal(g.canonical, patientCenter, patientSessions)} disabled={printing === g.canonical}
                     title="Imprimir hoja de tratamiento"
                     style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor: printing === g.canonical ? "wait" : "pointer", background:"rgba(0,51,159,0.1)", border:"1px solid rgba(0,51,159,0.3)", color:"#4f7fe0", opacity: printing === g.canonical ? 0.5 : 1 }}>
                     {printing === g.canonical ? "…" : "🖨️"}
@@ -723,6 +743,55 @@ const handleDataEdit = async (patientName, draft) => {
           );
         })}
       </div>
+
+      {printModal && (
+        <div onClick={() => setPrintModal(null)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:440, maxHeight:"80vh", display:"flex", flexDirection:"column", gap:14 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>🖨️ Imprimir hoja de tratamiento</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{printModal.patientName} · {printModal.center}</div>
+            </div>
+
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setSelectedIds(new Set(printModal.sessions.map(s => s.id)))}
+                style={{ fontSize:11, padding:"4px 10px", borderRadius:7, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#aaa" }}>
+                Seleccionar todo
+              </button>
+              <button onClick={() => setSelectedIds(new Set())}
+                style={{ fontSize:11, padding:"4px 10px", borderRadius:7, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#aaa" }}>
+                Ninguno
+              </button>
+              <span style={{ fontSize:11, color:"#555", marginLeft:"auto", alignSelf:"center" }}>{selectedIds.size} seleccionada{selectedIds.size!==1?"s":""}</span>
+            </div>
+
+            <div style={{ overflowY:"auto", display:"flex", flexDirection:"column", gap:6, paddingRight:4 }}>
+              {printModal.sessions.map(s => (
+                <label key={s.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", borderRadius:8, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)", cursor:"pointer", fontSize:12 }}>
+                  <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelected(s.id)} />
+                  <span style={{ color:"#ccc", fontFamily:"'IBM Plex Mono', monospace" }}>{s.date}</span>
+                  <span style={{ color:"#888" }}>{s.cycle}</span>
+                  {s.schemeName && <span style={{ color:"#00d4aa", flex:1, textAlign:"right" }}>{s.schemeName}</span>}
+                </label>
+              ))}
+            </div>
+
+            <div style={{ display:"flex", gap:8, marginTop:4 }}>
+              <button onClick={() => setPrintModal(null)}
+                style={{ flex:1, padding:"9px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                Cancelar
+              </button>
+              <button
+                onClick={() => handlePrint(printModal.patientName, printModal.center, Array.from(selectedIds))}
+                disabled={selectedIds.size === 0 || printing === printModal.patientName}
+                style={{ flex:2, padding:"9px", borderRadius:8, fontSize:12, fontWeight:600, cursor: selectedIds.size === 0 ? "not-allowed" : "pointer", background:"rgba(0,51,159,0.15)", border:"1px solid rgba(0,51,159,0.4)", color:"#4f7fe0", opacity: selectedIds.size === 0 ? 0.5 : 1 }}>
+                {printing === printModal.patientName ? "Generando…" : `Generar PDF (${selectedIds.size})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
