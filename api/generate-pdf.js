@@ -143,13 +143,36 @@ export default async function handler(req, res) {
     };
 
     const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", hidratacion:"Hidratación", domicilio:"Domicilio" };
+    const catOrder = ["premedicacion", "inmunoterapia", "quimioterapia", "adicional", "especialidad", "hidratacion", "domicilio"];
+    const COLS = 3, GAP = 10;
+    const colW = (W - GAP * (COLS - 1)) / COLS;
+
+    // Estima el alto que ocupará una sesión antes de dibujarla, para forzar
+    // salto de página (con encabezado) en vez de dejar que pdfkit corte a la mitad.
+    const estimateSessionHeight = (s) => {
+      let h = 24; // barra de fecha/esquema + margen
+      const meds = s.meds || [];
+      const groups = {};
+      meds.forEach(m => {
+        const cat = m.category || "adicional";
+        (groups[cat] = groups[cat] || []).push(m);
+      });
+      const activeCats = catOrder.filter(cat => groups[cat]);
+      const rows = Math.max(1, Math.ceil(activeCats.length / COLS));
+      const maxItems = activeCats.reduce((mx, c) => Math.max(mx, groups[c].length), 0);
+      h += rows * (12 + maxItems * 11 + 6);
+      if (s.globalNote) h += 14;
+      h += 6 + 34 + 4; // firmas + línea separadora
+      return h;
+    };
 
     drawHeader();
     drawWatermark();
 
     sessions.forEach((s, idx) => {
-      // Verificar espacio — si falta menos de 180pts, nueva página
-    if (doc.y > 660) {
+      // Calcular si la sesión completa cabe en el espacio restante de la página
+      const estH = estimateSessionHeight(s);
+      if (doc.y + estH > 745) {
         doc.addPage();
         drawHeader();
         drawWatermark();
@@ -173,10 +196,7 @@ export default async function handler(req, res) {
         groups[cat].push(m);
       });
 
-      const catOrder = ["premedicacion", "inmunoterapia", "quimioterapia", "adicional", "especialidad", "hidratacion", "domicilio"];
       const activeCats = catOrder.filter(cat => groups[cat]);
-      const COLS = 3, GAP = 10;
-      const colW = (W - GAP * (COLS - 1)) / COLS;
 
       let rowY = doc.y, col = 0, rowMaxH = 0;
       activeCats.forEach(cat => {
