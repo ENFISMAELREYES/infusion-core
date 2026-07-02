@@ -1,0 +1,203 @@
+export const config = { api: { responseLimit: '10mb' } };
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).end();
+
+  const { patientName, sessionIds, center, token } = req.body;
+
+  try {
+    const PROJECT_ID = "infusion-core";
+
+    // Obtener access token
+    const { GoogleAuth } = await import("google-auth-library");
+    const auth = new GoogleAuth({
+      credentials: JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT),
+      scopes: ["https://www.googleapis.com/auth/datastore"],
+    });
+    const accessToken = await auth.getAccessToken();
+
+    // Fetch sesiones del paciente
+    const queryRes = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
+      { method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${accessToken}` },
+        body: JSON.stringify({ structuredQuery: {
+          from: [{ collectionId: "sessions" }],
+          where: { compositeFilter: { op: "AND", filters: [
+            { fieldFilter: { field: { fieldPath: "patientName" }, op: "EQUAL", value: { stringValue: patientName } } },
+            { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "completado" } } },
+          ]}},
+          orderBy: [{ field: { fieldPath: "date" }, direction: "ASCENDING" }],
+          limit: 200,
+        }})
+      }
+    );
+    const queryData = await queryRes.json();
+
+    const parse = (v) => {
+      if (!v) return null;
+      if (v.stringValue !== undefined) return v.stringValue;
+      if (v.booleanValue !== undefined) return v.booleanValue;
+      if (v.integerValue !== undefined) return parseInt(v.integerValue);
+      if (v.arrayValue) return (v.arrayValue.values || []).map(parse);
+      if (v.mapValue) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, val]) => [k, parse(val)]));
+      return null;
+    };
+
+    let sessions = queryData.filter(d => d.document).map(d => {
+      const id = d.document.name.split("/").pop();
+      return { id, ...Object.fromEntries(Object.entries(d.document.fields || {}).map(([k, v]) => [k, parse(v)])) };
+    });
+
+    // Filtrar por sessionIds si se proporcionaron
+    if (sessionIds && sessionIds.length > 0) {
+      sessions = sessions.filter(s => sessionIds.includes(s.id));
+    }
+
+    if (sessions.length === 0) return res.status(404).json({ error: "No hay sesiones" });
+
+    // Generar PDF
+    const PDFDocument = (await import("pdfkit")).default;
+    const chunks = [];
+    const doc = new PDFDocument({ size: "LETTER", margin: 45, bufferPages: true });
+    doc.on("data", chunk => chunks.push(chunk));
+
+    const sample = sessions[0];
+    const NAVY = "#00339F";
+    const TEAL = "#16C2D5";
+    const W = 612 - 90; // ancho útil
+
+    const drawHeader = () => {
+      // Línea superior
+      doc.rect(45, 40, W, 3).fill(NAVY);
+
+      // Título
+      doc.fontSize(16).fillColor(NAVY).font("Helvetica-Bold")
+        .text("InfusionCore", 45, 52, { continued: true })
+        .fontSize(10).fillColor(TEAL).font("Helvetica")
+        .text(`  ·  ${center || "CITIO"}`, { align: "left" });
+
+      doc.fontSize(14).fillColor(NAVY).font("Helvetica-Bold")
+        .text("HOJA DE TRATAMIENTO", 45, 72, { align: "center", width: W });
+
+      // Datos del paciente
+      doc.rect(45, 95, W, 1).fill("#cccccc");
+      doc.fontSize(9).fillColor("#333").font("Helvetica");
+      const col1 = 45, col2 = 320;
+      const dob = sample.dob || "";
+      let age = "";
+      if (dob) {
+        const [y,m,d] = dob.split("-").map(Number);
+        const today = new Date();
+        age = today.getFullYear() - y - (today.getMonth()+1 < m || (today.getMonth()+1===m && today.getDate()<d) ? 1 : 0);
+      }
+      doc.font("Helvetica-Bold").text("Paciente:", col1, 102, { continued: true }).font("Helvetica").text(`  ${sample.patientName || ""}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("F. Nac:", col2, 102, { continued: true }).font("Helvetica").text(`  ${dob}  (${age} años)`);
+      doc.font("Helvetica-Bold").text("Diagnóstico:", col1, 116, { continued: true }).font("Helvetica").text(`  ${sample.diagnosis || ""}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("Médico:", col2, 116, { continued: true }).font("Helvetica").text(`  ${sample.physician || ""}`);
+      doc.font("Helvetica-Bold").text("Alergias:", col1, 130, { continued: true }).font("Helvetica").text(`  ${sample.allergies || "Negadas"}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("Régimen:", col2, 130, { continued: true }).font("Helvetica").text(`  ${sample.insurance || "Particular"}`);
+      doc.rect(45, 143, W, 1).fill("#cccccc");
+      doc.y = 150;
+    };
+
+    const drawWatermark = () => {
+      doc.save();
+      doc.opacity(0.06);
+      doc.fontSize(80).fillColor(NAVY).font("Helvetica-Bold")
+        .text("InfusionCore", 80, 320, { width: W, align: "center" });
+      doc.restore();
+    };
+
+    const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", hidratacion:"Hidratación", domicilio:"Domicilio" };
+
+    drawHeader();
+    drawWatermark();
+
+    sessions.forEach((s, idx) => {
+      // Verificar espacio — si falta menos de 180pts, nueva página
+      if (doc.y > 580) {
+        doc.addPage();
+        drawHeader();
+        drawWatermark();
+      }
+
+      const blockY = doc.y + 6;
+      doc.rect(45, blockY, W, 14).fill(NAVY);
+      doc.fontSize(8).fillColor("white").font("Helvetica-Bold")
+        .text(`Fecha: ${s.date || ""}    Ciclo: ${s.cycle || ""}    Esquema: ${s.schemeName || ""}    Ingreso: ${s.events?.ingreso || "__:__"}    Retiro: ${s.events?.retiro || "__:__"}`,
+          47, blockY + 3, { width: W - 4 });
+
+      doc.y = blockY + 18;
+      doc.fillColor("#333").font("Helvetica").fontSize(8);
+
+      // Agrupar medicamentos por categoría
+      const meds = s.meds || [];
+      const groups = {};
+      meds.forEach(m => {
+        const cat = m.category || "adicional";
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(m);
+      });
+
+      const catOrder = ["premedicacion", "inmunoterapia", "quimioterapia", "adicional", "especialidad", "hidratacion", "domicilio"];
+      catOrder.forEach(cat => {
+        if (!groups[cat]) return;
+        doc.font("Helvetica-Bold").fontSize(8).fillColor(TEAL)
+          .text(CAT_LABEL[cat] || cat, 47, doc.y, { width: W });
+        groups[cat].forEach(m => {
+          doc.font("Helvetica").fontSize(8).fillColor("#333")
+            .text(`  • ${m.name || ""}  ${m.dose || ""}  ${m.diluent ? `/ ${m.diluent}` : ""}  ${m.time ? `${m.time} min` : ""}`,
+              52, doc.y, { width: W - 10 });
+        });
+      });
+
+      // Nota
+      if (s.globalNote) {
+        doc.font("Helvetica-BoldOblique").fontSize(8).fillColor("#555")
+          .text(`Nota: ${s.globalNote}`, 47, doc.y, { width: W });
+      }
+
+      // Firmas
+      doc.y += 6;
+      const firmaY = doc.y;
+      const fw = W / 3 - 5;
+      ["Enfermería", "Paciente / Familiar", "Médico"].forEach((label, i) => {
+        const fx = 45 + i * (fw + 7);
+        doc.rect(fx, firmaY, fw, 28).stroke("#cccccc");
+        doc.fontSize(7).fillColor("#999").font("Helvetica")
+          .text(label, fx, firmaY + 20, { width: fw, align: "center" });
+      });
+      doc.y = firmaY + 34;
+
+      // Línea separadora
+      doc.rect(45, doc.y, W, 0.5).fill("#e0e0e0");
+      doc.y += 4;
+    });
+
+    // Numeración de páginas
+    const pages = doc.bufferedPageRange();
+    for (let i = 0; i < pages.count; i++) {
+      doc.switchToPage(pages.start + i);
+      doc.fontSize(7).fillColor("#aaa").font("Helvetica")
+        .text(`Página ${i + 1} de ${pages.count}  ·  InfusionCore  ·  ${center || "CITIO"}`,
+          45, 752, { width: W, align: "center" });
+    }
+
+    doc.end();
+
+    await new Promise((resolve, reject) => {
+      doc.on("end", resolve);
+      doc.on("error", reject);
+    });
+
+    const pdfBuffer = Buffer.concat(chunks);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="tratamiento-${patientName.replace(/\s+/g, "_")}.pdf"`);
+    res.send(pdfBuffer);
+
+  } catch(e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+}
