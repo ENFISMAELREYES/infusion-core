@@ -421,6 +421,7 @@ function PatientCatalogSection({ groups, sessions, token, patientStatuses, onRef
   const [expanded, setExpanded] = useState(null);
   const [editingData, setEditingData] = useState(null);
 const [editDraft, setEditDraft] = useState({ dob:"", diagnosis:"", physician:"", allergies:"" });
+const [printing, setPrinting] = useState(null);
 
 const handleDataEdit = async (patientName, draft) => {
   try {
@@ -475,6 +476,34 @@ const handleDataEdit = async (patientName, draft) => {
     } catch(e) { alert("Error: " + e.message); }
   };
 
+  const handlePrint = async (patientName, center) => {
+    setPrinting(patientName);
+    try {
+      const res = await fetch("/api/generate-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patientName, center, token }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "No se pudo generar el PDF");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tratamiento-${patientName.replace(/\s+/g, "_")}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch(e) {
+      alert("Error al generar PDF: " + e.message);
+    } finally {
+      setPrinting(null);
+    }
+  };
+
   return (
     <div>
       <input placeholder="Buscar paciente..." value={search} onChange={e => setSearch(e.target.value)}
@@ -488,6 +517,7 @@ const handleDataEdit = async (patientName, draft) => {
           const statusMeta  = PATIENT_STATUS[status] || PATIENT_STATUS.activo;
           const hasDups     = g.variants.length > 1;
           const patientSessions = (g.sessions||[]).sort((a,b) => (b.date||"").localeCompare(a.date||""));
+          const patientCenter = patientSessions[0]?.center || (centerFilter !== "Todos" ? centerFilter : "CITIO");
 
           return (
             <div key={i} style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${hasDups ? "rgba(255,179,71,0.25)" : "rgba(255,255,255,0.07)"}`, borderRadius:12, overflow:"hidden" }}>
@@ -510,6 +540,11 @@ const handleDataEdit = async (patientName, draft) => {
                   <div style={{ fontSize:11, color:"#555", marginTop:4 }}>{g.count} sesión{g.count !== 1 ? "es" : ""}</div>
                 </div>
                 <div style={{ display:"flex", gap:6, flexShrink:0 }} onClick={e => e.stopPropagation()}>
+                  <button onClick={() => handlePrint(g.canonical, patientCenter)} disabled={printing === g.canonical}
+                    title="Imprimir hoja de tratamiento"
+                    style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor: printing === g.canonical ? "wait" : "pointer", background:"rgba(0,51,159,0.1)", border:"1px solid rgba(0,51,159,0.3)", color:"#4f7fe0", opacity: printing === g.canonical ? 0.5 : 1 }}>
+                    {printing === g.canonical ? "…" : "🖨️"}
+                  </button>
                  {canEdit && (
                     <button onClick={() => { setEditing(g.canonical); setNewName(g.canonical); }}
                       style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666" }}>✏️</button>
