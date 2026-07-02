@@ -94,20 +94,20 @@ export default async function handler(req, res) {
 
       // Logo institucional del centro (fallback a texto si aún no está disponible, ej. CIPI)
       if (hasHeaderLogo) {
-        doc.image(logos.header, 45, 46, { width: 100 });
+        doc.image(logos.header, 45, 44, { width: 90 });
       } else {
-        doc.fontSize(16).fillColor(NAVY).font("Helvetica-Bold")
-          .text("InfusionCore", 45, 52);
+        doc.fontSize(14).fillColor(NAVY).font("Helvetica-Bold")
+          .text("InfusionCore", 45, 60);
       }
 
-      // Título + centro
-      doc.fontSize(14).fillColor(NAVY).font("Helvetica-Bold")
-        .text("HOJA DE TRATAMIENTO", 45, 108, { align: "center", width: W });
-      doc.fontSize(9).fillColor(TEAL).font("Helvetica")
-        .text(centerKey, 45, 124, { align: "center", width: W });
+      // Título + centro (alineados a la misma altura que el logo)
+      doc.fontSize(15).fillColor(NAVY).font("Helvetica-Bold")
+        .text("HOJA DE TRATAMIENTO", 45, 60, { align: "center", width: W });
+      doc.fontSize(8).fillColor(TEAL).font("Helvetica")
+        .text(centerKey, 45, 80, { align: "center", width: W });
 
       // Datos del paciente
-      doc.rect(45, 138, W, 1).fill("#cccccc");
+      doc.rect(45, 100, W, 1).fill("#cccccc");
       doc.fontSize(9).fillColor("#333").font("Helvetica");
       const col1 = 45, col2 = 320;
       const dob = sample.dob || "";
@@ -117,14 +117,14 @@ export default async function handler(req, res) {
         const today = new Date();
         age = today.getFullYear() - y - (today.getMonth()+1 < m || (today.getMonth()+1===m && today.getDate()<d) ? 1 : 0);
       }
-      doc.font("Helvetica-Bold").text("Paciente:", col1, 145, { continued: true }).font("Helvetica").text(`  ${sample.patientName || ""}`, { width: 250 });
-      doc.font("Helvetica-Bold").text("F. Nac:", col2, 145, { continued: true }).font("Helvetica").text(`  ${dob}  (${age} años)`);
-      doc.font("Helvetica-Bold").text("Diagnóstico:", col1, 159, { continued: true }).font("Helvetica").text(`  ${sample.diagnosis || ""}`, { width: 250 });
-      doc.font("Helvetica-Bold").text("Médico:", col2, 159, { continued: true }).font("Helvetica").text(`  ${sample.physician || ""}`);
-      doc.font("Helvetica-Bold").text("Alergias:", col1, 173, { continued: true }).font("Helvetica").text(`  ${sample.allergies || "Negadas"}`, { width: 250 });
-      doc.font("Helvetica-Bold").text("Régimen:", col2, 173, { continued: true }).font("Helvetica").text(`  ${sample.insurance || "Particular"}`);
-      doc.rect(45, 186, W, 1).fill("#cccccc");
-      doc.y = 193;
+      doc.font("Helvetica-Bold").text("Paciente:", col1, 107, { continued: true }).font("Helvetica").text(`  ${sample.patientName || ""}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("F. Nac:", col2, 107, { continued: true }).font("Helvetica").text(`  ${dob}  (${age} años)`);
+      doc.font("Helvetica-Bold").text("Diagnóstico:", col1, 121, { continued: true }).font("Helvetica").text(`  ${sample.diagnosis || ""}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("Médico:", col2, 121, { continued: true }).font("Helvetica").text(`  ${sample.physician || ""}`);
+      doc.font("Helvetica-Bold").text("Alergias:", col1, 135, { continued: true }).font("Helvetica").text(`  ${sample.allergies || "Negadas"}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("Régimen:", col2, 135, { continued: true }).font("Helvetica").text(`  ${sample.insurance || "Particular"}`);
+      doc.rect(45, 148, W, 1).fill("#cccccc");
+      doc.y = 155;
     };
 
     const drawWatermark = () => {
@@ -180,7 +180,7 @@ export default async function handler(req, res) {
           .text(CAT_LABEL[cat] || cat, 47, doc.y, { width: W });
         groups[cat].forEach(m => {
           doc.font("Helvetica").fontSize(8).fillColor("#333")
-            .text(`  • ${m.name || ""}  ${m.dose || ""}  ${m.diluent ? `/ ${m.diluent}` : ""}  ${m.time ? `${m.time} min` : ""}`,
+            .text(`  • ${m.name || ""}  ${m.dose || ""}`,
               52, doc.y, { width: W - 10 });
         });
       });
