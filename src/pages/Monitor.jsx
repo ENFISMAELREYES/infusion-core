@@ -113,6 +113,9 @@ function PatientRow({ s }) {
             <span style={{ fontSize:10, padding:"2px 8px", borderRadius:99, background:`${st.color}18`, color:st.color, border:`1px solid ${st.color}44` }}>{st.label}</span>
           </div>
           <div style={{ fontSize:11, color:"#666" }}>{s.diagnosis} · {s.cycle}</div>
+          {s.sessionType === "procedimiento" && s.procedureType && (
+  <div style={{ fontSize: 11, color: "#ffb347", marginTop: 2 }}>🔧 {s.procedureType}</div>
+)}
           <div style={{ fontSize:11, color:"#555", marginTop:1 }}>{s.center} · {s.nurseName}</div>
         </div>
         <div style={{ flex:"2 1 260px" }}>
