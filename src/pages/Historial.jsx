@@ -177,6 +177,9 @@ const saveEdit = async () => {
         <div style={{ flex:1 }}>
           <div style={{ fontSize:14, color:"#f0f0f0", fontWeight:600, marginBottom:3 }}>{s.patientName}</div>
           <div style={{ fontSize:12, color:"#666" }}>{s.diagnosis} · {s.cycle}</div>
+          {s.sessionType === "procedimiento" && s.procedureType && (
+              <div style={{ fontSize:11, color:"#ffb347", marginTop:2 }}>🔧 {s.procedureType}</div>
+            )}
           <div style={{ fontSize:11, color:"#555", marginTop:2 }}>{s.physician} · {s.center} · {s.nurseName}</div>
           <div style={{ marginTop:4 }}>
   {(() => {
