@@ -53,12 +53,13 @@ async function fetchAllSessions(token) {
     body: JSON.stringify({
       structuredQuery: {
         from: [{ collectionId: "sessions" }],
-       select: { fields: [
+      select: { fields: [
           { fieldPath: "patientName" }, { fieldPath: "dob" },
           { fieldPath: "diagnosis" }, { fieldPath: "physician" },
           { fieldPath: "insurance" }, { fieldPath: "center" },
           { fieldPath: "date" }, { fieldPath: "cycle" },
          { fieldPath: "allergies" }, { fieldPath: "expedienteNumber" }, { fieldPath: "schemeName" },
+         { fieldPath: "status" },
         ]},
         orderBy: [{ field: { fieldPath: "date" }, direction: "DESCENDING" }],
         limit: 500,
