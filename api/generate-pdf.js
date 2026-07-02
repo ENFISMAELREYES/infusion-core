@@ -66,10 +66,13 @@ export default async function handler(req, res) {
       return { id, ...Object.fromEntries(Object.entries(d.document.fields || {}).map(([k, v]) => [k, parse(v)])) };
     });
 
-    // Filtrar por sessionIds si se proporcionaron
-    if (sessionIds && sessionIds.length > 0) {
-      sessions = sessions.filter(s => sessionIds.includes(s.id));
-    }
+    // Set de IDs seleccionados. Si es un subconjunto (no todas), entramos en
+    // modo "sobreimpresión": se recorren TODAS las sesiones para calcular la
+    // posición exacta de cada una, pero solo se dibuja con tinta la seleccionada;
+    // las demás reservan su espacio en blanco. Así, al reinsertar una hoja ya
+    // impresa, la sesión nueva cae exactamente donde le corresponde.
+    const selectedSet = sessionIds && sessionIds.length > 0 ? new Set(sessionIds) : null;
+    const isOverlay = !!selectedSet && selectedSet.size < sessions.length;
 
     if (sessions.length === 0) return res.status(404).json({ error: "No hay sesiones" });
 
@@ -166,17 +169,33 @@ export default async function handler(req, res) {
       return h;
     };
 
-    drawHeader();
-    drawWatermark();
+    // En modo sobreimpresión no se dibuja logo/encabezado/marca de agua (la hoja
+    // física ya los tiene impresos); solo se reserva el mismo punto de inicio
+    // de contenido para que la posición coincida con la impresión original.
+    const drawHeaderOrReserve = () => {
+      if (isOverlay) {
+        doc.y = 155;
+      } else {
+        drawHeader();
+        drawWatermark();
+      }
+    };
+
+    drawHeaderOrReserve();
 
     sessions.forEach((s, idx) => {
       // Calcular si la sesión completa cabe en el espacio restante de la página
       const estH = estimateSessionHeight(s);
       if (doc.y + estH > 745) {
         doc.addPage();
-        drawHeader();
-        drawWatermark();
+        drawHeaderOrReserve();
       }
+
+      const included = !selectedSet || selectedSet.has(s.id);
+      // Si la sesión no está seleccionada, se ejecutan exactamente los mismos
+      // trazos (misma posición, mismo alto) pero con opacidad 0: así se
+      // reserva su espacio sin imprimir tinta sobre la hoja ya impresa.
+      if (!included) doc.save().opacity(0);
 
       const blockY = doc.y + 6;
       doc.rect(45, blockY, W, 14).fill(NAVY);
@@ -235,18 +254,22 @@ export default async function handler(req, res) {
       // Línea separadora
       doc.rect(45, doc.y, W, 0.5).fill("#e0e0e0");
       doc.y += 4;
+
+      if (!included) doc.restore();
     });
 
-   // Numeración de páginas
-    const pages = doc.bufferedPageRange();
-    for (let i = 0; i < pages.count; i++) {
-      doc.switchToPage(pages.start + i);
-      const bottomMargin = doc.page.margins.bottom;
-      doc.page.margins.bottom = 0; // evita que pdfkit cree una página extra solo por el pie
-      doc.fontSize(7).fillColor("#aaa").font("Helvetica")
-        .text(`Página ${i + 1} de ${pages.count}  ·  InfusionCore  ·  ${center || "CITIO"}`,
-          45, 760, { width: W, align: "center", lineBreak: false });
-      doc.page.margins.bottom = bottomMargin;
+   // Numeración de páginas (se omite en modo sobreimpresión: la hoja ya la tiene impresa)
+    if (!isOverlay) {
+      const pages = doc.bufferedPageRange();
+      for (let i = 0; i < pages.count; i++) {
+        doc.switchToPage(pages.start + i);
+        const bottomMargin = doc.page.margins.bottom;
+        doc.page.margins.bottom = 0; // evita que pdfkit cree una página extra solo por el pie
+        doc.fontSize(7).fillColor("#aaa").font("Helvetica")
+          .text(`Página ${i + 1} de ${pages.count}  ·  InfusionCore  ·  ${center || "CITIO"}`,
+            45, 760, { width: W, align: "center", lineBreak: false });
+        doc.page.margins.bottom = bottomMargin;
+      }
     }
     
     doc.end();
