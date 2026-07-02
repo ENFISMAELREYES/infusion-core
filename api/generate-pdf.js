@@ -149,7 +149,7 @@ export default async function handler(req, res) {
 
     sessions.forEach((s, idx) => {
       // Verificar espacio — si falta menos de 180pts, nueva página
-      if (doc.y > 580) {
+    if (doc.y > 660) {
         doc.addPage();
         drawHeader();
         drawWatermark();
@@ -217,15 +217,18 @@ export default async function handler(req, res) {
       doc.y += 4;
     });
 
-    // Numeración de páginas
+   // Numeración de páginas
     const pages = doc.bufferedPageRange();
     for (let i = 0; i < pages.count; i++) {
       doc.switchToPage(pages.start + i);
+      const bottomMargin = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0; // evita que pdfkit cree una página extra solo por el pie
       doc.fontSize(7).fillColor("#aaa").font("Helvetica")
         .text(`Página ${i + 1} de ${pages.count}  ·  InfusionCore  ·  ${center || "CITIO"}`,
-          45, 752, { width: W, align: "center" });
+          45, 760, { width: W, align: "center", lineBreak: false });
+      doc.page.margins.bottom = bottomMargin;
     }
-
+    
     doc.end();
 
     await new Promise((resolve, reject) => {
