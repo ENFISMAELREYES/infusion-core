@@ -1,5 +1,6 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getMessaging, getToken } from "firebase/messaging";
+import { getStorage, ref, uploadString, getDownloadURL } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw",
@@ -20,7 +21,17 @@ try {
 }
 
 export { messaging };
+export const storage = getStorage(app);
 export const VAPID_KEY = "BMLOo1m7MOcerY21MKP-LfhHiQ5BEsVXNJog9Gv_EIklKdC6evUdC7kZQcufIcjPm44R5Bbhx2tJcucSdPNqyqA";
+
+// Sube una firma (dataURL PNG del canvas) a Firebase Storage y devuelve su URL pública.
+// role: "paciente" | "enfermeria" | "medico"
+export async function uploadSignature(sessionId, role, dataUrl) {
+  const path = `signatures/${sessionId}/${role}.png`;
+  const storageRef = ref(storage, path);
+  await uploadString(storageRef, dataUrl, "data_url");
+  return await getDownloadURL(storageRef);
+}
 
 export async function requestNotificationPermission(userId, token) {
   try {
