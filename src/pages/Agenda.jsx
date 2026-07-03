@@ -204,6 +204,61 @@ function CalendarView({ appointments, schemes, selectedMonth, onSelectDate }) {
   );
 }
 
+function WeekView({ appointments, schemes, focusDate, onSelectDate }) {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+  const start = new Date(focusDate);
+  start.setDate(start.getDate() - start.getDay()); // domingo de esa semana
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return d;
+  });
+
+  const eventsFor = (dateStr) => (appointments || [])
+    .filter(a => a.date === dateStr && a.status !== "suspendida" && a.status !== "cancelada")
+    .map(a => {
+      const scheme = schemes.find(s => s.id === a.schemeId);
+      return { ...a, schemeName: scheme?.name || "", apptId: a.id, patientSchemeId: a.patientSchemeId };
+    });
+
+  return (
+    <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:6 }}>
+      {days.map((d, i) => {
+        const dateStr = d.toISOString().split("T")[0];
+        const events = eventsFor(dateStr);
+        const isToday = dateStr === today;
+        return (
+          <div key={i} onClick={() => events.length && onSelectDate(dateStr, events)}
+            style={{
+              minHeight:190, padding:"8px 8px", borderRadius:11, cursor:events.length?"pointer":"default",
+              background: isToday ? "rgba(0,212,170,0.10)" : "rgba(255,255,255,0.03)",
+              border:`1px solid ${isToday ? "rgba(0,212,170,0.4)" : "rgba(255,255,255,0.07)"}`,
+            }}>
+            <div style={{ fontSize:10, color: isToday ? "#00d4aa" : "#666", textTransform:"capitalize", marginBottom:2 }}>
+              {d.toLocaleDateString("es-MX", { weekday:"short" })}
+            </div>
+            <div style={{ fontSize:17, color: isToday ? "#00d4aa" : "#f0f0f0", fontWeight:700, marginBottom:8 }}>{d.getDate()}</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+              {events.map((e, j) => (
+                <div key={j} style={{
+                  fontSize:10, padding:"3px 6px", borderRadius:5,
+                  background: e.status==="confirmed" ? "rgba(29,158,117,0.2)" : e.center==="CITIO" ? "rgba(79,195,247,0.15)" : "rgba(175,169,236,0.15)",
+                  color: e.status==="confirmed" ? "#1D9E75" : e.center==="CITIO" ? "#4fc3f7" : "#AFA9EC",
+                  whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+                }}>
+                  {e.label} {e.patientName?.split(" ")[0]}
+                </div>
+              ))}
+              {events.length === 0 && <div style={{ fontSize:10, color:"#333" }}>—</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SchemeForm({ schemes, sessions, onSave, onCancel, editing }) {
   const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
   const labelStyle = { fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 };
@@ -358,6 +413,7 @@ const isVisualizador = profile?.role === "visualizador";
   const [loading, setLoading]               = useState(true);
   const [token, setToken]                   = useState(null);
   const [view, setView]                     = useState("calendar");
+  const [calMode, setCalMode]               = useState("mes"); // "dia" | "semana" | "mes"
   const [selectedMonth, setSelectedMonth]   = useState(new Date());
   const [showForm, setShowForm]             = useState(false);
   const [showSchemeForm, setShowSchemeForm] = useState(false);
@@ -366,6 +422,8 @@ const [editingScheme, setEditingScheme] = useState(null);
   const [selectedDate, setSelectedDate]     = useState(null);
   const [expandedScheme, setExpandedScheme] = useState(null);
   const [selectedEvents, setSelectedEvents] = useState([]);
+  const [searchQuery, setSearchQuery]       = useState("");
+  const [searchCenter, setSearchCenter]     = useState("Todos");
 
   const load = async () => {
     if (!user) return;
@@ -483,8 +541,31 @@ const handleDeleteScheme = async (id) => {
     } catch(e) { alert("Error: " + e.message); }
   };
   
-  const prevMonth = () => setSelectedMonth(m => new Date(m.getFullYear(), m.getMonth()-1, 1));
-  const nextMonth = () => setSelectedMonth(m => new Date(m.getFullYear(), m.getMonth()+1, 1));
+  const goPrev = () => {
+    if (calMode === "mes") setSelectedMonth(m => new Date(m.getFullYear(), m.getMonth()-1, 1));
+    else if (calMode === "semana") setSelectedMonth(m => { const d = new Date(m); d.setDate(d.getDate()-7); return d; });
+    else setSelectedMonth(m => { const d = new Date(m); d.setDate(d.getDate()-1); return d; });
+  };
+  const goNext = () => {
+    if (calMode === "mes") setSelectedMonth(m => new Date(m.getFullYear(), m.getMonth()+1, 1));
+    else if (calMode === "semana") setSelectedMonth(m => { const d = new Date(m); d.setDate(d.getDate()+7); return d; });
+    else setSelectedMonth(m => { const d = new Date(m); d.setDate(d.getDate()+1); return d; });
+  };
+
+  // En modo "Día" no hay grilla que clickear: el propio día enfocado se autoselecciona
+  // para reutilizar el mismo panel de detalle (con reagendar) que usan mes y semana.
+  useEffect(() => {
+    if (calMode !== "dia") { setSelectedDate(null); setSelectedEvents([]); return; }
+    const dateStr = selectedMonth.toISOString().split("T")[0];
+    const events = (appointments||[])
+      .filter(a => a.date === dateStr && a.status !== "suspendida" && a.status !== "cancelada")
+      .map(a => {
+        const scheme = schemes.find(s => s.id === a.schemeId);
+        return { ...a, schemeName: scheme?.name || "", apptId: a.id, patientSchemeId: a.patientSchemeId };
+      });
+    setSelectedDate(dateStr);
+    setSelectedEvents(events);
+  }, [calMode, selectedMonth, appointments, schemes]);
 
   // Lista de próximas citas
   const upcomingDates = [];
@@ -502,6 +583,16 @@ const handleDeleteScheme = async (id) => {
   upcomingDates.sort((a, b) => a.date.localeCompare(b.date));
 
   const monthName = selectedMonth.toLocaleDateString("es-MX", { month:"long", year:"numeric" });
+  const rangeLabel = calMode === "dia"
+    ? selectedMonth.toLocaleDateString("es-MX", { weekday:"long", day:"numeric", month:"long", year:"numeric" })
+    : calMode === "semana"
+    ? (() => {
+        const start = new Date(selectedMonth); start.setDate(start.getDate() - start.getDay());
+        const end = new Date(start); end.setDate(start.getDate()+6);
+        const fmt = (d) => d.toLocaleDateString("es-MX", { day:"numeric", month:"short" });
+        return `${fmt(start)} – ${fmt(end)}, ${end.getFullYear()}`;
+      })()
+    : monthName;
 
   return (
     <div style={{ padding:"24px 28px", maxWidth:1100, margin:"0 auto" }}>
@@ -542,13 +633,93 @@ const handleDeleteScheme = async (id) => {
           {/* Vista calendario */}
           {view === "calendar" && (
             <div>
-              <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:16 }}>
-                <button onClick={prevMonth} style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"6px 12px", color:"#888", cursor:"pointer", fontSize:16 }}>‹</button>
-                <div style={{ fontSize:16, color:"#fff", fontWeight:600, textTransform:"capitalize", minWidth:200, textAlign:"center" }}>{monthName}</div>
-                <button onClick={nextMonth} style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"6px 12px", color:"#888", cursor:"pointer", fontSize:16 }}>›</button>
+              <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+                {[["consulta","Consulta"],["dia","Día"],["semana","Semana"],["mes","Mes"]].map(([id,label]) => (
+                  <button key={id} onClick={() => setCalMode(id)} style={{
+                    padding:"5px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
+                    background: calMode===id ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
+                    border:`1px solid ${calMode===id ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.07)"}`,
+                    color: calMode===id ? "#00d4aa" : "#666",
+                  }}>{label}</button>
+                ))}
               </div>
-              <CalendarView appointments={appointments} schemes={schemes} selectedMonth={selectedMonth}
-  onSelectDate={(date, events) => { setSelectedDate(date); setSelectedEvents(events); }} />
+
+              {calMode !== "consulta" && (
+                <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:16 }}>
+                  <button onClick={goPrev} style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"6px 12px", color:"#888", cursor:"pointer", fontSize:16 }}>‹</button>
+                  <div style={{ fontSize:16, color:"#fff", fontWeight:600, textTransform:"capitalize", minWidth:200, textAlign:"center" }}>{rangeLabel}</div>
+                  <button onClick={goNext} style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"6px 12px", color:"#888", cursor:"pointer", fontSize:16 }}>›</button>
+                  {calMode !== "mes" && (
+                    <button onClick={() => setSelectedMonth(new Date())} style={{ fontSize:11, padding:"5px 12px", borderRadius:8, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", color:"#666" }}>Hoy</button>
+                  )}
+                </div>
+              )}
+
+              {calMode === "consulta" && (() => {
+                const STATUS_META = {
+                  scheduled:  { label:"Programada",    color:"#888" },
+                  confirmed:  { label:"Confirmada",    color:"#1D9E75" },
+                  past:       { label:"No confirmada", color:"#ffb347" },
+                  suspendida: { label:"Suspendida",     color:"#ffb347" },
+                  cancelada:  { label:"Cancelada",      color:"#ff6b6b" },
+                };
+                const results = (appointments||[])
+                  .filter(a => !searchQuery || (a.patientName||"").toLowerCase().includes(searchQuery.toLowerCase()))
+                  .filter(a => searchCenter === "Todos" || a.center === searchCenter)
+                  .map(a => ({ ...a, schemeName: schemes.find(s => s.id === a.schemeId)?.name || "" }))
+                  .sort((a,b) => b.date.localeCompare(a.date));
+
+                return (
+                  <div>
+                    <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+                      <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Buscar paciente en la agenda..."
+                        style={{ flex:1, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"9px 13px", color:"#f0f0f0", fontSize:13, outline:"none" }} />
+                      <select value={searchCenter} onChange={e => setSearchCenter(e.target.value)}
+                        style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"9px 13px", color:"#ccc", fontSize:13, cursor:"pointer", outline:"none" }}>
+                        <option value="Todos">Todos los centros</option>
+                        <option value="CITIO">CITIO</option>
+                        <option value="CIPI">CIPI</option>
+                      </select>
+                    </div>
+
+                    {results.length === 0 ? (
+                      <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
+                        {searchQuery ? "Sin resultados." : "Escribe un nombre para buscar en toda la agenda (pasadas y futuras)."}
+                      </div>
+                    ) : (
+                      <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:520, overflowY:"auto" }}>
+                        {results.map((e, i) => {
+                          const sm = STATUS_META[e.status] || STATUS_META.scheduled;
+                          return (
+                            <div key={i} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.03)", borderLeft:`3px solid ${e.center==="CITIO"?"#4fc3f7":"#AFA9EC"}` }}>
+                              <span style={{ fontSize:12, color:"#888", fontFamily:"'IBM Plex Mono', monospace", width:90, flexShrink:0 }}>{e.date}</span>
+                              <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{e.patientName}</span>
+                              <span style={{ fontSize:12, color:"#666" }}>{e.schemeName}</span>
+                              <span style={{ fontSize:11, color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace" }}>{e.label}</span>
+                              {e.rescheduled && <span style={{ fontSize:11, color:"#ffb347" }}>↻</span>}
+                              <span style={{ fontSize:10, padding:"2px 8px", borderRadius:99, background:`${sm.color}18`, color:sm.color, border:`1px solid ${sm.color}44`, flexShrink:0 }}>{sm.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {calMode === "mes" && (
+                <CalendarView appointments={appointments} schemes={schemes} selectedMonth={selectedMonth}
+                  onSelectDate={(date, events) => { setSelectedDate(date); setSelectedEvents(events); }} />
+              )}
+              {calMode === "semana" && (
+                <WeekView appointments={appointments} schemes={schemes} focusDate={selectedMonth}
+                  onSelectDate={(date, events) => { setSelectedDate(date); setSelectedEvents(events); }} />
+              )}
+              {calMode === "dia" && selectedEvents.length === 0 && (
+                <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
+                  No hay citas programadas este día.
+                </div>
+              )}
               {selectedDate && (
                 <div style={{ marginTop:16, padding:"16px 18px", borderRadius:12, background:"rgba(0,212,170,0.06)", border:"1px solid rgba(0,212,170,0.2)" }}>
                   <div style={{ fontSize:13, color:"#00d4aa", fontWeight:600, marginBottom:10 }}>📅 {selectedDate}</div>
