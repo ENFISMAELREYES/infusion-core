@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { uploadSignature } from "../firebase";
+import SignaturePad from "../components/SignaturePad";
 
 const PROJECT_ID = "infusion-core";
 const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
@@ -79,6 +81,10 @@ function SessionRow({ s, selected, onSelect, isJefe, token, onRefresh }) {
   const isSelected = selected?.id === s.id;
   const [editing, setEditing] = useState(false);
 const [editDraft, setEditDraft] = useState(null);
+  const [showSignModal, setShowSignModal] = useState(false);
+  const [sigPaciente, setSigPaciente]     = useState(null);
+  const [sigEnfermeria, setSigEnfermeria] = useState(null);
+  const [signing, setSigning]             = useState(false);
 
 const openEditor = () => {
     setEditDraft({
@@ -140,6 +146,43 @@ const saveEdit = async () => {
       setEditing(false);
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
+  };
+
+  // Registrar firmas de forma retroactiva para sesiones ya completadas que no
+  // pasaron por el flujo de retiro con firma (por ejemplo, capturadas antes de
+  // que existiera esta función).
+  const confirmRetroSignatures = async () => {
+    if (!sigPaciente || !sigEnfermeria) {
+      alert("Faltan firmas: se necesitan la del paciente/familiar y la de enfermería.");
+      return;
+    }
+    setSigning(true);
+    try {
+      const [urlPaciente, urlEnfermeria] = await Promise.all([
+        uploadSignature(s.id, "paciente", sigPaciente),
+        uploadSignature(s.id, "enfermeria", sigEnfermeria),
+      ]);
+      const fields = {
+        signatures: { mapValue: { fields: {
+          paciente:   { stringValue: urlPaciente },
+          enfermeria: { stringValue: urlEnfermeria },
+          firmedAt:   { stringValue: new Date().toISOString() },
+          retro:      { booleanValue: true }, // marca que se capturó después, no en el retiro real
+        }}}
+      };
+      await fetch(
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}?updateMask.fieldPaths=signatures`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
+      );
+      setShowSignModal(false);
+      setSigPaciente(null);
+      setSigEnfermeria(null);
+      onRefresh();
+    } catch(e) {
+      alert("Error al guardar las firmas: " + e.message);
+    } finally {
+      setSigning(false);
+    }
   };
 
   // Calcular tiempos
@@ -320,10 +363,15 @@ const saveEdit = async () => {
           )}
 
          {isJefe && !editing && (
-            <div style={{ display:"flex", gap:8, marginTop:12 }}>
+            <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap" }}>
               <button onClick={e => { e.stopPropagation(); openEditor(); }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
                 ✏️ Editar sesión
               </button>
+              {s.status === "completado" && !s.signatures && (
+                <button onClick={e => { e.stopPropagation(); setShowSignModal(true); }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
+                  ✍️ Registrar firmas
+                </button>
+              )}
               <button onClick={async e => {
                 e.stopPropagation();
                 if (!confirm(`¿Eliminar sesión de ${s.patientName} del ${s.date}?`)) return;
@@ -422,6 +470,33 @@ const saveEdit = async () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {showSignModal && (
+        <div onClick={e => { e.stopPropagation(); !signing && setShowSignModal(false); }}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:460, maxHeight:"90vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:16 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>✍️ Registrar firmas (retroactivo)</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{s.patientName} · {s.date} — esta sesión ya se completó sin firmas capturadas</div>
+            </div>
+
+            <SignaturePad label="Firma del paciente / familiar" onChange={setSigPaciente} />
+            <SignaturePad label="Firma de enfermería" onChange={setSigEnfermeria} />
+
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={e => { e.stopPropagation(); setShowSignModal(false); }} disabled={signing}
+                style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: signing ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                Cancelar
+              </button>
+              <button onClick={e => { e.stopPropagation(); confirmRetroSignatures(); }} disabled={signing || !sigPaciente || !sigEnfermeria}
+                style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (signing || !sigPaciente || !sigEnfermeria) ? "not-allowed" : "pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: (signing || !sigPaciente || !sigEnfermeria) ? 0.5 : 1 }}>
+                {signing ? "Guardando…" : "✓ Guardar firmas"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
