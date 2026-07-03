@@ -44,6 +44,29 @@ async function fetchAllSessions(token, date) {
 const CAT_COLOR = { premedicacion:"#FAC775", inmunoterapia:"#5DCAA5", quimioterapia:"#F09595", adicional:"#AFA9EC" };
 const CAT_LABEL = { premedicacion:"Pre", inmunoterapia:"Inmuno", quimioterapia:"Quimio", adicional:"Adic." };
 
+// Logo tenue por centro, junto al nombre del paciente. Si el archivo del centro
+// aún no existe (ej. CIPI antes de subir su logo), el onError del <img> lo oculta solo.
+const CENTER_LOGO = { CITIO: "/logo-citio-icon.png", CIPI: "/logo-cipi-icon.png" };
+
+function parseTimeToMin(t) {
+  if (!t) return null;
+  if (t.includes("a.m.") || t.includes("p.m.")) {
+    const [time, period] = t.split(" ");
+    const [h, m] = time.split(":").map(Number);
+    let hours = h;
+    if (period === "p.m." && h !== 12) hours += 12;
+    if (period === "a.m." && h === 12) hours = 0;
+    return hours * 60 + m;
+  }
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+function minToHHMM(min) {
+  const h = Math.floor(((min % 1440) + 1440) % 1440 / 60);
+  const m = ((min % 60) + 60) % 60;
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+}
+
 function getStatus(s) {
   if (!s.authorized)            return { label:"Sin autorizar", color:"#ffb347" };
   if (!s.events?.ingreso)       return { label:"En espera",     color:"#666" };
@@ -109,6 +132,10 @@ function PatientRow({ s }) {
       <div style={{ display:"flex", gap:14, alignItems:"flex-start", flexWrap:"wrap" }}>
         <div style={{ minWidth:190, flex:"1 1 190px" }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
+            {CENTER_LOGO[s.center] && (
+              <img src={CENTER_LOGO[s.center]} alt="" onError={e => { e.currentTarget.style.display = "none"; }}
+                style={{ width:20, height:20, objectFit:"contain", opacity:0.35, flexShrink:0 }} />
+            )}
             <span style={{ fontSize:14, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
             <span style={{ fontSize:10, padding:"2px 8px", borderRadius:99, background:`${st.color}18`, color:st.color, border:`1px solid ${st.color}44` }}>{st.label}</span>
           </div>
@@ -135,7 +162,15 @@ function PatientRow({ s }) {
         <span style={{ color: done ? "#777" : active ? "#f0f0f0" : "#555", fontWeight: active ? 600 : 400 }}>
           {m.name} {m.dose}
         </span>
-        {active && ev.inicio && <span style={{ color:"#666", fontFamily:"'IBM Plex Mono', monospace" }}>▶ {ev.inicio}</span>}
+        {active && ev.inicio && (
+          <span style={{ color:"#666", fontFamily:"'IBM Plex Mono', monospace" }}>
+            ▶ {ev.inicio}
+            {!!m.time && <span style={{ color:"#444" }}> (~{minToHHMM(parseTimeToMin(ev.inicio) + m.time)})</span>}
+          </span>
+        )}
+        {!done && !active && !!m.time && (
+          <span style={{ color:"#444", fontFamily:"'IBM Plex Mono', monospace" }}>{m.time} min</span>
+        )}
         {done && ev.inicio && ev.fin && (
   <span style={{ color:"#555", fontFamily:"'IBM Plex Mono', monospace" }}>
     {ev.inicio} → {ev.fin}
