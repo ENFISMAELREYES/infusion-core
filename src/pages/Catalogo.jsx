@@ -195,6 +195,10 @@ function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appoi
   };
 
   const handleConfirm = async (apptId, currentDate) => {
+    const orphan = (sessions||[]).some(s => s.date === currentDate && !s.schemeName);
+    if (orphan) {
+      if (!confirm("Hay una sesión completada este mismo día sin esquema asignado. Si solo confirmas (sin usar el botón 🔗 de abajo), esa sesión se quedará sin esquema/ciclo. ¿Confirmar de todas formas, sin vincular?")) return;
+    }
     await updateAppointment(token, apptId, { status:"confirmed", confirmedAt:new Date().toISOString() });
     onRefresh();
   };
@@ -204,8 +208,12 @@ function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appoi
     await updateAppointment(token, apptId, { date:newDate, rescheduled:true });
     onRefresh();
   };
-  const handleRemove = async (apptId) => {
-    if (!confirm("¿Quitar esta cita? (no se completó)")) return;
+  const handleRemove = async (apptId, apptDate) => {
+    const orphan = (sessions||[]).some(s => s.date === apptDate && !s.schemeName);
+    const msg = orphan
+      ? "Hay una sesión completada este mismo día sin esquema asignado. Si eliminas esta cita sin vincularla (🔗), esa sesión se quedará sin esquema/ciclo permanentemente. ¿Eliminar de todas formas?"
+      : "¿Quitar esta cita? (no se completó)";
+    if (!confirm(msg)) return;
     await deleteAppointment(token, apptId);
     onRefresh();
   };
@@ -376,7 +384,7 @@ const saveMeds = async (apptId, confirmAlso) => {
                             }
                             onRefresh();
                           }} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>📅</button>
-                          <button onClick={() => handleRemove(a.id)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
+                          <button onClick={() => handleRemove(a.id, a.date)} style={{ padding:"3px 8px", borderRadius:6, fontSize:10, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
                         </>
                       )}
                     </div>
@@ -426,6 +434,8 @@ const [printing, setPrinting] = useState(null);
 const [printModal, setPrintModal] = useState(null); // { patientName, center, sessions }
 const [selectedIds, setSelectedIds] = useState(new Set());
 const [templateOnly, setTemplateOnly] = useState(false);
+const [schemeFixModal, setSchemeFixModal] = useState(null); // { patientName, sessions }
+const [fixPicks, setFixPicks] = useState({}); // sessionId -> schemeId
 
 const handleDataEdit = async (patientName, draft) => {
   try {
@@ -526,6 +536,31 @@ const handleDataEdit = async (patientName, draft) => {
     });
   };
 
+  const openSchemeFixModal = (patientName, patientSessionsList) => {
+    const orphans = patientSessionsList.filter(s => s.status === "completado" && !s.schemeName);
+    if (orphans.length === 0) return;
+    setSchemeFixModal({ patientName, sessions: orphans });
+    setFixPicks({});
+  };
+
+  const saveSchemeFix = async (sessionId) => {
+    const schemeId = fixPicks[sessionId];
+    if (!schemeId) return;
+    const scheme = schemes.find(s => s.id === schemeId);
+    if (!scheme) return;
+    await fetch(
+      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${sessionId}?updateMask.fieldPaths=schemeName&updateMask.fieldPaths=schemeId`,
+      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+        body: JSON.stringify({ fields: {
+          schemeName: { stringValue: scheme.name },
+          schemeId:   { stringValue: schemeId },
+        }})
+      }
+    );
+    setSchemeFixModal(prev => prev ? { ...prev, sessions: prev.sessions.filter(s => s.id !== sessionId) } : prev);
+    onRefresh();
+  };
+
   return (
     <div>
       <input placeholder="Buscar paciente..." value={search} onChange={e => setSearch(e.target.value)}
@@ -540,6 +575,7 @@ const handleDataEdit = async (patientName, draft) => {
           const hasDups     = g.variants.length > 1;
           const patientSessions = (g.sessions||[]).sort((a,b) => (b.date||"").localeCompare(a.date||""));
           const patientCenter = patientSessions[0]?.center || (centerFilter !== "Todos" ? centerFilter : "CITIO");
+          const orphanCount = patientSessions.filter(s => s.status === "completado" && !s.schemeName).length;
 
           return (
             <div key={i} style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${hasDups ? "rgba(255,179,71,0.25)" : "rgba(255,255,255,0.07)"}`, borderRadius:12, overflow:"hidden" }}>
@@ -567,6 +603,13 @@ const handleDataEdit = async (patientName, draft) => {
                     style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor: printing === g.canonical ? "wait" : "pointer", background:"rgba(0,51,159,0.1)", border:"1px solid rgba(0,51,159,0.3)", color:"#4f7fe0", opacity: printing === g.canonical ? 0.5 : 1 }}>
                     {printing === g.canonical ? "…" : "🖨️"}
                   </button>
+                  {orphanCount > 0 && canEdit && (
+                    <button onClick={() => openSchemeFixModal(g.canonical, patientSessions)}
+                      title={`${orphanCount} sesión(es) sin esquema vinculado`}
+                      style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.12)", border:"1px solid rgba(255,179,71,0.35)", color:"#ffb347" }}>
+                      ⚠️🔗 {orphanCount}
+                    </button>
+                  )}
                  {canEdit && (
                     <button onClick={() => { setEditing(g.canonical); setNewName(g.canonical); }}
                       style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666" }}>✏️</button>
@@ -796,6 +839,56 @@ const handleDataEdit = async (patientName, draft) => {
                 {printing === printModal.patientName ? "Generando…" : templateOnly ? "Generar plantilla" : `Generar PDF (${selectedIds.size})`}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {schemeFixModal && (
+        <div onClick={() => setSchemeFixModal(null)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:440, maxHeight:"80vh", display:"flex", flexDirection:"column", gap:14 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>⚠️🔗 Vincular esquema</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{schemeFixModal.patientName} — sesiones completadas sin esquema/ciclo asignado</div>
+            </div>
+
+            {schemeFixModal.sessions.length === 0 ? (
+              <div style={{ fontSize:12, color:"#1D9E75", textAlign:"center", padding:"12px 0" }}>✓ Todas las sesiones quedaron vinculadas</div>
+            ) : (
+              <div style={{ overflowY:"auto", display:"flex", flexDirection:"column", gap:8, paddingRight:4 }}>
+                {schemeFixModal.sessions.map(s => {
+                  const myPatientSchemes = patientSchemes.filter(ps => ps.patientName === schemeFixModal.patientName);
+                  return (
+                    <div key={s.id} style={{ display:"flex", flexDirection:"column", gap:6, padding:"8px 10px", borderRadius:8, background:"rgba(255,179,71,0.06)", border:"1px solid rgba(255,179,71,0.2)" }}>
+                      <div style={{ fontSize:11, color:"#ccc" }}>
+                        <span style={{ fontFamily:"'IBM Plex Mono', monospace" }}>{s.date}</span>
+                        {s.cycle && <span style={{ color:"#888", marginLeft:8 }}>{s.cycle}</span>}
+                      </div>
+                      <div style={{ display:"flex", gap:6 }}>
+                        <select value={fixPicks[s.id] || ""} onChange={e => setFixPicks(prev => ({ ...prev, [s.id]: e.target.value }))}
+                          style={{ flex:1, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"6px 8px", color:"#f0f0f0", fontSize:11 }}>
+                          <option value="">Selecciona esquema…</option>
+                          {myPatientSchemes.map(ps => {
+                            const sch = schemes.find(x => x.id === ps.schemeId);
+                            return <option key={ps.id} value={ps.schemeId}>{sch?.name || ps.schemeId}</option>;
+                          })}
+                        </select>
+                        <button onClick={() => saveSchemeFix(s.id)} disabled={!fixPicks[s.id]}
+                          style={{ padding:"6px 12px", borderRadius:6, fontSize:11, fontWeight:600, cursor: fixPicks[s.id] ? "pointer" : "not-allowed", background:"rgba(29,158,117,0.15)", border:"1px solid rgba(29,158,117,0.4)", color:"#1D9E75", opacity: fixPicks[s.id] ? 1 : 0.5 }}>
+                          Guardar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <button onClick={() => setSchemeFixModal(null)}
+              style={{ padding:"9px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+              Cerrar
+            </button>
           </div>
         </div>
       )}
