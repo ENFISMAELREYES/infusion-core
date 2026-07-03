@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { uploadSignature } from "../firebase";
+import SignaturePad from "../components/SignaturePad";
 
 const PROJECT_ID = "infusion-core";
 const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
@@ -398,6 +400,10 @@ function SessionCard({ session, token, onRefresh, user }) {
   const [open, setOpen]       = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [showSignModal, setShowSignModal] = useState(false);
+  const [sigPaciente, setSigPaciente]     = useState(null);
+  const [sigEnfermeria, setSigEnfermeria] = useState(null);
+  const [signing, setSigning]             = useState(false);
   const events     = session.events    || {};
   const medEvents  = session.medEvents || {};
   const washEvents = session.washEvents || {};
@@ -518,6 +524,36 @@ function SessionCard({ session, token, onRefresh, user }) {
       await patchSession(freshToken, session.id, updates);
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
+  };
+
+  // Sube las dos firmas capturadas a Firebase Storage, las vincula a la sesión
+  // y solo entonces completa el evento de retiro (igual que recordEvent("retiro")).
+  const confirmSignaturesAndRetiro = async () => {
+    if (!sigPaciente || !sigEnfermeria) {
+      alert("Faltan firmas: se necesitan la del paciente/familiar y la de enfermería.");
+      return;
+    }
+    setSigning(true);
+    try {
+      const [urlPaciente, urlEnfermeria] = await Promise.all([
+        uploadSignature(session.id, "paciente", sigPaciente),
+        uploadSignature(session.id, "enfermeria", sigEnfermeria),
+      ]);
+      const freshToken = await user.getIdToken(true);
+      await patchSession(freshToken, session.id, {
+        "signatures.paciente":   urlPaciente,
+        "signatures.enfermeria": urlEnfermeria,
+        "signatures.firmedAt":   new Date().toISOString(),
+      });
+      setShowSignModal(false);
+      setSigPaciente(null);
+      setSigEnfermeria(null);
+      await recordEvent("retiro");
+    } catch(e) {
+      alert("Error al guardar las firmas: " + e.message);
+    } finally {
+      setSigning(false);
+    }
   };
 
   const recordMedEvent = async (medId, key) => {
@@ -656,7 +692,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
 
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
             <TimeBtn label="Ingreso del paciente" time={events.ingreso} onRecord={() => recordEvent("ingreso")} disabled={!session.authorized} />
-          <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={() => recordEvent("retiro")} disabled={
+          <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={() => setShowSignModal(true)} disabled={
                 session.sessionType === "procedimiento"
                   ? !events.ingreso || !medEvents["proc_inicio"]?.fin || !session.procedureNote
                   : !events.ingreso || completedMeds < totalTimed || !allWashDone
@@ -790,6 +826,33 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
               📋 Nota del Jefe: {session.globalNote}
             </div>
           )}
+        </div>
+      )}
+
+      {showSignModal && (
+        <div onClick={() => !signing && setShowSignModal(false)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:460, maxHeight:"90vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:16 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>✍️ Firmas de retiro</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{session.patientName} — se guardan en el expediente y quedan disponibles para la hoja de tratamiento</div>
+            </div>
+
+            <SignaturePad label="Firma del paciente / familiar" onChange={setSigPaciente} />
+            <SignaturePad label="Firma de enfermería" onChange={setSigEnfermeria} />
+
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setShowSignModal(false)} disabled={signing}
+                style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: signing ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                Cancelar
+              </button>
+              <button onClick={confirmSignaturesAndRetiro} disabled={signing || !sigPaciente || !sigEnfermeria}
+                style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (signing || !sigPaciente || !sigEnfermeria) ? "not-allowed" : "pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: (signing || !sigPaciente || !sigEnfermeria) ? 0.5 : 1 }}>
+                {signing ? "Guardando…" : "✓ Confirmar retiro"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
