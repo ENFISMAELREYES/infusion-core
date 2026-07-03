@@ -76,7 +76,7 @@ const STATUS_META = {
   pendiente:  { label:"Pendiente",  color:"#ffb347" },
 };
 
-function SessionRow({ s, selected, onSelect, isJefe, token, onRefresh }) {
+function SessionRow({ s, selected, onSelect, isJefe, canSign, token, onRefresh }) {
   const sm = STATUS_META[s.status] || STATUS_META.pendiente;
   const isSelected = selected?.id === s.id;
   const [editing, setEditing] = useState(false);
@@ -362,29 +362,33 @@ const saveEdit = async () => {
             </div>
           )}
 
-         {isJefe && !editing && (
+         {!editing && (canSign || isJefe) && (
             <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap" }}>
-              <button onClick={e => { e.stopPropagation(); openEditor(); }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
-                ✏️ Editar sesión
-              </button>
-              {s.status === "completado" && !s.signatures && (
+              {isJefe && (
+                <button onClick={e => { e.stopPropagation(); openEditor(); }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+                  ✏️ Editar sesión
+                </button>
+              )}
+              {canSign && s.status === "completado" && !s.signatures && (
                 <button onClick={e => { e.stopPropagation(); setShowSignModal(true); }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
                   ✍️ Registrar firmas
                 </button>
               )}
-              <button onClick={async e => {
-                e.stopPropagation();
-                if (!confirm(`¿Eliminar sesión de ${s.patientName} del ${s.date}?`)) return;
-                try {
-                  await fetch(
-                    `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}`,
-                    { method:"DELETE", headers:{ "Authorization":`Bearer ${token}` } }
-                  );
-                  onRefresh();
-                } catch(err) { alert("Error: " + err.message); }
-              }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
-                🗑 Eliminar
-              </button>
+              {isJefe && (
+                <button onClick={async e => {
+                  e.stopPropagation();
+                  if (!confirm(`¿Eliminar sesión de ${s.patientName} del ${s.date}?`)) return;
+                  try {
+                    await fetch(
+                      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}`,
+                      { method:"DELETE", headers:{ "Authorization":`Bearer ${token}` } }
+                    );
+                    onRefresh();
+                  } catch(err) { alert("Error: " + err.message); }
+                }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
+                  🗑 Eliminar
+                </button>
+              )}
             </div>
           )}
 
@@ -506,6 +510,7 @@ const saveEdit = async () => {
 export default function Historial() {
  const { user, profile } = useAuth();
 const isJefe = profile?.role === "jefe";
+  const canSign = profile?.role !== "visualizador"; // jefe y enfermería pueden registrar firmas; visualizador no
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading]   = useState(false);
   const [selected, setSelected] = useState(null);
@@ -584,7 +589,7 @@ setToken(t);
               </div>
             );
           })()}
-          {filtered.map(s => <SessionRow key={s.id} s={s} onSelect={setSelected} selected={selected} isJefe={isJefe} token={token} onRefresh={load} />)}
+          {filtered.map(s => <SessionRow key={s.id} s={s} onSelect={setSelected} selected={selected} isJefe={isJefe} canSign={canSign} token={token} onRefresh={load} />)}
         </div>
       )}
     </div>
