@@ -80,6 +80,26 @@ export default async function handler(req, res) {
 
     if (sessions.length === 0) return res.status(404).json({ error: "No hay sesiones" });
 
+    // Pre-descargar las firmas (paciente/enfermería) de todas las sesiones que las tengan,
+    // en paralelo, antes de empezar a dibujar el PDF (pdfkit dibuja de forma síncrona).
+    const sigBuffers = {};
+    const fetchSigBuffer = async (url) => {
+      if (!url) return null;
+      try {
+        const r = await fetch(url);
+        if (!r.ok) return null;
+        return Buffer.from(await r.arrayBuffer());
+      } catch (e) { return null; }
+    };
+    await Promise.all(sessions.map(async (s) => {
+      if (!s.signatures) return;
+      const [paciente, enfermeria] = await Promise.all([
+        fetchSigBuffer(s.signatures.paciente),
+        fetchSigBuffer(s.signatures.enfermeria),
+      ]);
+      sigBuffers[s.id] = { paciente, enfermeria };
+    }));
+
     // Generar PDF
     const PDFDocument = (await import("pdfkit")).default;
     const chunks = [];
@@ -258,9 +278,18 @@ export default async function handler(req, res) {
       doc.y += 6;
       const firmaY = doc.y;
       const fw = W / 3 - 5;
+      const sig = sigBuffers[s.id] || {};
+      const FIRMA_KEY = { "Enfermería": "enfermeria", "Paciente / Familiar": "paciente", "Médico": null };
       ["Enfermería", "Paciente / Familiar", "Médico"].forEach((label, i) => {
         const fx = 45 + i * (fw + 7);
         doc.rect(fx, firmaY, fw, 28).stroke("#cccccc");
+        const key = FIRMA_KEY[label];
+        const buf = key && sig[key];
+        if (buf) {
+          try {
+            doc.image(buf, fx + 4, firmaY + 2, { fit: [fw - 8, 19], align: "center", valign: "center" });
+          } catch (e) { /* imagen inválida o corrupta: se deja la caja vacía */ }
+        }
         doc.fontSize(7).fillColor("#999").font("Helvetica")
           .text(label, fx, firmaY + 20, { width: fw, align: "center" });
       });
