@@ -134,7 +134,7 @@ function PatientRow({ s }) {
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
             {CENTER_LOGO[s.center] && (
               <img src={CENTER_LOGO[s.center]} alt="" onError={e => { e.currentTarget.style.display = "none"; }}
-                style={{ width:20, height:20, objectFit:"contain", opacity:0.35, flexShrink:0 }} />
+                style={{ width:20, height:20, objectFit:"contain", opacity:0.85, flexShrink:0, borderRadius:"50%" }} />
             )}
             <span style={{ fontSize:14, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
             <span style={{ fontSize:10, padding:"2px 8px", borderRadius:99, background:`${st.color}18`, color:st.color, border:`1px solid ${st.color}44` }}>{st.label}</span>
