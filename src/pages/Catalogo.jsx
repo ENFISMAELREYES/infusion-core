@@ -195,7 +195,7 @@ function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appoi
   };
 
   const handleConfirm = async (apptId, currentDate) => {
-    const orphan = (sessions||[]).some(s => s.date === currentDate && !s.schemeName);
+    const orphan = (sessions||[]).some(s => s.date === currentDate && !s.schemeName && s.sessionType !== "procedimiento");
     if (orphan) {
       if (!confirm("Hay una sesión completada este mismo día sin esquema asignado. Si solo confirmas (sin usar el botón 🔗 de abajo), esa sesión se quedará sin esquema/ciclo. ¿Confirmar de todas formas, sin vincular?")) return;
     }
@@ -209,7 +209,7 @@ function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appoi
     onRefresh();
   };
   const handleRemove = async (apptId, apptDate) => {
-    const orphan = (sessions||[]).some(s => s.date === apptDate && !s.schemeName);
+    const orphan = (sessions||[]).some(s => s.date === apptDate && !s.schemeName && s.sessionType !== "procedimiento");
     const msg = orphan
       ? "Hay una sesión completada este mismo día sin esquema asignado. Si eliminas esta cita sin vincularla (🔗), esa sesión se quedará sin esquema/ciclo permanentemente. ¿Eliminar de todas formas?"
       : "¿Quitar esta cita? (no se completó)";
@@ -345,7 +345,7 @@ const saveMeds = async (apptId, confirmAlso) => {
                         <>
                           {(() => {
                         const matchingSessions = (sessions||[]).filter(s => 
-                          s.date === a.date && !s.schemeName && a.status !== "confirmed"
+                          s.date === a.date && !s.schemeName && a.status !== "confirmed" && s.sessionType !== "procedimiento"
                         );
                         if (!canEdit || matchingSessions.length === 0) return null;
                         return matchingSessions.map(s => (
@@ -537,7 +537,7 @@ const handleDataEdit = async (patientName, draft) => {
   };
 
   const openSchemeFixModal = (patientName, patientSessionsList) => {
-    const orphans = patientSessionsList.filter(s => s.status === "completado" && !s.schemeName);
+    const orphans = patientSessionsList.filter(s => s.status === "completado" && !s.schemeName && s.sessionType !== "procedimiento");
     if (orphans.length === 0) return;
     setSchemeFixModal({ patientName, sessions: orphans });
     setFixPicks({});
@@ -575,7 +575,8 @@ const handleDataEdit = async (patientName, draft) => {
           const hasDups     = g.variants.length > 1;
           const patientSessions = (g.sessions||[]).sort((a,b) => (b.date||"").localeCompare(a.date||""));
           const patientCenter = patientSessions[0]?.center || (centerFilter !== "Todos" ? centerFilter : "CITIO");
-          const orphanCount = patientSessions.filter(s => s.status === "completado" && !s.schemeName).length;
+          const orphanCount = patientSessions.filter(s => s.status === "completado" && !s.schemeName && s.sessionType !== "procedimiento").length;
+          const hasSchemes = patientSchemes.some(ps => ps.patientName === g.canonical);
 
           return (
             <div key={i} style={{ background:"rgba(255,255,255,0.03)", border:`1px solid ${hasDups ? "rgba(255,179,71,0.25)" : "rgba(255,255,255,0.07)"}`, borderRadius:12, overflow:"hidden" }}>
@@ -603,7 +604,7 @@ const handleDataEdit = async (patientName, draft) => {
                     style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor: printing === g.canonical ? "wait" : "pointer", background:"rgba(0,51,159,0.1)", border:"1px solid rgba(0,51,159,0.3)", color:"#4f7fe0", opacity: printing === g.canonical ? 0.5 : 1 }}>
                     {printing === g.canonical ? "…" : "🖨️"}
                   </button>
-                  {orphanCount > 0 && canEdit && (
+                  {orphanCount > 0 && hasSchemes && canEdit && (
                     <button onClick={() => openSchemeFixModal(g.canonical, patientSessions)}
                       title={`${orphanCount} sesión(es) sin esquema vinculado`}
                       style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.12)", border:"1px solid rgba(255,179,71,0.35)", color:"#ffb347" }}>
