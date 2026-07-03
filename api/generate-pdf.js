@@ -12,7 +12,11 @@ const CENTER_LOGOS = {
     header: path.join(ASSETS_DIR, "logo-citio-header.png"),
     watermark: path.join(ASSETS_DIR, "logo-citio-watermark.png"),
   },
-  // CIPI: { header: path.join(ASSETS_DIR, "logo-cipi-header.png"), watermark: path.join(ASSETS_DIR, "logo-cipi-watermark.png") },
+  CIPI: {
+    headerLeft: path.join(ASSETS_DIR, "logo-cipi-header-left.png"),
+    headerRight: path.join(ASSETS_DIR, "logo-cipi-header-right.png"),
+    watermark: path.join(ASSETS_DIR, "logo-cipi-watermark.png"),
+  },
 };
 
 export const config = { api: { responseLimit: '10mb' } };
@@ -89,14 +93,25 @@ export default async function handler(req, res) {
     const centerKey = (center || "CITIO").toUpperCase();
     const logos = CENTER_LOGOS[centerKey] || {};
     const hasHeaderLogo = logos.header && fs.existsSync(logos.header);
+    const hasHeaderLeft = logos.headerLeft && fs.existsSync(logos.headerLeft);
+    const hasHeaderRight = logos.headerRight && fs.existsSync(logos.headerRight);
     const hasWatermarkLogo = logos.watermark && fs.existsSync(logos.watermark);
 
     const drawHeader = () => {
       // Línea superior
       doc.rect(45, 40, W, 3).fill(NAVY);
 
-      // Logo institucional del centro (fallback a texto si aún no está disponible, ej. CIPI)
-      if (hasHeaderLogo) {
+      // Logo institucional del centro. CITIO usa un solo logo a la izquierda;
+      // CIPI usa dos (izquierda y derecha). Si no hay logo, cae a texto.
+      if (hasHeaderLeft || hasHeaderRight) {
+        const logoH = 48;
+        if (hasHeaderLeft) doc.image(logos.headerLeft, 45, 44, { height: logoH });
+        if (hasHeaderRight) {
+          const img = doc.openImage(logos.headerRight);
+          const wR = logoH * (img.width / img.height);
+          doc.image(logos.headerRight, 45 + W - wR, 44, { height: logoH });
+        }
+      } else if (hasHeaderLogo) {
         doc.image(logos.header, 45, 44, { width: 90 });
       } else {
         doc.fontSize(14).fillColor(NAVY).font("Helvetica-Bold")
