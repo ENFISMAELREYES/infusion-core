@@ -529,22 +529,19 @@ function SessionCard({ session, token, onRefresh, user }) {
   // Sube las dos firmas capturadas a Firebase Storage, las vincula a la sesión
   // y solo entonces completa el evento de retiro (igual que recordEvent("retiro")).
   const confirmSignaturesAndRetiro = async () => {
-    if (!sigPaciente || !sigEnfermeria) {
-      alert("Faltan firmas: se necesitan la del paciente/familiar y la de enfermería.");
-      return;
-    }
     setSigning(true);
     try {
-      const [urlPaciente, urlEnfermeria] = await Promise.all([
-        uploadSignature(session.id, "paciente", sigPaciente),
-        uploadSignature(session.id, "enfermeria", sigEnfermeria),
-      ]);
-      const freshToken = await user.getIdToken(true);
-      await patchSession(freshToken, session.id, {
-        "signatures.paciente":   urlPaciente,
-        "signatures.enfermeria": urlEnfermeria,
-        "signatures.firmedAt":   new Date().toISOString(),
-      });
+      if (sigPaciente || sigEnfermeria) {
+        const [urlPaciente, urlEnfermeria] = await Promise.all([
+          sigPaciente ? uploadSignature(session.id, "paciente", sigPaciente) : Promise.resolve(null),
+          sigEnfermeria ? uploadSignature(session.id, "enfermeria", sigEnfermeria) : Promise.resolve(null),
+        ]);
+        const fields = { "signatures.firmedAt": new Date().toISOString() };
+        if (urlPaciente) fields["signatures.paciente"] = urlPaciente;
+        if (urlEnfermeria) fields["signatures.enfermeria"] = urlEnfermeria;
+        const freshToken = await user.getIdToken(true);
+        await patchSession(freshToken, session.id, fields);
+      }
       setShowSignModal(false);
       setSigPaciente(null);
       setSigEnfermeria(null);
@@ -847,11 +844,16 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                 style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: signing ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                 Cancelar
               </button>
-              <button onClick={confirmSignaturesAndRetiro} disabled={signing || !sigPaciente || !sigEnfermeria}
-                style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (signing || !sigPaciente || !sigEnfermeria) ? "not-allowed" : "pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: (signing || !sigPaciente || !sigEnfermeria) ? 0.5 : 1 }}>
-                {signing ? "Guardando…" : "✓ Confirmar retiro"}
+              <button onClick={confirmSignaturesAndRetiro} disabled={signing}
+                style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: signing ? "wait" : "pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: signing ? 0.5 : 1 }}>
+                {signing ? "Guardando…" : (sigPaciente && sigEnfermeria) ? "✓ Confirmar retiro" : "✓ Confirmar retiro sin firmar"}
               </button>
             </div>
+            {!(sigPaciente && sigEnfermeria) && (
+              <div style={{ fontSize:11, color:"#ffb347", textAlign:"center", marginTop:-8 }}>
+                Podrás registrar las firmas después desde Historial.
+              </div>
+            )}
           </div>
         </div>
       )}
