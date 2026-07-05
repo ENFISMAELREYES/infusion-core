@@ -85,6 +85,8 @@ const [editDraft, setEditDraft] = useState(null);
   const [sigPaciente, setSigPaciente]     = useState(null);
   const [sigEnfermeria, setSigEnfermeria] = useState(null);
   const [signing, setSigning]             = useState(false);
+  const [dupModal, setDupModal] = useState(null); // { date, cycle, number }
+  const [duping, setDuping]     = useState(false);
 
 const openEditor = () => {
     setEditDraft({
@@ -182,6 +184,79 @@ const saveEdit = async () => {
       alert("Error al guardar las firmas: " + e.message);
     } finally {
       setSigning(false);
+    }
+  };
+
+  // Nombre del campo de numeración según el tipo de sesión (igual que en saveEdit)
+  const numField = s.sessionType === "entrega" ? "deliveryNumber" : s.sessionType === "im" ? "imNumber" : s.sessionType === "sc" ? "scNumber" : s.sessionType === "procedimiento" ? "procedureNumber" : "infusionNumber";
+
+  const openDupModal = () => {
+    setDupModal({ date: s.date || "", cycle: s.cycle || "", number: String(s[numField] ?? "") });
+  };
+
+  // Botón temporal para captura retrospectiva: duplica la sesión completa como
+  // plantilla, pero obliga a confirmar/cambiar fecha, ciclo y número antes de
+  // guardar (el número normalmente se asigna solo al registrar ingreso real,
+  // así que aquí hay que evitar a mano que choque con uno ya existente).
+  const saveDuplicate = async () => {
+    const num = parseInt(dupModal.number);
+    if (!dupModal.date || !dupModal.cycle || !num) {
+      alert("Completa fecha, ciclo y número antes de guardar.");
+      return;
+    }
+    setDuping(true);
+    try {
+      // Verificar que el número no esté ya usado en este centro
+      const checkRes = await fetch(
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents:runQuery`,
+        { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ structuredQuery: {
+            from: [{ collectionId:"sessions" }],
+            where: { compositeFilter: { op:"AND", filters:[
+              { fieldFilter:{ field:{ fieldPath:"center" }, op:"EQUAL", value:{ stringValue: s.center||"" } } },
+              { fieldFilter:{ field:{ fieldPath:numField }, op:"EQUAL", value:{ integerValue:String(num) } } },
+            ]}},
+            limit: 1,
+          }})
+        }
+      );
+      const checkData = await checkRes.json();
+      if (checkData.some(d => d.document)) {
+        alert(`Ya existe una sesión de ${s.center} con ese número (${num}). Cambia el número antes de guardar.`);
+        setDuping(false);
+        return;
+      }
+
+      const toFV = (val) => {
+        if (typeof val === "string") return { stringValue: val };
+        if (typeof val === "boolean") return { booleanValue: val };
+        if (typeof val === "number") return { integerValue: String(val) };
+        if (val === null || val === undefined) return { nullValue: null };
+        if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
+        if (typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k,v]) => [k, toFV(v)])) } };
+        return { stringValue: String(val) };
+      };
+
+      const { id, ...rest } = s;
+      const data = {
+        ...rest,
+        date: dupModal.date,
+        cycle: dupModal.cycle,
+        [numField]: num,
+        createdAt: new Date().toISOString(),
+      };
+      const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toFV(v)]));
+      const res = await fetch(
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions`,
+        { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
+      );
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "Error al guardar"); }
+      setDupModal(null);
+      onRefresh();
+    } catch(e) {
+      alert("Error al duplicar: " + e.message);
+    } finally {
+      setDuping(false);
     }
   };
 
@@ -375,6 +450,12 @@ const saveEdit = async () => {
                 </button>
               )}
               {isJefe && (
+                <button onClick={e => { e.stopPropagation(); openDupModal(); }} title="Duplicar como plantilla (temporal, captura retrospectiva)"
+                  style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                  📋 Duplicar
+                </button>
+              )}
+              {isJefe && (
                 <button onClick={async e => {
                   e.stopPropagation();
                   if (!confirm(`¿Eliminar sesión de ${s.patientName} del ${s.date}?`)) return;
@@ -498,6 +579,47 @@ const saveEdit = async () => {
               <button onClick={e => { e.stopPropagation(); confirmRetroSignatures(); }} disabled={signing || !sigPaciente || !sigEnfermeria}
                 style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (signing || !sigPaciente || !sigEnfermeria) ? "not-allowed" : "pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: (signing || !sigPaciente || !sigEnfermeria) ? 0.5 : 1 }}>
                 {signing ? "Guardando…" : "✓ Guardar firmas"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dupModal && (
+        <div onClick={e => { e.stopPropagation(); !duping && setDupModal(null); }}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:400, display:"flex", flexDirection:"column", gap:14 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>📋 Duplicar como plantilla</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{s.patientName} — se copiarán medicamentos, diagnóstico, médico, etc. Confirma o cambia estos 3 campos antes de guardar:</div>
+            </div>
+
+            <div>
+              <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Fecha</label>
+              <input type="date" value={dupModal.date} onChange={e => setDupModal(d => ({ ...d, date:e.target.value }))}
+                style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 12px", color:"#f0f0f0", fontSize:13, outline:"none" }} />
+            </div>
+            <div>
+              <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Ciclo</label>
+              <input value={dupModal.cycle} onChange={e => setDupModal(d => ({ ...d, cycle:e.target.value }))}
+                style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 12px", color:"#f0f0f0", fontSize:13, outline:"none" }} />
+            </div>
+            <div>
+              <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Número ({numField})</label>
+              <input type="number" value={dupModal.number} onChange={e => setDupModal(d => ({ ...d, number:e.target.value }))}
+                style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 12px", color:"#f0f0f0", fontSize:13, outline:"none" }} />
+              <div style={{ fontSize:10, color:"#555", marginTop:3 }}>Se valida que no choque con otro ya usado en {s.center}.</div>
+            </div>
+
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setDupModal(null)} disabled={duping}
+                style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, cursor: duping ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                Cancelar
+              </button>
+              <button onClick={saveDuplicate} disabled={duping}
+                style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: duping ? "wait" : "pointer", background:"rgba(175,169,236,0.15)", border:"1px solid rgba(175,169,236,0.4)", color:"#AFA9EC", opacity: duping ? 0.5 : 1 }}>
+                {duping ? "Guardando…" : "✓ Guardar duplicado"}
               </button>
             </div>
           </div>
