@@ -214,7 +214,7 @@ function PatientRow({ s }) {
 
   {/* Tiempos programado vs real */}
   {s.meds && (() => {
-    const programado = s.meds.reduce((acc, m) => acc + (m.time || 0) + (m.wash?.time || 0), 0);
+    const programado = s.meds.reduce((acc, m) => acc + (m.time || 0) + (m.wash?.time || 0) + (m.wash2?.time || 0), 0);
     const me = s.medEvents || {};
     const pt = (t) => {
       if (!t) return null;
