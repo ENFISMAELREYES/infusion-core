@@ -95,23 +95,35 @@ const CATEGORIES = ["premedicacion","inmunoterapia","quimioterapia","adicional",
 const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", hidratacion:"Hidratación", domicilio:"Domicilio" };
 
 function calcWash(med, draft) {
-  if (draft.washNA) return { washNA: true };
-  const washTime     = draft.washTime !== undefined ? draft.washTime : (med.category === "premedicacion" ? 5 : 15);
-  const washSolution = draft.washSolution || (med.diluent?.includes("SG") ? "SG" : "SF");
-  let speed;
-  if (med.category === "premedicacion") {
-    speed = 60;
-  } else {
-    const volMatch = med.diluent?.match(/(\d+)/);
-    const vol      = volMatch ? parseInt(volMatch[1]) : null;
-    speed          = (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
+  const wash = draft.washNA ? { washNA: true } : (() => {
+    const washTime     = draft.washTime !== undefined ? draft.washTime : (med.category === "premedicacion" ? 5 : 15);
+    const washSolution = draft.washSolution || (med.diluent?.includes("SG") ? "SG" : "SF");
+    let speed;
+    if (med.category === "premedicacion") {
+      speed = 60;
+    } else {
+      const volMatch = med.diluent?.match(/(\d+)/);
+      const vol      = volMatch ? parseInt(volMatch[1]) : null;
+      speed          = (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
+    }
+    return { washTime, washSolution, washSpeed: speed };
+  })();
+
+  let wash2 = null;
+  if (draft.extraWash) {
+    wash2 = {
+      extraWash: true,
+      washTime2:     draft.wash2Time !== undefined ? draft.wash2Time : 15,
+      washSolution2: draft.wash2Solution || "SF",
+      washSpeed2:    null,
+    };
   }
-  return { washTime, washSolution, washSpeed: speed };
+  return { ...wash, ...wash2 };
 }
 
 function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
   const [open, setOpen]   = useState(isNew || false);
-  const [draft, setDraft] = useState({ diluent: "", time: "", order: "", general: "", washSolution: "", washTime: undefined, washNA: false });
+  const [draft, setDraft] = useState({ diluent: "", time: "", order: "", general: "", washSolution: "", washTime: undefined, washNA: false, extraWash: false, wash2Solution: "", wash2Time: undefined });
   const hasCorrection     = ["diluent", "time", "order", "general"].some(k => draft[k]?.trim());
   const cs                = CAT_COLOR[med.category] || CAT_COLOR.adicional;
 
@@ -223,6 +235,33 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew }) {
                     </div>
                   </div>
                 </div>
+
+                {!draft.washNA && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed rgba(79,195,247,0.2)" }}>
+                    <label style={{ display:"flex", alignItems:"center", gap:6, fontSize: 11, color: "#00d4aa", cursor:"pointer", marginBottom: draft.extraWash ? 10 : 0 }}>
+                      <input type="checkbox" checked={!!draft.extraWash} onChange={e => setDraft(d => ({ ...d, extraWash: e.target.checked }))} />
+                      + Lavado adicional (un segundo lavado después del primero)
+                    </label>
+                    {draft.extraWash && (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 10, color: "#666", letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Solución 2</label>
+                          <select value={draft.wash2Solution || "SF"} onChange={e => setDraft(d => ({ ...d, wash2Solution: e.target.value }))}
+                            style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 8, padding: "8px 10px", color: "#f0f0f0", fontSize: 12, outline: "none" }}>
+                            <option value="SF">SF</option>
+                            <option value="SG">SG</option>
+                            <option value="CS">CS</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 10, color: "#666", letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Tiempo 2 (min)</label>
+                          <input type="number" min="1" value={draft.wash2Time !== undefined ? draft.wash2Time : 15} onChange={e => setDraft(d => ({ ...d, wash2Time: parseInt(e.target.value) }))}
+                            style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 8, padding: "8px 10px", color: "#f0f0f0", fontSize: 12, outline: "none" }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -309,8 +348,8 @@ useEffect(() => { loadUnfinished(); }, [user]);
     } catch(e) { console.error(e); }
   };
 
-  const approveMed = (id, washData) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus: "approved", washTime: undefined, washSolution: undefined, washSpeed: undefined, washNA: false, ...washData } }));
-  const correctMed = (id, corr)     => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus: "corrected", correction: corr, washTime: corr.washTime, washSolution: corr.washSolution, washSpeed: corr.washSpeed, washNA: !!corr.washNA } }));
+  const approveMed = (id, washData) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus: "approved", washTime: undefined, washSolution: undefined, washSpeed: undefined, washNA: false, washTime2: undefined, washSolution2: undefined, washSpeed2: undefined, extraWash: false, ...washData } }));
+  const correctMed = (id, corr)     => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus: "corrected", correction: corr, washTime: corr.washTime, washSolution: corr.washSolution, washSpeed: corr.washSpeed, washNA: !!corr.washNA, washTime2: corr.washTime2, washSolution2: corr.washSolution2, washSpeed2: corr.washSpeed2, extraWash: !!corr.extraWash } }));
   const deleteMed  = (id)           => setMedStates(p => { const n = { ...p }; delete n[id]; return n; });
   const updateMed  = (id, key, val) => setMedStates(p => ({ ...p, [id]: { ...p[id], [key]: val } }));
 
@@ -354,7 +393,12 @@ useEffect(() => { loadUnfinished(); }, [user]);
           time:     m.washTime     ?? (m.category === "premedicacion" ? 5 : 15),
           solution: m.washSolution ?? (m.diluent?.includes("SG") ? "SG" : "SF"),
           speed:    m.washSpeed    ?? null,
-        }
+        },
+        wash2: m.extraWash ? {
+          time:     m.washTime2     ?? 15,
+          solution: m.washSolution2 ?? "SF",
+          speed:    m.washSpeed2    ?? null,
+        } : null,
       }));
       const updatedMeds = [...correctedMeds]
         .sort((a, b) => a.order - b.order)
