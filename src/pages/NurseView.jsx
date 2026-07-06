@@ -661,6 +661,13 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
   const canStartWash2 = (med) => med.wash ? !!washEvents[`wash_${med.id}`]?.fin : !!medEvents[`med_${med.id}`]?.fin;
   const statusColor  = !session.authorized?"#ffb347":!events.ingreso?"#888":events.retiro?"#4fc3f7":"#1D9E75";
 
+  // Resumen compacto: medicamento en curso (o el siguiente por iniciar) + el que sigue después de ese.
+  const timedMeds = (session.meds||[]).filter(m => m.time).sort((a,b) => a.order - b.order);
+  const inProgressMed = timedMeds.find(m => medEvents[`med_${m.id}`]?.inicio && !medEvents[`med_${m.id}`]?.fin);
+  const notStartedMed = timedMeds.find(m => !medEvents[`med_${m.id}`]?.inicio);
+  const currentMed = inProgressMed || notStartedMed;
+  const nextMed = currentMed ? timedMeds.find(m => m.order === currentMed.order + 1) : null;
+
   return (
     <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderLeft:`3px solid ${statusColor}`, borderRadius:16, overflow:"hidden", marginBottom:12 }}>
       <div onClick={() => setOpen(o=>!o)} style={{ padding:"16px 20px", cursor:"pointer", display:"flex", alignItems:"center", gap:14 }}>
@@ -680,6 +687,36 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
           </div>
         </div>
       )}
+
+      {events.ingreso && !events.retiro && session.sessionType !== "procedimiento" && currentMed && (() => {
+        const ev       = medEvents[`med_${currentMed.id}`] || {};
+        const started  = !!ev.inicio;
+        const ended    = !!ev.fin;
+        const canStart = canStartMed(currentMed);
+        const color    = CAT_COLOR[currentMed.category] || "#888";
+        return (
+          <div onClick={e => e.stopPropagation()} style={{ margin:"2px 20px 14px", padding:"11px 14px", borderRadius:12, background:"rgba(255,255,255,0.025)", border:`1px solid ${started?"rgba(29,158,117,0.25)":"rgba(255,255,255,0.08)"}`, borderLeft:`3px solid ${color}` }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+              <span style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>{started ? "En curso" : "Siguiente"}</span>
+              <span style={{ fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{currentMed.name} {currentMed.dose}</span>
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              {!started && <button onClick={() => recordMedEvent(currentMed.id,"inicio")} disabled={!canStart} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:canStart?"pointer":"not-allowed", background:canStart?"rgba(29,158,117,0.12)":"rgba(255,255,255,0.03)", border:`1px solid ${canStart?"rgba(29,158,117,0.3)":"rgba(255,255,255,0.06)"}`, color:canStart?"#1D9E75":"#444" }}>▶ Iniciar</button>}
+              {started && !ended && (
+                <>
+                  <div style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(29,158,117,0.07)", border:"1px solid rgba(29,158,117,0.18)", color:"#1D9E75" }}>
+                    ▶ {ev.inicio}<ElapsedTimer startTime={ev.inicio} />
+                  </div>
+                  <button onClick={() => recordMedEvent(currentMed.id,"fin")} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(79,195,247,0.12)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7" }}>■ Terminar</button>
+                </>
+              )}
+            </div>
+            {nextMed && (
+              <div style={{ fontSize:11, color:"#555", marginTop:8 }}>Siguiente: <span style={{ color:"#888" }}>{nextMed.name} {nextMed.dose}</span></div>
+            )}
+          </div>
+        );
+      })()}
 
       {open && (
         <div style={{ padding:"16px 20px", borderTop:"1px solid rgba(255,255,255,0.05)" }}>
