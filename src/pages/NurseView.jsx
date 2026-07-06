@@ -255,8 +255,8 @@ function EditMedForm({ med, onSave, onCancel }) {
         </div>
         <div><label style={labelStyle}>Medicamento</label><input value={draft.name} onChange={e => set("name",e.target.value)} style={inputStyle} /></div>
         <div><label style={labelStyle}>Dosis</label><input value={draft.dose} onChange={e => set("dose",e.target.value)} style={inputStyle} /></div>
-       {med.category !== "domicilio" && <div><label style={labelStyle}>Dilución</label><input required value={med.diluent} onChange={e => setMedField(med.id, "diluent", e.target.value)} placeholder="ej: 100 ml SF" style={inputStyle} /></div>}
-{med.category !== "domicilio" && <div><label style={labelStyle}>Tiempo (minutos)</label><input type="number" min="1" value={med.time} onChange={e => setMedField(med.id, "time", e.target.value)} placeholder="ej: 30" style={inputStyle} /></div>}
+       {med.category !== "domicilio" && <div><label style={labelStyle}>Dilución</label><input required value={draft.diluent} onChange={e => set("diluent",e.target.value)} placeholder="ej: 100 ml SF" style={inputStyle} /></div>}
+{med.category !== "domicilio" && <div><label style={labelStyle}>Tiempo (minutos)</label><input type="number" min="1" value={draft.time} onChange={e => set("time",e.target.value)} placeholder="ej: 30" style={inputStyle} /></div>}
       </div>
       <div style={{ display:"flex", gap:8, marginTop:12 }}>
         <button onClick={() => onSave({ ...draft, time:parseInt(draft.time)||0 })} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"linear-gradient(135deg,#EF9F27,#BA7517)", border:"none", color:"#000" }}>✓ Guardar cambios</button>
