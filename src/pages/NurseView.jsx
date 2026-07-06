@@ -163,9 +163,9 @@ function ElapsedTimer({ startTime }) {
   return <div style={{ fontSize:10, color:"#00d4aa", marginTop:2, fontFamily:"'IBM Plex Mono', monospace" }}>⏱ {elapsed}</div>;
 }
 
-function WashCard({ wash, washEvents, medId, onStart, onEnd, canStart }) {
+function WashCard({ wash, washEvents, medId, eventKey = "wash", label = "Lavado", onStart, onEnd, canStart }) {
   if (!wash) return null;
-  const ev      = washEvents?.[`wash_${medId}`] || {};
+  const ev      = washEvents?.[`${eventKey}_${medId}`] || {};
   const started = !!ev.inicio;
   const ended   = !!ev.fin;
   return (
@@ -173,17 +173,17 @@ function WashCard({ wash, washEvents, medId, onStart, onEnd, canStart }) {
       <div style={{ padding:"10px 14px", display:"flex", alignItems:"center", gap:10 }}>
         <span style={{ fontSize:16 }}>💧</span>
         <div style={{ flex:1 }}>
-          <div style={{ fontSize:12, color:"#4fc3f7", fontWeight:600 }}>Lavado — {wash.solution} · {wash.time} min · {wash.speed ? `${wash.speed} ml/hr` : "—"}</div>
-          <div style={{ fontSize:11, color:"#555", marginTop:1 }}>{ended?"Lavado completado":started?"Lavado en curso":"Iniciar lavado antes del siguiente medicamento"}</div>
+          <div style={{ fontSize:12, color:"#4fc3f7", fontWeight:600 }}>{label} — {wash.solution} · {wash.time} min · {wash.speed ? `${wash.speed} ml/hr` : "—"}</div>
+          <div style={{ fontSize:11, color:"#555", marginTop:1 }}>{ended?`${label} completado`:started?`${label} en curso`:`Iniciar ${label.toLowerCase()}`}</div>
         </div>
         <span style={{ fontSize:14 }}>{ended?"✓":started?"⏳":"○"}</span>
       </div>
       <div style={{ padding:"0 14px 10px", display:"flex", gap:8 }}>
-        {!started && <button onClick={onStart} disabled={!canStart} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:canStart?"pointer":"not-allowed", background:canStart?"rgba(79,195,247,0.12)":"rgba(255,255,255,0.03)", border:`1px solid ${canStart?"rgba(79,195,247,0.3)":"rgba(255,255,255,0.06)"}`, color:canStart?"#4fc3f7":"#444" }}>▶ Iniciar lavado</button>}
+        {!started && <button onClick={onStart} disabled={!canStart} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:canStart?"pointer":"not-allowed", background:canStart?"rgba(79,195,247,0.12)":"rgba(255,255,255,0.03)", border:`1px solid ${canStart?"rgba(79,195,247,0.3)":"rgba(255,255,255,0.06)"}`, color:canStart?"#4fc3f7":"#444" }}>▶ Iniciar {label.toLowerCase()}</button>}
         {started && !ended && (
           <>
             <div style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(79,195,247,0.07)", border:"1px solid rgba(79,195,247,0.18)", color:"#4fc3f7" }}>▶ {ev.inicio}</div>
-            <button onClick={onEnd} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.12)", border:"1px solid rgba(29,158,117,0.3)", color:"#1D9E75" }}>■ Terminar lavado</button>
+            <button onClick={onEnd} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.12)", border:"1px solid rgba(29,158,117,0.3)", color:"#1D9E75" }}>■ Terminar {label.toLowerCase()}</button>
           </>
         )}
         {ended && (
@@ -560,10 +560,10 @@ function SessionCard({ session, token, onRefresh, user }) {
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
-  const recordWashEvent = async (medId, key) => {
+  const recordWashEvent = async (medId, key, eventKey = "wash") => {
     try {
       const freshToken = await user.getIdToken(true);
-      await patchSession(freshToken, session.id, { [`washEvents.wash_${medId}.${key}`]: nowStr() });
+      await patchSession(freshToken, session.id, { [`washEvents.${eventKey}_${medId}.${key}`]: nowStr() });
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
@@ -614,7 +614,8 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
   const pct           = totalTimed ? Math.round((completedMeds/totalTimed)*100) : 0;
   const allWashDone = (session.meds||[]).every(m => 
     m.category === "domicilio" || session.sessionType === "entrega" || session.sessionType === "im" || session.sessionType === "sc"
-    || !m.wash?.time || !medEvents[`med_${m.id}`]?.fin || washEvents[`wash_${m.id}`]?.fin
+    || (!m.wash?.time || washEvents[`wash_${m.id}`]?.fin || !medEvents[`med_${m.id}`]?.fin)
+    && (!m.wash2?.time || washEvents[`wash2_${m.id}`]?.fin || !medEvents[`med_${m.id}`]?.fin)
   );
 
   const canStartMed = (med) => {
@@ -626,6 +627,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
     if (!med.parallelType || med.parallelType === "secuencial") {
       if (!prevEv.fin) return false;
       if (prev.wash?.time && !washEvents[`wash_${prev.id}`]?.fin) return false;
+      if (prev.wash2?.time && !washEvents[`wash2_${prev.id}`]?.fin) return false;
       return true;
     }
     if (med.parallelType === "junto") return !!prevEv.inicio;
@@ -656,6 +658,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
   };
 
   const canStartWash = (med) => !!medEvents[`med_${med.id}`]?.fin;
+  const canStartWash2 = (med) => med.wash ? !!washEvents[`wash_${med.id}`]?.fin : !!medEvents[`med_${med.id}`]?.fin;
   const statusColor  = !session.authorized?"#ffb347":!events.ingreso?"#888":events.retiro?"#4fc3f7":"#1D9E75";
 
   return (
@@ -801,6 +804,14 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                           onStart={() => recordWashEvent(med.id,"inicio")}
                           onEnd={()   => recordWashEvent(med.id,"fin")}
                           canStart={canStartWash(med)} />
+                      </div>
+                    )}
+                    {med.wash2 && med.category !== "domicilio" && (
+                      <div style={{ paddingLeft:16 }}>
+                        <WashCard wash={med.wash2} washEvents={washEvents} medId={med.id} eventKey="wash2" label="Lavado adicional"
+                          onStart={() => recordWashEvent(med.id,"inicio","wash2")}
+                          onEnd={()   => recordWashEvent(med.id,"fin","wash2")}
+                          canStart={canStartWash2(med)} />
                       </div>
                     )}
                   </div>
