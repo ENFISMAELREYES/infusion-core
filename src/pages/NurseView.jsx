@@ -666,7 +666,8 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
   const inProgressMed = timedMeds.find(m => medEvents[`med_${m.id}`]?.inicio && !medEvents[`med_${m.id}`]?.fin);
   const notStartedMed = timedMeds.find(m => !medEvents[`med_${m.id}`]?.inicio);
   const currentMed = inProgressMed || notStartedMed;
-  const nextMed = currentMed ? timedMeds.find(m => m.order === currentMed.order + 1) : null;
+  const currentMedIndex = currentMed ? timedMeds.findIndex(m => m.id === currentMed.id) : -1;
+  const nextMed = currentMedIndex >= 0 ? timedMeds[currentMedIndex + 1] : null;
 
   return (
     <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderLeft:`3px solid ${statusColor}`, borderRadius:16, overflow:"hidden", marginBottom:12 }}>
