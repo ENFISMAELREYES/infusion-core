@@ -669,6 +669,17 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
   const currentMedIndex = currentMed ? timedMeds.findIndex(m => m.id === currentMed.id) : -1;
   const nextMed = currentMedIndex >= 0 ? timedMeds[currentMedIndex + 1] : null;
 
+  // Medicamento ya aplicado cuyo lavado (o lavado adicional) todavía no se ha
+  // iniciado/terminado — bloquea el siguiente, así que debe poder atenderse
+  // sin tener que expandir la tarjeta.
+  const pendingWashMed = timedMeds.find(m => {
+    const done = medEvents[`med_${m.id}`]?.fin;
+    if (!done) return false;
+    const wash1Pending = m.wash?.time && !washEvents[`wash_${m.id}`]?.fin;
+    const wash2Pending = m.wash2?.time && !washEvents[`wash2_${m.id}`]?.fin;
+    return wash1Pending || wash2Pending;
+  });
+
   return (
     <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderLeft:`3px solid ${statusColor}`, borderRadius:16, overflow:"hidden", marginBottom:12 }}>
       <div onClick={() => setOpen(o=>!o)} style={{ padding:"16px 20px", cursor:"pointer", display:"flex", alignItems:"center", gap:14 }}>
@@ -686,6 +697,23 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
           <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:99, height:3, overflow:"hidden" }}>
             <div style={{ height:"100%", width:`${pct}%`, background:"#1D9E75", borderRadius:99 }} />
           </div>
+        </div>
+      )}
+
+      {events.ingreso && !events.retiro && session.sessionType !== "procedimiento" && pendingWashMed && (
+        <div onClick={e => e.stopPropagation()} style={{ margin:"2px 20px 8px" }}>
+          {pendingWashMed.wash?.time && !washEvents[`wash_${pendingWashMed.id}`]?.fin && (
+            <WashCard wash={pendingWashMed.wash} washEvents={washEvents} medId={pendingWashMed.id}
+              onStart={() => recordWashEvent(pendingWashMed.id,"inicio")}
+              onEnd={()   => recordWashEvent(pendingWashMed.id,"fin")}
+              canStart={canStartWash(pendingWashMed)} />
+          )}
+          {pendingWashMed.wash2?.time && !washEvents[`wash2_${pendingWashMed.id}`]?.fin && (!pendingWashMed.wash?.time || washEvents[`wash_${pendingWashMed.id}`]?.fin) && (
+            <WashCard wash={pendingWashMed.wash2} washEvents={washEvents} medId={pendingWashMed.id} eventKey="wash2" label="Lavado adicional"
+              onStart={() => recordWashEvent(pendingWashMed.id,"inicio","wash2")}
+              onEnd={()   => recordWashEvent(pendingWashMed.id,"fin","wash2")}
+              canStart={canStartWash2(pendingWashMed)} />
+          )}
         </div>
       )}
 
