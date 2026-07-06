@@ -193,6 +193,49 @@ function CalcBSA() {
   );
 }
 
+function CalcVelocidad() {
+  const [volumen, setVolumen] = useState("");
+  const [tiempo, setTiempo]   = useState("");
+  const [factor, setFactor]   = useState("20");
+  const [result, setResult]   = useState(null);
+
+  const calcular = () => {
+    const v = parseFloat(volumen);
+    const t = parseFloat(tiempo);
+    const f = parseFloat(factor);
+    if (!v || !t || t === 0) return;
+    const mlHora   = ((v / t) * 60).toFixed(1);
+    const gotasMin = ((v * f) / t).toFixed(1);
+    setResult({ mlHora, gotasMin });
+  };
+
+  return (
+    <CalcCard title="💧 Velocidad de infusión">
+      <Field label="Volumen a infundir (ml)" value={volumen} onChange={setVolumen} placeholder="ej: 250" />
+      <Field label="Tiempo de infusión (minutos)" value={tiempo} onChange={setTiempo} placeholder="ej: 60" />
+      <div style={{ marginBottom:12 }}>
+        <label style={{ fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 }}>Factor de goteo (gotas/ml)</label>
+        <select value={factor} onChange={e => setFactor(e.target.value)}
+          style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"10px 13px", color:"#f0f0f0", fontSize:14, outline:"none" }}>
+          <option value="10">10 (macrogotero)</option>
+          <option value="15">15 (macrogotero)</option>
+          <option value="20">20 (macrogotero, estándar)</option>
+          <option value="60">60 (microgotero)</option>
+        </select>
+      </div>
+      <button onClick={calcular} style={{ width:"100%", padding:"11px", borderRadius:10, fontSize:14, fontWeight:700, cursor:"pointer", background:"linear-gradient(135deg,#00d4aa,#0099ff)", border:"none", color:"#000", marginTop:4 }}>
+        Calcular
+      </button>
+      {result && (
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:12 }}>
+          <Result label="Velocidad" value={result.mlHora} unit="ml/h" />
+          <Result label="Goteo" value={result.gotasMin} unit="gotas/min" color="#4fc3f7" />
+        </div>
+      )}
+    </CalcCard>
+  );
+}
+
 export default function Calculadoras() {
   return (
     <div style={{ padding:"24px 28px", maxWidth:720, margin:"0 auto" }}>
@@ -201,6 +244,7 @@ export default function Calculadoras() {
         <p style={{ fontSize:13, color:"#555" }}>Herramientas de cálculo para infusiones</p>
       </div>
       <CalcDosis />
+      <CalcVelocidad />
       <CalcRangoConc />
       <CalcConcentracion />
       <CalcDosisKg />
