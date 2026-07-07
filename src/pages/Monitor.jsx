@@ -331,7 +331,7 @@ function PatientRow({ s }) {
 export default function Monitor() {
   const { user } = useAuth();
   const [sessions, setSessions] = useState([]);
-  const [clock, setClock] = useState(new Date().toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", second:"2-digit" }));
+  const [clock, setClock] = useState(new Date().toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false }));
   const [filter, setFilter] = useState("Todos");
   const today = getToday();
 
@@ -351,7 +351,7 @@ export default function Monitor() {
   }, [user]);
 
   useEffect(() => {
-    const id = setInterval(() => setClock(new Date().toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", second:"2-digit" })), 1000);
+    const id = setInterval(() => setClock(new Date().toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false })), 1000);
     return () => clearInterval(id);
   }, []);
 
