@@ -303,8 +303,8 @@ const saveEdit = async () => {
   {(() => {
     const TYPE = {
       iv:            { label:"Infusión IV",   color:"#4fc3f7" },
-      intramuscular: { label:"IM",            color:"#AFA9EC" },
-      subcutaneo:    { label:"SC",            color:"#5DCAA5" },
+      im:            { label:"IM",            color:"#AFA9EC" },
+      sc:            { label:"SC",            color:"#5DCAA5" },
       entrega:       { label:"Entrega",       color:"#82C4F8" },
       procedimiento: { label:"Procedimiento", color:"#FAC775" },
     };
