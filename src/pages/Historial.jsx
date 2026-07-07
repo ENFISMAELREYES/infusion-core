@@ -496,11 +496,17 @@ const saveEdit = async () => {
 
               {/* Datos generales */}
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:12 }}>
-              {[["Fecha","date","date"],["Ciclo","cycle","text"],["Médico","physician","text"],["Diagnóstico","diagnosis","text"],["Esquema","schemeName","text"],["# Global","infusionNumber","number"],["No. Expediente","expedienteNumber","number"],["Ingreso","ingreso","time"],["Retiro","retiro","time"]].map(([label,field,type]) => (
+              {[["Fecha","date","date"],["Ciclo","cycle","text"],["Médico","physician","text"],["Diagnóstico","diagnosis","text"],["Esquema","schemeName","text"],["# Global","infusionNumber","number"],["No. Expediente","expedienteNumber","number"],["Ingreso","ingreso","time24"],["Retiro","retiro","time24"]].map(([label,field,type]) => (
                   <div key={field}>
                     <label style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:4 }}>{label}</label>
-                    <input type={type} value={editDraft[field]} onChange={e => setEditDraft(d => ({...d,[field]:e.target.value}))}
-                      style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                    {type === "time24" ? (
+                      <input type="text" inputMode="numeric" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]"
+                        value={editDraft[field]} onChange={e => setEditDraft(d => ({...d,[field]:e.target.value}))}
+                        style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none", fontFamily:"'IBM Plex Mono', monospace" }} />
+                    ) : (
+                      <input type={type} value={editDraft[field]} onChange={e => setEditDraft(d => ({...d,[field]:e.target.value}))}
+                        style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                    )}
                   </div>
                 ))}
               </div>
