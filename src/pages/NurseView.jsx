@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
-import { computeSessionMaterial, MASTER_CATALOG } from "../data/materialCatalog";
+import { computeSessionMaterial, computeMedicationPieces, MASTER_CATALOG } from "../data/materialCatalog";
 
 const PROJECT_ID = "infusion-core";
 const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
@@ -967,6 +967,9 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
 
       {showMaterialModal && (() => {
         const preview = computeSessionMaterial({ ...session, catheterType, catheterGauge });
+        const medPieces = (session.meds || [])
+          .map(m => ({ name: m.name, dose: m.dose, calc: computeMedicationPieces(m.name, m.dose) }))
+          .filter(p => p.calc);
         // Combinar defaults + extras, respetando lo excluido, en una sola lista consolidada
         const combined = {};
         preview.items.forEach(({ item, qty }) => {
@@ -1026,6 +1029,25 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
               {preview.unmatched.length > 0 && (
                 <div style={{ padding:"8px 12px", borderRadius:8, background:"rgba(255,179,71,0.08)", border:"1px solid rgba(255,179,71,0.25)", fontSize:11, color:"#ffb347" }}>
                   ⚠️ No se encontró material por defecto para: {preview.unmatched.join(", ")}. Agrégalo manualmente abajo si hace falta.
+                </div>
+              )}
+
+              {medPieces.length > 0 && (
+                <div>
+                  <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Piezas de medicamento (frascos/ampolletas según dosis)</label>
+                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                    {medPieces.map((p, i) => (
+                      <div key={i} style={{ padding:"8px 10px", borderRadius:8, background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.15)" }}>
+                        <div style={{ fontSize:11, color:"#ccc", marginBottom:4 }}>{p.name} — dosis {p.dose}</div>
+                        {p.calc.pieces.map((pc, pi) => (
+                          <div key={pi} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#00d4aa", padding:"1px 0" }}>
+                            <span>{pc.item}</span><span>× {pc.count}</span>
+                          </div>
+                        ))}
+                        {p.calc.waste > 0 && <div style={{ fontSize:10, color:"#666", marginTop:2 }}>Sobrante: {p.calc.waste} mg (se desecha)</div>}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
