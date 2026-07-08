@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { computeSessionMaterial, MASTER_CATALOG, MATERIAL_DEFAULTS } from "../data/materialCatalog";
+import { computeSessionMaterial, MASTER_CATALOG, MATERIAL_DEFAULTS, PUNCION_DEFAULTS } from "../data/materialCatalog";
 
 const PROJECT_ID = "infusion-core";
 
@@ -93,6 +93,9 @@ export default function Insumos() {
   const [draftItem, setDraftItem] = useState("");
   const [draftQty, setDraftQty] = useState("1");
   const [savingMed, setSavingMed] = useState(false);
+  const [expandedMed, setExpandedMed] = useState(null);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogCategoryFilter, setCatalogCategoryFilter] = useState("Todos");
 
   useEffect(() => { user.getIdToken().then(setToken); }, [user]);
   useEffect(() => { if (token) load(); }, [token]);
@@ -317,19 +320,126 @@ export default function Insumos() {
           )}
 
           <div>
-            <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>Medicamentos con material definido</div>
-            <div style={{ fontSize:11, color:"#555", marginBottom:8 }}>De fábrica ({Object.keys(MATERIAL_DEFAULTS).length}): {Object.keys(MATERIAL_DEFAULTS).join(", ")}</div>
-            {Object.keys(overrides.extraDefaults).length > 0 && (
-              <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-                <div style={{ fontSize:11, color:"#AFA9EC" }}>Agregados por ti:</div>
-                {Object.entries(overrides.extraDefaults).map(([key, entry]) => (
-                  <div key={key} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", borderRadius:7, background:"rgba(175,169,236,0.06)", fontSize:11 }}>
-                    <span style={{ flex:1, color:"#ccc" }}>{key} — {(entry.insumos||[]).length + (entry.soluciones||[]).length} artículos</span>
-                    {isJefe && <button onClick={() => removeMedDefault(key)} style={{ padding:"2px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>}
+            <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>
+              Catálogo maestro ({MASTER_CATALOG.length + overrides.extraCatalog.length} artículos)
+            </div>
+            <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+              <input value={catalogSearch} onChange={e => setCatalogSearch(e.target.value)} placeholder="Buscar artículo..." style={inputStyle} />
+              <select value={catalogCategoryFilter} onChange={e => setCatalogCategoryFilter(e.target.value)} style={{ ...inputStyle, flex:"0 0 160px" }}>
+                <option>Todos</option><option>Insumos</option><option>Medicamentos</option><option>Oncológicos</option><option>Inmunoterapia</option>
+              </select>
+            </div>
+            {(() => {
+              const all = [...MASTER_CATALOG, ...overrides.extraCatalog];
+              const term = catalogSearch.trim().toUpperCase();
+              const shown = all
+                .filter(c => catalogCategoryFilter === "Todos" || c.category === catalogCategoryFilter)
+                .filter(c => !term || c.item.toUpperCase().includes(term))
+                .slice(0, 100);
+              return (
+                <div style={{ maxHeight:260, overflowY:"auto", display:"flex", flexDirection:"column", gap:3, padding:"4px 0" }}>
+                  {shown.map((c,i) => (
+                    <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 10px", borderRadius:6, background:"rgba(255,255,255,0.02)", fontSize:11 }}>
+                      <span style={{ color:"#555", flexShrink:0, width:90 }}>{c.category}</span>
+                      <span style={{ flex:1, color:"#ccc" }}>{c.item}</span>
+                    </div>
+                  ))}
+                  {shown.length === 0 && <div style={{ fontSize:11, color:"#444", padding:10 }}>Sin resultados.</div>}
+                  {(term || catalogCategoryFilter !== "Todos") && shown.length === 100 && (
+                    <div style={{ fontSize:10, color:"#444", padding:"4px 10px" }}>Mostrando los primeros 100 — afina la búsqueda para ver más específico.</div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          <div>
+            <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>
+              Medicamentos con material definido ({Object.keys(MATERIAL_DEFAULTS).length + Object.keys(overrides.extraDefaults).length})
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+              {[
+                ...Object.keys(MATERIAL_DEFAULTS).map(key => ({ key, entry: MATERIAL_DEFAULTS[key], factory:true })),
+                ...Object.entries(overrides.extraDefaults).map(([key, entry]) => ({ key, entry, factory:false })),
+              ].sort((a,b) => a.key.localeCompare(b.key)).map(({ key, entry, factory }) => (
+                <div key={key} style={{ borderRadius:8, background: factory ? "rgba(255,255,255,0.03)" : "rgba(175,169,236,0.06)", overflow:"hidden" }}>
+                  <div onClick={() => setExpandedMed(m => m===key ? null : key)} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", cursor:"pointer" }}>
+                    {!factory && <span style={{ fontSize:9, color:"#AFA9EC", background:"rgba(175,169,236,0.15)", padding:"1px 6px", borderRadius:99 }}>TUYO</span>}
+                    <span style={{ flex:1, fontSize:12, color:"#ccc" }}>{key}</span>
+                    <span style={{ fontSize:10, color:"#555" }}>{(entry.insumos||[]).length + (entry.soluciones||[]).length} art.</span>
+                    {!factory && isJefe && (
+                      <button onClick={e => { e.stopPropagation(); removeMedDefault(key); }} style={{ padding:"2px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
+                    )}
+                    <span style={{ color:"#555", fontSize:10 }}>{expandedMed===key ? "▲" : "▼"}</span>
                   </div>
-                ))}
-              </div>
-            )}
+                  {expandedMed===key && (
+                    <div style={{ padding:"0 10px 10px 10px" }}>
+                      {(entry.insumos||[]).length > 0 && (
+                        <>
+                          <div style={{ fontSize:9, color:"#666", marginTop:4 }}>INSUMOS</div>
+                          {entry.insumos.map((r,i) => (
+                            <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#aaa", padding:"2px 0" }}>
+                              <span>{r.item}</span><span>{r.qty}</span>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                      {(entry.soluciones||[]).length > 0 && (
+                        <>
+                          <div style={{ fontSize:9, color:"#666", marginTop:6 }}>SOLUCIONES</div>
+                          {entry.soluciones.map((r,i) => (
+                            <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#4fc3f7", padding:"2px 0" }}>
+                              <span>{r.item}</span><span>{r.qty}</span>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>Material de punción (acceso venoso)</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+              {Object.entries(PUNCION_DEFAULTS).map(([key, entry]) => (
+                <div key={key} style={{ borderRadius:8, background:"rgba(255,255,255,0.03)", overflow:"hidden" }}>
+                  <div onClick={() => setExpandedMed(m => m===`punc_${key}` ? null : `punc_${key}`)} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", cursor:"pointer" }}>
+                    <span style={{ flex:1, fontSize:12, color:"#ccc", textTransform:"capitalize" }}>{key}</span>
+                    <span style={{ fontSize:10, color:"#555" }}>{(entry.insumos||[]).length + (entry.soluciones||[]).length + (entry.alternativas||[]).length} art.</span>
+                    <span style={{ color:"#555", fontSize:10 }}>{expandedMed===`punc_${key}` ? "▲" : "▼"}</span>
+                  </div>
+                  {expandedMed===`punc_${key}` && (
+                    <div style={{ padding:"0 10px 10px 10px" }}>
+                      <div style={{ fontSize:9, color:"#666", marginTop:4 }}>INSUMOS</div>
+                      {(entry.insumos||[]).map((r,i) => (
+                        <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#aaa", padding:"2px 0" }}>
+                          <span>{r.item}</span><span>{r.qty}</span>
+                        </div>
+                      ))}
+                      {(entry.alternativas||[]).map((alt,ai) => (
+                        <div key={ai}>
+                          <div style={{ fontSize:9, color:"#ffb347", marginTop:6 }}>{alt.label.toUpperCase()} (elegible)</div>
+                          {alt.options.map((o,oi) => (
+                            <div key={oi} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#ffb347", padding:"2px 0" }}>
+                              <span>{o.item}</span><span>{o.qty}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                      <div style={{ fontSize:9, color:"#666", marginTop:6 }}>SOLUCIONES</div>
+                      {(entry.soluciones||[]).map((r,i) => (
+                        <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#4fc3f7", padding:"2px 0" }}>
+                          <span>{r.item}</span><span>{r.qty}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
