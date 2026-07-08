@@ -1528,33 +1528,19 @@ export const PUNCION_DEFAULTS = {
   },
   "periferico": {
     "insumos": [
+      { "item": "GASA ESTERIL 10x10 CM", "qty": 1 },
+      { "item": "TOALLITAS DE ALCOHOL INDIVIDUALES PROTEC", "qty": 4 },
+      { "item": "BANDAS ADHESIVAS CIRCULARES 22MM.", "qty": 1 },
+      { "item": "GUANTE DE LATEX CHICOS ESTERIL", "qty": 2 },
+      { "item": "APOSITO TRANSPARENTE TEGADERM-FILM ESTERIL 10CM X 12CM.", "qty": 1 }
+    ],
+    "alternativas": [
       {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 1
-      },
-      {
-        "item": "CATETER INTRAVENOSO PERIFERICO  22G SURFLASH",
-        "qty": 2
-      },
-      {
-        "item": "CATETER INTRAVENOSO PERIFERICO  24G  SURFLASH",
-        "qty": 2
-      },
-      {
-        "item": "TOALLITAS DE ALCOHOL INDIVIDUALES PROTEC",
-        "qty": 4
-      },
-      {
-        "item": "BANDAS ADHESIVAS CIRCULARES 22MM.",
-        "qty": 1
-      },
-      {
-        "item": "GUANTE DE LATEX CHICOS ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "APOSITO TRANSPARENTE TEGADERM-FILM ESTERIL 10CM X 12CM.",
-        "qty": 1
+        "label": "Calibre del catéter",
+        "options": [
+          { "item": "CATETER INTRAVENOSO PERIFERICO 22G SURFLASH", "qty": 2 },
+          { "item": "CATETER INTRAVENOSO PERIFERICO 24G SURFLASH", "qty": 2 }
+        ]
       }
     ],
     "soluciones": [
@@ -2341,40 +2327,86 @@ function normalize(s) {
 // las sesiones se capturan como texto libre (no de un catálogo fijo), así que
 // se intenta primero coincidencia exacta y luego que el nombre contenga o esté
 // contenido en alguna de las claves conocidas.
-export function matchMedication(medName) {
+export function matchMedication(medName, extraDefaults = {}) {
+  const allDefaults = { ...MATERIAL_DEFAULTS, ...extraDefaults };
   const norm = normalize(medName);
   if (!norm) return null;
-  if (MATERIAL_DEFAULTS[norm]) return norm;
-  const keys = Object.keys(MATERIAL_DEFAULTS);
+  if (allDefaults[norm]) return norm;
+  const keys = Object.keys(allDefaults);
   return keys.find(k => norm.includes(k) || k.includes(norm)) || null;
 }
 
-// Consolida el material de todos los medicamentos de una sesión + el material
-// de punción según el tipo de acceso usado (session.catheterType: "periferico" | "puerto").
-// Devuelve { items: [{item, qty, source}], unmatched: [nombresDeMedNoEncontrados] }
-export function computeSessionMaterial(session) {
-  const combined = {}; // item -> qty
-  const unmatched = [];
+// Extrae volumen y tipo (SF/SG) de un texto de dilución libre, ej. "250 ML SF" o "100 ML SG5%"
+function parseDiluent(diluent) {
+  if (!diluent) return null;
+  const volMatch = diluent.match(/(\d+)\s*ML/i);
+  const vol = volMatch ? parseInt(volMatch[1]) : null;
+  const isSG = /SG/i.test(diluent);
+  const isSF = /SF/i.test(diluent);
+  if (!vol || (!isSG && !isSF)) return null;
+  return { vol, type: isSG ? "SG" : "SF" };
+}
 
+// Busca en el catálogo maestro la presentación de solución que coincide con el
+// volumen y tipo detectados en la dilución real capturada en la sesión.
+function solutionItemFor(vol, type) {
+  const wanted = type === "SG" ? "GLUCOSA 5%" : "CLORURO DE SODIO 0.9%";
+  const re = new RegExp(`${wanted}\\s+${vol}\\s*ML\\b`, "i");
+  return MASTER_CATALOG.find(c => re.test(c.item));
+}
+
+// Consolida el material de todos los medicamentos de una sesión + el material
+// de punción según el tipo de acceso usado (session.catheterType: "periferico" | "puerto")
+// y el calibre elegido (session.catheterGauge, cuando el tipo tiene alternativas).
+// Las soluciones (cloruro/glucosa) se calculan según la dilución REAL capturada
+// en cada medicamento cuando es posible — lo del catálogo son solo probables.
+// Devuelve { items: [{item, qty}], unmatched: [...], pendingAlternatives: [...] }
+export function computeSessionMaterial(session, overrides = {}) {
+  const { extraDefaults = {}, extraCatalog = [] } = overrides;
+  const allDefaults = { ...MATERIAL_DEFAULTS, ...extraDefaults };
+  const allCatalog = [...MASTER_CATALOG, ...extraCatalog];
+  const combined = {};
+  const unmatched = [];
   const add = (item, qty) => { combined[item] = (combined[item] || 0) + qty; };
+
+  const findSolution = (vol, type) => {
+    const wanted = type === "SG" ? "GLUCOSA 5%" : "CLORURO DE SODIO 0.9%";
+    const re = new RegExp(`${wanted}\\s+${vol}\\s*ML\\b`, "i");
+    return allCatalog.find(c => re.test(c.item));
+  };
 
   (session.meds || []).forEach(m => {
     if (!m.name) return;
-    const key = matchMedication(m.name);
+    const norm = normalize(m.name);
+    const key = allDefaults[norm] ? norm : Object.keys(allDefaults).find(k => norm.includes(k) || k.includes(norm));
     if (!key) { unmatched.push(m.name); return; }
-    const entry = MATERIAL_DEFAULTS[key];
+    const entry = allDefaults[key];
     entry.insumos.forEach(({ item, qty }) => add(item, qty));
-    entry.soluciones.forEach(({ item, qty }) => add(item, qty));
+
+    const parsed = parseDiluent(m.diluent);
+    const solItem = parsed && findSolution(parsed.vol, parsed.type);
+    if (solItem) {
+      add(solItem.item, 1);
+    } else {
+      entry.soluciones.forEach(({ item, qty }) => add(item, qty));
+    }
   });
 
+  const pendingAlternatives = [];
   if (session.catheterType && PUNCION_DEFAULTS[session.catheterType]) {
     const p = PUNCION_DEFAULTS[session.catheterType];
     p.insumos.forEach(({ item, qty }) => add(item, qty));
     p.soluciones.forEach(({ item, qty }) => add(item, qty));
+    (p.alternativas || []).forEach(alt => {
+      const chosen = alt.options.find(o => o.item === session.catheterGauge);
+      if (chosen) add(chosen.item, chosen.qty);
+      else pendingAlternatives.push(alt);
+    });
   }
 
   return {
     items: Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item)),
     unmatched,
+    pendingAlternatives,
   };
 }
