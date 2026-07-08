@@ -9,6 +9,7 @@ const NAV = {
     { to:"/historial", icon:"◷", label:"Historial"  },
     { to:"/catalogo",  icon:"◈", label:"Catálogo"  },
     { to:"/agenda", icon:"📅", label:"Agenda" },
+    { to:"/insumos", icon:"🧰", label:"Insumos" },
     { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
     { to:"/reportes", icon:"📊", label:"Reportes" },
   ],
@@ -18,6 +19,7 @@ const NAV = {
     { to:"/historial", icon:"◷", label:"Historial"  },
     { to:"/agenda",    icon:"📅", label:"Agenda"     },
     { to:"/catalogo",  icon:"◈", label:"Catálogo"  },
+    { to:"/insumos", icon:"🧰", label:"Insumos" },
     { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
   ],
   visualizador: [
