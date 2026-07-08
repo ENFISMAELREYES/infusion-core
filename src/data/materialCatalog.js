@@ -2355,7 +2355,70 @@ function solutionItemFor(vol, type) {
   return MASTER_CATALOG.find(c => re.test(c.item));
 }
 
-// Consolida el material de todos los medicamentos de una sesión + el material
+// Extrae el contenido en mg de una presentación del catálogo, ej.
+// "CARBOPLATINO 150 MG/ 15 ML SOL. INY." -> 150 ; "GEMCITABINA 1 GR. SOL. INY." -> 1000
+function parsePresentationMg(itemName) {
+  const gr = itemName.match(/(\d+(?:\.\d+)?)\s*GR\.?/i);
+  if (gr) return parseFloat(gr[1]) * 1000;
+  const mg = itemName.match(/(\d+(?:\.\d+)?)\s*MG/i);
+  if (mg) return parseFloat(mg[1]);
+  const mcg = itemName.match(/(\d+(?:\.\d+)?)\s*MCG/i);
+  if (mcg) return parseFloat(mcg[1]) / 1000;
+  return null;
+}
+
+// Extrae el valor numérico en mg de la dosis prescrita, ej. "150 MG" -> 150, "1 GR" -> 1000
+function parseDoseMg(doseStr) {
+  if (!doseStr) return null;
+  const gr = doseStr.match(/(\d+(?:\.\d+)?)\s*GR/i);
+  if (gr) return parseFloat(gr[1]) * 1000;
+  const mg = doseStr.match(/(\d+(?:\.\d+)?)/);
+  return mg ? parseFloat(mg[1]) : null;
+}
+
+// Calcula cuántas piezas/frascos de cada presentación disponible se necesitan
+// para cubrir la dosis prescrita de un medicamento (usa las presentaciones más
+// grandes primero para minimizar el número de piezas abiertas).
+// Devuelve { doseMg, pieces: [{item, mg, count}], totalMg, waste } o null si no se pudo calcular.
+export function computeMedicationPieces(medName, doseStr, extraCatalog = [], extraDefaults = {}) {
+  const doseMg = parseDoseMg(doseStr);
+  if (!doseMg) return null;
+
+  const norm = normalize(medName);
+  const key = matchMedication(medName, extraDefaults);
+  const searchTerm = key || norm.split(" ")[0];
+  const allCatalog = [...MASTER_CATALOG, ...extraCatalog];
+  const candidates = allCatalog
+    .filter(c => ["Oncológicos", "Inmunoterapia", "Medicamentos"].includes(c.category))
+    .map(c => ({ item: c.item, mg: parsePresentationMg(c.item) }))
+    .filter(c => c.mg && normalize(c.item).startsWith(searchTerm));
+
+  if (candidates.length === 0) return null;
+
+  // Deduplicar por mg (si hay presentaciones repetidas con el mismo contenido)
+  const uniqueByMg = [];
+  const seenMg = new Set();
+  candidates.forEach(c => { if (!seenMg.has(c.mg)) { seenMg.add(c.mg); uniqueByMg.push(c); } });
+  uniqueByMg.sort((a,b) => b.mg - a.mg); // más grande primero
+
+  let remaining = doseMg;
+  const pieces = [];
+  uniqueByMg.forEach(c => {
+    if (remaining <= 0) return;
+    const count = Math.floor(remaining / c.mg);
+    if (count > 0) { pieces.push({ item: c.item, mg: c.mg, count }); remaining -= count * c.mg; }
+  });
+  // Lo que sobre (menor a la presentación más chica disponible) se cubre con una pieza más de la más chica
+  if (remaining > 0.01) {
+    const smallest = uniqueByMg[uniqueByMg.length - 1];
+    const existing = pieces.find(p => p.item === smallest.item);
+    if (existing) existing.count += 1; else pieces.push({ item: smallest.item, mg: smallest.mg, count: 1 });
+    remaining -= smallest.mg;
+  }
+
+  const totalMg = pieces.reduce((acc, p) => acc + p.mg * p.count, 0);
+  return { doseMg, pieces, totalMg, waste: totalMg - doseMg };
+}
 // de punción según el tipo de acceso usado (session.catheterType: "periferico" | "puerto")
 // y el calibre elegido (session.catheterGauge, cuando el tipo tiene alternativas).
 // Las soluciones (cloruro/glucosa) se calculan según la dilución REAL capturada
