@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { computeSessionMaterial, MASTER_CATALOG, MATERIAL_DEFAULTS, PUNCION_DEFAULTS } from "../data/materialCatalog";
+import { computeSessionMaterial, computeMedicationPieces, MASTER_CATALOG, MATERIAL_DEFAULTS, PUNCION_DEFAULTS } from "../data/materialCatalog";
 
 const PROJECT_ID = "infusion-core";
 
@@ -113,11 +113,15 @@ export default function Insumos() {
   const perPatient = filtered.map(s => ({
     session: s,
     material: computeSessionMaterial(s, { extraDefaults: overrides.extraDefaults, extraCatalog: overrides.extraCatalog }),
+    pieces: (s.meds || [])
+      .map(m => ({ name: m.name, dose: m.dose, calc: computeMedicationPieces(m.name, m.dose, overrides.extraCatalog, overrides.extraDefaults) }))
+      .filter(p => p.calc),
   }));
 
   const grandTotal = {};
-  perPatient.forEach(({ material }) => {
+  perPatient.forEach(({ material, pieces }) => {
     material.items.forEach(({ item, qty }) => { grandTotal[item] = (grandTotal[item] || 0) + qty; });
+    pieces.forEach(({ calc }) => calc.pieces.forEach(({ item, count }) => { grandTotal[item] = (grandTotal[item] || 0) + count; }));
   });
   const grandTotalList = Object.entries(grandTotal).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
 
@@ -212,7 +216,7 @@ export default function Insumos() {
 
           <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>Por paciente</div>
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {perPatient.map(({ session: s, material }, i) => (
+            {perPatient.map(({ session: s, material, pieces }, i) => (
               <div key={i} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
                 <div onClick={() => setExpandedPatient(p => p===i ? null : i)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10 }}>
                   <span style={{ fontSize:11, color:"#666", background:"rgba(255,255,255,0.05)", padding:"2px 8px", borderRadius:99 }}>{s.center}</span>
@@ -225,6 +229,16 @@ export default function Insumos() {
                   <div style={{ padding:"0 16px 14px", display:"flex", flexDirection:"column", gap:4 }}>
                     {material.unmatched.length > 0 && (
                       <div style={{ fontSize:11, color:"#ffb347", marginBottom:6 }}>Sin material por defecto: {material.unmatched.join(", ")}</div>
+                    )}
+                    {pieces.length > 0 && (
+                      <div style={{ marginBottom:6 }}>
+                        <div style={{ fontSize:10, color:"#00d4aa", marginBottom:2 }}>PIEZAS DE MEDICAMENTO</div>
+                        {pieces.map((p,pi) => p.calc.pieces.map((pc,pci) => (
+                          <div key={`${pi}-${pci}`} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#00d4aa", padding:"2px 0" }}>
+                            <span>{pc.item}</span><span>× {pc.count}</span>
+                          </div>
+                        )))}
+                      </div>
                     )}
                     {material.items.map((t,ti) => (
                       <div key={ti} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#aaa", padding:"3px 0" }}>
@@ -332,22 +346,30 @@ export default function Insumos() {
             {(() => {
               const all = [...MASTER_CATALOG, ...overrides.extraCatalog];
               const term = catalogSearch.trim().toUpperCase();
-              const shown = all
+              const filteredAll = all
                 .filter(c => catalogCategoryFilter === "Todos" || c.category === catalogCategoryFilter)
-                .filter(c => !term || c.item.toUpperCase().includes(term))
-                .slice(0, 100);
+                .filter(c => !term || c.item.toUpperCase().includes(term));
+              const grouped = {};
+              filteredAll.forEach(c => { (grouped[c.category] = grouped[c.category] || []).push(c); });
+              const categoryOrder = ["Insumos", "Medicamentos", "Oncológicos", "Inmunoterapia"];
+              const categories = categoryOrder.filter(cat => grouped[cat]);
               return (
-                <div style={{ maxHeight:260, overflowY:"auto", display:"flex", flexDirection:"column", gap:3, padding:"4px 0" }}>
-                  {shown.map((c,i) => (
-                    <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 10px", borderRadius:6, background:"rgba(255,255,255,0.02)", fontSize:11 }}>
-                      <span style={{ color:"#555", flexShrink:0, width:90 }}>{c.category}</span>
-                      <span style={{ flex:1, color:"#ccc" }}>{c.item}</span>
+                <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                  {categories.map(cat => (
+                    <div key={cat}>
+                      <div style={{ fontSize:11, color:"#4fc3f7", fontWeight:600, marginBottom:5, display:"flex", justifyContent:"space-between" }}>
+                        <span>{cat}</span><span style={{ color:"#555" }}>{grouped[cat].length}</span>
+                      </div>
+                      <div style={{ maxHeight:160, overflowY:"auto", display:"flex", flexDirection:"column", gap:3 }}>
+                        {grouped[cat].sort((a,b) => a.item.localeCompare(b.item)).map((c,i) => (
+                          <div key={i} style={{ padding:"5px 10px", borderRadius:6, background:"rgba(255,255,255,0.02)", fontSize:11, color:"#ccc" }}>
+                            {c.item}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
-                  {shown.length === 0 && <div style={{ fontSize:11, color:"#444", padding:10 }}>Sin resultados.</div>}
-                  {(term || catalogCategoryFilter !== "Todos") && shown.length === 100 && (
-                    <div style={{ fontSize:10, color:"#444", padding:"4px 10px" }}>Mostrando los primeros 100 — afina la búsqueda para ver más específico.</div>
-                  )}
+                  {categories.length === 0 && <div style={{ fontSize:11, color:"#444", padding:10 }}>Sin resultados.</div>}
                 </div>
               );
             })()}
