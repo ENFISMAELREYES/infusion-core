@@ -46,17 +46,23 @@ async function fetchTodaySessions(token, date) {
 }
 
 async function fetchOverrides(token) {
+  const empty = { extraCatalog: [], extraDefaults: {}, puncionOverrides: {}, patientDefaultMaterial: null };
   try {
     const res = await fetch(
       `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/settings/materialCatalog`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    if (res.status === 404) return { extraCatalog: [], extraDefaults: {} };
+    if (res.status === 404) return empty;
     const doc = await res.json();
     const parsed = parseDoc(doc);
-    return { extraCatalog: parsed.extraCatalog || [], extraDefaults: parsed.extraDefaults || {} };
+    return {
+      extraCatalog: parsed.extraCatalog || [],
+      extraDefaults: parsed.extraDefaults || {},
+      puncionOverrides: parsed.puncionOverrides || {},
+      patientDefaultMaterial: parsed.patientDefaultMaterial || null,
+    };
   } catch (e) {
-    return { extraCatalog: [], extraDefaults: {} };
+    return empty;
   }
 }
 
@@ -97,6 +103,16 @@ export default function Insumos() {
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogCategoryFilter, setCatalogCategoryFilter] = useState("Todos");
 
+  const [editingPuncion, setEditingPuncion] = useState(null); // "periferico" | "puerto" | null
+  const [puncionInsumos, setPuncionInsumos] = useState([]);
+  const [puncionSoluciones, setPuncionSoluciones] = useState([]);
+  const [savingPuncion, setSavingPuncion] = useState(false);
+
+  const [editingPatientDefault, setEditingPatientDefault] = useState(false);
+  const [patientInsumos, setPatientInsumos] = useState([]);
+  const [patientSoluciones, setPatientSoluciones] = useState([]);
+  const [savingPatientDefault, setSavingPatientDefault] = useState(false);
+
   useEffect(() => { user.getIdToken().then(setToken); }, [user]);
   useEffect(() => { if (token) load(); }, [token]);
 
@@ -110,9 +126,15 @@ export default function Insumos() {
   };
 
   const filtered = centerFilter === "Todos" ? sessions : sessions.filter(s => s.center === centerFilter);
+  const calcOverrides = {
+    extraDefaults: overrides.extraDefaults,
+    extraCatalog: overrides.extraCatalog,
+    puncionOverrides: overrides.puncionOverrides,
+    patientDefaultMaterial: overrides.patientDefaultMaterial,
+  };
   const perPatient = filtered.map(s => ({
     session: s,
-    material: computeSessionMaterial(s, { extraDefaults: overrides.extraDefaults, extraCatalog: overrides.extraCatalog }),
+    material: computeSessionMaterial(s, calcOverrides),
     pieces: (s.meds || [])
       .map(m => ({ name: m.name, dose: m.dose, calc: computeMedicationPieces(m.name, m.dose, overrides.extraCatalog, overrides.extraDefaults) }))
       .filter(p => p.calc),
@@ -165,6 +187,59 @@ export default function Insumos() {
     delete updated[key];
     await saveOverrides(token, { extraDefaults: updated });
     setOverrides(o => ({ ...o, extraDefaults: updated }));
+  };
+
+  // Carga un medicamento existente (de fábrica o ya editado) en el formulario para modificarlo.
+  // Al guardar con la MISMA clave, se sobreescribe (funciona para ambos casos).
+  const loadMedForEdit = (key) => {
+    const entry = overrides.extraDefaults[key] || MATERIAL_DEFAULTS[key];
+    if (!entry) return;
+    setNewMedName(key);
+    setNewMedInsumos(entry.insumos || []);
+    setNewMedSoluciones(entry.soluciones || []);
+    setExpandedMed(null);
+  };
+
+  const loadPuncionForEdit = (type) => {
+    const entry = overrides.puncionOverrides[type] || PUNCION_DEFAULTS[type];
+    if (!entry) return;
+    setEditingPuncion(type);
+    setPuncionInsumos(entry.insumos || []);
+    setPuncionSoluciones(entry.soluciones || []);
+  };
+
+  const savePuncionOverride = async () => {
+    if (!editingPuncion) return;
+    setSavingPuncion(true);
+    try {
+      const base = overrides.puncionOverrides[editingPuncion] || PUNCION_DEFAULTS[editingPuncion] || {};
+      const updated = { ...overrides.puncionOverrides, [editingPuncion]: { ...base, insumos: puncionInsumos, soluciones: puncionSoluciones } };
+      await saveOverrides(token, { puncionOverrides: updated });
+      setOverrides(o => ({ ...o, puncionOverrides: updated }));
+      setEditingPuncion(null);
+    } finally { setSavingPuncion(false); }
+  };
+
+  const loadPatientDefaultForEdit = () => {
+    const entry = overrides.patientDefaultMaterial || { insumos: [], soluciones: [] };
+    setPatientInsumos(entry.insumos || []);
+    setPatientSoluciones(entry.soluciones || []);
+    setEditingPatientDefault(true);
+  };
+
+  const savePatientDefault = async () => {
+    setSavingPatientDefault(true);
+    try {
+      const updated = { insumos: patientInsumos, soluciones: patientSoluciones };
+      await saveOverrides(token, { patientDefaultMaterial: updated });
+      setOverrides(o => ({ ...o, patientDefaultMaterial: updated }));
+      setEditingPatientDefault(false);
+    } finally { setSavingPatientDefault(false); }
+  };
+
+  const removePatientDefault = async () => {
+    await saveOverrides(token, { patientDefaultMaterial: null });
+    setOverrides(o => ({ ...o, patientDefaultMaterial: null }));
   };
 
   if (loading) return <div style={{ padding:40, color:"#666", textAlign:"center" }}>Cargando…</div>;
@@ -288,8 +363,17 @@ export default function Insumos() {
 
           {isJefe && (
             <div>
-              <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>+ Definir material por defecto de un medicamento</div>
+              <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>+ Definir o editar material de un medicamento</div>
               <div style={{ display:"flex", flexDirection:"column", gap:10, padding:14, borderRadius:12, background:"rgba(175,169,236,0.05)", border:"1px solid rgba(175,169,236,0.15)" }}>
+                <div>
+                  <label style={labelStyle}>Editar uno existente (opcional)</label>
+                  <select value="" onChange={e => e.target.value && loadMedForEdit(e.target.value)} style={inputStyle}>
+                    <option value="">— elegir para cargar y editar —</option>
+                    {[...Object.keys(MATERIAL_DEFAULTS), ...Object.keys(overrides.extraDefaults)].sort().map(k => (
+                      <option key={k} value={k}>{k}{overrides.extraDefaults[k] ? " (editado)" : ""}</option>
+                    ))}
+                  </select>
+                </div>
                 <div>
                   <label style={labelStyle}>Nombre del medicamento</label>
                   <input value={newMedName} onChange={e => setNewMedName(e.target.value)} placeholder="ej: TRASTUZUMAB" style={inputStyle} />
@@ -332,6 +416,138 @@ export default function Insumos() {
               </div>
             </div>
           )}
+
+          {isJefe && (
+            <div>
+              <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>Material de punción (editar periférico / puerto)</div>
+              <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+                {["periferico","puerto"].map(t => (
+                  <button key={t} onClick={() => loadPuncionForEdit(t)} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer",
+                    background: editingPuncion===t ? "rgba(79,195,247,0.12)" : "rgba(255,255,255,0.04)",
+                    border: `1px solid ${editingPuncion===t ? "rgba(79,195,247,0.3)" : "rgba(255,255,255,0.08)"}`,
+                    color: editingPuncion===t ? "#4fc3f7" : "#666", textTransform:"capitalize" }}>
+                    Editar {t}{overrides.puncionOverrides[t] ? " (editado)" : ""}
+                  </button>
+                ))}
+              </div>
+              {editingPuncion && (
+                <div style={{ display:"flex", flexDirection:"column", gap:10, padding:14, borderRadius:12, background:"rgba(79,195,247,0.05)", border:"1px solid rgba(79,195,247,0.15)" }}>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <input value={draftItem} onChange={e => setDraftItem(e.target.value)} placeholder="Nombre del insumo/solución..." style={inputStyle} />
+                    <input type="number" min="1" value={draftQty} onChange={e => setDraftQty(e.target.value)} style={{ ...inputStyle, width:70 }} />
+                    <button onClick={() => addDraftRow(puncionInsumos, setPuncionInsumos)} style={{ padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc", whiteSpace:"nowrap" }}>+ Insumo</button>
+                    <button onClick={() => addDraftRow(puncionSoluciones, setPuncionSoluciones)} style={{ padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(79,195,247,0.1)", border:"1px solid rgba(79,195,247,0.25)", color:"#4fc3f7", whiteSpace:"nowrap" }}>+ Solución</button>
+                  </div>
+                  {puncionInsumos.length > 0 && (
+                    <div>
+                      <div style={{ fontSize:10, color:"#666", marginBottom:4 }}>INSUMOS</div>
+                      {puncionInsumos.map((r,i) => (
+                        <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#ccc", padding:"3px 0" }}>
+                          <span>{r.item}</span>
+                          <span style={{ display:"flex", gap:8, alignItems:"center" }}>{r.qty}
+                            <button onClick={() => setPuncionInsumos(prev => prev.filter((_,pi)=>pi!==i))} style={{ color:"#ff6b6b", background:"none", border:"none", cursor:"pointer", fontSize:11 }}>✕</button>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {puncionSoluciones.length > 0 && (
+                    <div>
+                      <div style={{ fontSize:10, color:"#666", marginBottom:4 }}>SOLUCIONES</div>
+                      {puncionSoluciones.map((r,i) => (
+                        <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#4fc3f7", padding:"3px 0" }}>
+                          <span>{r.item}</span>
+                          <span style={{ display:"flex", gap:8, alignItems:"center" }}>{r.qty}
+                            <button onClick={() => setPuncionSoluciones(prev => prev.filter((_,pi)=>pi!==i))} style={{ color:"#ff6b6b", background:"none", border:"none", cursor:"pointer", fontSize:11 }}>✕</button>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ fontSize:10, color:"#555" }}>Nota: las alternativas (ej. calibre de catéter) no se editan aquí todavía — sigue viniendo del catálogo de fábrica.</div>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={() => setEditingPuncion(null)} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
+                    <button onClick={savePuncionOverride} disabled={savingPuncion} style={{ flex:2, padding:"9px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"linear-gradient(135deg,#4fc3f7,#1e88c7)", border:"none", color:"#fff" }}>
+                      {savingPuncion ? "Guardando…" : "✓ Guardar cambios"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>
+              Material por paciente ({(overrides.patientDefaultMaterial?.insumos?.length||0) + (overrides.patientDefaultMaterial?.soluciones?.length||0)} artículos)
+            </div>
+            <div style={{ fontSize:11, color:"#555", marginBottom:8 }}>
+              Se suma a (casi) todas las sesiones automáticamente — en el modal 🧰 de cada paciente se puede desmarcar si no aplica.
+            </div>
+            {!editingPatientDefault ? (
+              <div style={{ display:"flex", gap:8 }}>
+                {isJefe && (
+                  <button onClick={loadPatientDefaultForEdit} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+                    {overrides.patientDefaultMaterial ? "✎ Editar" : "+ Definir material por paciente"}
+                  </button>
+                )}
+                {isJefe && overrides.patientDefaultMaterial && (
+                  <button onClick={removePatientDefault} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
+                    ✕ Quitar
+                  </button>
+                )}
+                {overrides.patientDefaultMaterial && (
+                  <div style={{ flex:1, display:"flex", flexDirection:"column", gap:3 }}>
+                    {[...(overrides.patientDefaultMaterial.insumos||[]), ...(overrides.patientDefaultMaterial.soluciones||[])].map((r,i) => (
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#aaa" }}>
+                        <span>{r.item}</span><span>{r.qty}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:10, padding:14, borderRadius:12, background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.15)" }}>
+                <div style={{ display:"flex", gap:8 }}>
+                  <input value={draftItem} onChange={e => setDraftItem(e.target.value)} placeholder="Nombre del insumo/solución..." style={inputStyle} />
+                  <input type="number" min="1" value={draftQty} onChange={e => setDraftQty(e.target.value)} style={{ ...inputStyle, width:70 }} />
+                  <button onClick={() => addDraftRow(patientInsumos, setPatientInsumos)} style={{ padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc", whiteSpace:"nowrap" }}>+ Insumo</button>
+                  <button onClick={() => addDraftRow(patientSoluciones, setPatientSoluciones)} style={{ padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(79,195,247,0.1)", border:"1px solid rgba(79,195,247,0.25)", color:"#4fc3f7", whiteSpace:"nowrap" }}>+ Solución</button>
+                </div>
+                {patientInsumos.length > 0 && (
+                  <div>
+                    <div style={{ fontSize:10, color:"#666", marginBottom:4 }}>INSUMOS</div>
+                    {patientInsumos.map((r,i) => (
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#ccc", padding:"3px 0" }}>
+                        <span>{r.item}</span>
+                        <span style={{ display:"flex", gap:8, alignItems:"center" }}>{r.qty}
+                          <button onClick={() => setPatientInsumos(prev => prev.filter((_,pi)=>pi!==i))} style={{ color:"#ff6b6b", background:"none", border:"none", cursor:"pointer", fontSize:11 }}>✕</button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {patientSoluciones.length > 0 && (
+                  <div>
+                    <div style={{ fontSize:10, color:"#666", marginBottom:4 }}>SOLUCIONES</div>
+                    {patientSoluciones.map((r,i) => (
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#4fc3f7", padding:"3px 0" }}>
+                        <span>{r.item}</span>
+                        <span style={{ display:"flex", gap:8, alignItems:"center" }}>{r.qty}
+                          <button onClick={() => setPatientSoluciones(prev => prev.filter((_,pi)=>pi!==i))} style={{ color:"#ff6b6b", background:"none", border:"none", cursor:"pointer", fontSize:11 }}>✕</button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={() => setEditingPatientDefault(false)} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
+                  <button onClick={savePatientDefault} disabled={savingPatientDefault} style={{ flex:2, padding:"9px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"linear-gradient(135deg,#00d4aa,#00997a)", border:"none", color:"#000" }}>
+                    {savingPatientDefault ? "Guardando…" : "✓ Guardar material por paciente"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div>
             <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>
@@ -389,6 +605,9 @@ export default function Insumos() {
                     {!factory && <span style={{ fontSize:9, color:"#AFA9EC", background:"rgba(175,169,236,0.15)", padding:"1px 6px", borderRadius:99 }}>TUYO</span>}
                     <span style={{ flex:1, fontSize:12, color:"#ccc" }}>{key}</span>
                     <span style={{ fontSize:10, color:"#555" }}>{(entry.insumos||[]).length + (entry.soluciones||[]).length} art.</span>
+                    {isJefe && (
+                      <button onClick={e => { e.stopPropagation(); loadMedForEdit(key); }} style={{ padding:"2px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>✎</button>
+                    )}
                     {!factory && isJefe && (
                       <button onClick={e => { e.stopPropagation(); removeMedDefault(key); }} style={{ padding:"2px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
                     )}
@@ -426,11 +645,16 @@ export default function Insumos() {
           <div>
             <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>Material de punción (acceso venoso)</div>
             <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-              {Object.entries(PUNCION_DEFAULTS).map(([key, entry]) => (
+              {Object.keys(PUNCION_DEFAULTS).map((key) => {
+                const entry = overrides.puncionOverrides[key] || PUNCION_DEFAULTS[key];
+                return (
                 <div key={key} style={{ borderRadius:8, background:"rgba(255,255,255,0.03)", overflow:"hidden" }}>
                   <div onClick={() => setExpandedMed(m => m===`punc_${key}` ? null : `punc_${key}`)} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", cursor:"pointer" }}>
-                    <span style={{ flex:1, fontSize:12, color:"#ccc", textTransform:"capitalize" }}>{key}</span>
+                    <span style={{ flex:1, fontSize:12, color:"#ccc", textTransform:"capitalize" }}>{key}{overrides.puncionOverrides[key] && <span style={{ fontSize:9, color:"#4fc3f7", marginLeft:6 }}>(editado)</span>}</span>
                     <span style={{ fontSize:10, color:"#555" }}>{(entry.insumos||[]).length + (entry.soluciones||[]).length + (entry.alternativas||[]).length} art.</span>
+                    {isJefe && (
+                      <button onClick={e => { e.stopPropagation(); loadPuncionForEdit(key); }} style={{ padding:"2px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>✎</button>
+                    )}
                     <span style={{ color:"#555", fontSize:10 }}>{expandedMed===`punc_${key}` ? "▲" : "▼"}</span>
                   </div>
                   {expandedMed===`punc_${key}` && (
@@ -460,7 +684,8 @@ export default function Insumos() {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
