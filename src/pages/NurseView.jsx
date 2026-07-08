@@ -404,6 +404,8 @@ function SessionCard({ session, token, onRefresh, user }) {
   const [showSignModal, setShowSignModal] = useState(false);
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [catheterType, setCatheterType] = useState(session.catheterType || "");
+  const [catheterGauge, setCatheterGauge] = useState(session.catheterGauge || "");
+  const [excludedItems, setExcludedItems] = useState(session.excludedMaterial || []);
   const [extraItems, setExtraItems] = useState(session.extraMaterial || []);
   const [extraSearch, setExtraSearch] = useState("");
   const [savingMaterial, setSavingMaterial] = useState(false);
@@ -559,13 +561,15 @@ function SessionCard({ session, token, onRefresh, user }) {
     }
   };
 
-  const saveMaterialRequest = async (newCatheterType, newExtraItems) => {
+  const saveMaterialRequest = async (newCatheterType, newCatheterGauge, newExtraItems, newExcludedItems) => {
     setSavingMaterial(true);
     try {
       const freshToken = await user.getIdToken(true);
       await patchSession(freshToken, session.id, {
         catheterType: newCatheterType || null,
+        catheterGauge: newCatheterGauge || null,
         extraMaterial: newExtraItems,
+        excludedMaterial: newExcludedItems,
       });
       onRefresh();
     } catch(e) {
@@ -962,15 +966,19 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
       )}
 
       {showMaterialModal && (() => {
-        const preview = computeSessionMaterial({ ...session, catheterType });
-        // Combinar defaults + extras en una sola lista para mostrar el total consolidado
+        const preview = computeSessionMaterial({ ...session, catheterType, catheterGauge });
+        // Combinar defaults + extras, respetando lo excluido, en una sola lista consolidada
         const combined = {};
-        preview.items.forEach(({ item, qty }) => { combined[item] = (combined[item]||0) + qty; });
+        preview.items.forEach(({ item, qty }) => {
+          if (excludedItems.includes(item)) return;
+          combined[item] = (combined[item]||0) + qty;
+        });
         extraItems.forEach(({ item, qty }) => { combined[item] = (combined[item]||0) + (qty||0); });
         const totalList = Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
         const filteredCatalog = extraSearch.trim().length >= 2
           ? MASTER_CATALOG.filter(c => c.item.toUpperCase().includes(extraSearch.toUpperCase())).slice(0, 8)
           : [];
+        const toggleExcluded = (item) => setExcludedItems(prev => prev.includes(item) ? prev.filter(x => x!==item) : [...prev, item]);
 
         return (
           <div onClick={e => { e.stopPropagation(); !savingMaterial && setShowMaterialModal(false); }}
@@ -986,7 +994,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                 <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Tipo de acceso venoso</label>
                 <div style={{ display:"flex", gap:8 }}>
                   {[["", "Sin definir"], ["periferico", "Periférico"], ["puerto", "Puerto"]].map(([val, label]) => (
-                    <button key={val} onClick={() => setCatheterType(val)}
+                    <button key={val} onClick={() => { setCatheterType(val); setCatheterGauge(""); }}
                       style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer",
                         background: catheterType===val ? "rgba(175,169,236,0.15)" : "rgba(255,255,255,0.04)",
                         border: `1px solid ${catheterType===val ? "rgba(175,169,236,0.4)" : "rgba(255,255,255,0.08)"}`,
@@ -998,11 +1006,44 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                 <div style={{ fontSize:10, color:"#555", marginTop:4 }}>Puedes definirlo o cambiarlo aquí mismo aunque el paciente ya haya ingresado.</div>
               </div>
 
+              {preview.pendingAlternatives.map((alt, ai) => (
+                <div key={ai}>
+                  <label style={{ fontSize:11, color:"#ffb347", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>{alt.label} (elige uno)</label>
+                  <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                    {alt.options.map((opt, oi) => (
+                      <button key={oi} onClick={() => setCatheterGauge(opt.item)}
+                        style={{ flex:"1 1 auto", padding:"8px 10px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer",
+                          background: catheterGauge===opt.item ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
+                          border: `1px solid ${catheterGauge===opt.item ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.08)"}`,
+                          color: catheterGauge===opt.item ? "#00d4aa" : "#888" }}>
+                        {opt.item}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
               {preview.unmatched.length > 0 && (
                 <div style={{ padding:"8px 12px", borderRadius:8, background:"rgba(255,179,71,0.08)", border:"1px solid rgba(255,179,71,0.25)", fontSize:11, color:"#ffb347" }}>
                   ⚠️ No se encontró material por defecto para: {preview.unmatched.join(", ")}. Agrégalo manualmente abajo si hace falta.
                 </div>
               )}
+
+              <div>
+                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Material por defecto (desmarca lo que no aplique a este paciente)</label>
+                <div style={{ maxHeight:160, overflowY:"auto", display:"flex", flexDirection:"column", gap:3 }}>
+                  {preview.items.map((t,i) => {
+                    const excluded = excludedItems.includes(t.item);
+                    return (
+                      <label key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 8px", borderRadius:6, cursor:"pointer", opacity: excluded ? 0.4 : 1 }}>
+                        <input type="checkbox" checked={!excluded} onChange={() => toggleExcluded(t.item)} />
+                        <span style={{ flex:1, fontSize:11, color:"#ccc", textDecoration: excluded ? "line-through" : "none" }}>{t.item}</span>
+                        <span style={{ fontSize:11, color:"#888" }}>{t.qty}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
 
               <div>
                 <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>+ Anexar material adicional</label>
@@ -1034,7 +1075,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
               </div>
 
               <div>
-                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Consolidado ({totalList.length} artículos)</label>
+                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Consolidado final ({totalList.length} artículos)</label>
                 <div style={{ maxHeight:220, overflowY:"auto", display:"flex", flexDirection:"column", gap:4 }}>
                   {totalList.map((t,i) => (
                     <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"6px 10px", borderRadius:7, background:"rgba(255,255,255,0.025)", fontSize:11 }}>
@@ -1051,7 +1092,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                   style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingMaterial ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                   Cancelar
                 </button>
-                <button onClick={async () => { await saveMaterialRequest(catheterType, extraItems); setShowMaterialModal(false); }} disabled={savingMaterial}
+                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems); setShowMaterialModal(false); }} disabled={savingMaterial}
                   style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingMaterial ? "wait" : "pointer", background:"linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color:"#fff", opacity: savingMaterial ? 0.6 : 1 }}>
                   {savingMaterial ? "Guardando…" : "✓ Guardar solicitud"}
                 </button>
