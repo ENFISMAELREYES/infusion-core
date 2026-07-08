@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
+import { computeSessionMaterial, MASTER_CATALOG } from "../data/materialCatalog";
 
 const PROJECT_ID = "infusion-core";
 const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
@@ -401,6 +402,11 @@ function SessionCard({ session, token, onRefresh, user }) {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [showSignModal, setShowSignModal] = useState(false);
+  const [showMaterialModal, setShowMaterialModal] = useState(false);
+  const [catheterType, setCatheterType] = useState(session.catheterType || "");
+  const [extraItems, setExtraItems] = useState(session.extraMaterial || []);
+  const [extraSearch, setExtraSearch] = useState("");
+  const [savingMaterial, setSavingMaterial] = useState(false);
   const [sigPaciente, setSigPaciente]     = useState(null);
   const [sigEnfermeria, setSigEnfermeria] = useState(null);
   const [signing, setSigning]             = useState(false);
@@ -553,6 +559,22 @@ function SessionCard({ session, token, onRefresh, user }) {
     }
   };
 
+  const saveMaterialRequest = async (newCatheterType, newExtraItems) => {
+    setSavingMaterial(true);
+    try {
+      const freshToken = await user.getIdToken(true);
+      await patchSession(freshToken, session.id, {
+        catheterType: newCatheterType || null,
+        extraMaterial: newExtraItems,
+      });
+      onRefresh();
+    } catch(e) {
+      alert("Error al guardar el material: " + e.message);
+    } finally {
+      setSavingMaterial(false);
+    }
+  };
+
   const recordMedEvent = async (medId, key) => {
     try {
       const freshToken = await user.getIdToken(true);
@@ -689,6 +711,10 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
         </div>
         {events.ingreso && <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace" }}>{pct}%</div>}
         {!session.authorized && <span style={{ fontSize:11, color:"#ffb347", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", padding:"3px 10px", borderRadius:99 }}>⏳ Sin autorizar</span>}
+        <button onClick={e => { e.stopPropagation(); setShowMaterialModal(true); }}
+          title="Solicitar material" style={{ padding:"5px 9px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC", flexShrink:0 }}>
+          🧰
+        </button>
         <span style={{ color:"#555" }}>{open?"▲":"▼"}</span>
       </div>
 
@@ -934,6 +960,106 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
           </div>
         </div>
       )}
+
+      {showMaterialModal && (() => {
+        const preview = computeSessionMaterial({ ...session, catheterType });
+        // Combinar defaults + extras en una sola lista para mostrar el total consolidado
+        const combined = {};
+        preview.items.forEach(({ item, qty }) => { combined[item] = (combined[item]||0) + qty; });
+        extraItems.forEach(({ item, qty }) => { combined[item] = (combined[item]||0) + (qty||0); });
+        const totalList = Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
+        const filteredCatalog = extraSearch.trim().length >= 2
+          ? MASTER_CATALOG.filter(c => c.item.toUpperCase().includes(extraSearch.toUpperCase())).slice(0, 8)
+          : [];
+
+        return (
+          <div onClick={e => { e.stopPropagation(); !savingMaterial && setShowMaterialModal(false); }}
+            style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:480, maxHeight:"88vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:14 }}>
+              <div>
+                <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>🧰 Solicitar material</div>
+                <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{session.patientName} — según medicamentos de la sesión{catheterType && " + acceso venoso"}</div>
+              </div>
+
+              <div>
+                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Tipo de acceso venoso</label>
+                <div style={{ display:"flex", gap:8 }}>
+                  {[["", "Sin definir"], ["periferico", "Periférico"], ["puerto", "Puerto"]].map(([val, label]) => (
+                    <button key={val} onClick={() => setCatheterType(val)}
+                      style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer",
+                        background: catheterType===val ? "rgba(175,169,236,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1px solid ${catheterType===val ? "rgba(175,169,236,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: catheterType===val ? "#AFA9EC" : "#666" }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize:10, color:"#555", marginTop:4 }}>Puedes definirlo o cambiarlo aquí mismo aunque el paciente ya haya ingresado.</div>
+              </div>
+
+              {preview.unmatched.length > 0 && (
+                <div style={{ padding:"8px 12px", borderRadius:8, background:"rgba(255,179,71,0.08)", border:"1px solid rgba(255,179,71,0.25)", fontSize:11, color:"#ffb347" }}>
+                  ⚠️ No se encontró material por defecto para: {preview.unmatched.join(", ")}. Agrégalo manualmente abajo si hace falta.
+                </div>
+              )}
+
+              <div>
+                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>+ Anexar material adicional</label>
+                <input value={extraSearch} onChange={e => setExtraSearch(e.target.value)} placeholder="Buscar en el catálogo (mín. 2 letras)..."
+                  style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 12px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                {filteredCatalog.length > 0 && (
+                  <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:4 }}>
+                    {filteredCatalog.map((c,i) => (
+                      <button key={i} onClick={() => { setExtraItems(prev => [...prev, { item:c.item, qty:1 }]); setExtraSearch(""); }}
+                        style={{ textAlign:"left", padding:"7px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", color:"#ccc" }}>
+                        + {c.item} <span style={{ color:"#555" }}>({c.category})</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {extraItems.length > 0 && (
+                  <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:5 }}>
+                    {extraItems.map((ei, i) => (
+                      <div key={i} style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <span style={{ flex:1, fontSize:11, color:"#ccc" }}>{ei.item}</span>
+                        <input type="number" min="1" value={ei.qty} onChange={e => setExtraItems(prev => prev.map((p,pi) => pi===i ? {...p, qty:parseInt(e.target.value)||1} : p))}
+                          style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:11, outline:"none", textAlign:"center" }} />
+                        <button onClick={() => setExtraItems(prev => prev.filter((_,pi) => pi!==i))}
+                          style={{ padding:"4px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Consolidado ({totalList.length} artículos)</label>
+                <div style={{ maxHeight:220, overflowY:"auto", display:"flex", flexDirection:"column", gap:4 }}>
+                  {totalList.map((t,i) => (
+                    <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"6px 10px", borderRadius:7, background:"rgba(255,255,255,0.025)", fontSize:11 }}>
+                      <span style={{ color:"#ccc" }}>{t.item}</span>
+                      <span style={{ color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace", fontWeight:600 }}>{t.qty}</span>
+                    </div>
+                  ))}
+                  {totalList.length === 0 && <div style={{ fontSize:11, color:"#444", textAlign:"center", padding:12 }}>Sin material aún — agrega medicamentos o elige el tipo de acceso.</div>}
+                </div>
+              </div>
+
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={() => setShowMaterialModal(false)} disabled={savingMaterial}
+                  style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingMaterial ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                  Cancelar
+                </button>
+                <button onClick={async () => { await saveMaterialRequest(catheterType, extraItems); setShowMaterialModal(false); }} disabled={savingMaterial}
+                  style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingMaterial ? "wait" : "pointer", background:"linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color:"#fff", opacity: savingMaterial ? 0.6 : 1 }}>
+                  {savingMaterial ? "Guardando…" : "✓ Guardar solicitud"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
