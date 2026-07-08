@@ -39,6 +39,26 @@ function parseFirestoreDoc(doc) {
   return { id, ...Object.fromEntries(Object.entries(doc.fields || {}).map(([k, v]) => [k, parse(v)])) };
 }
 
+async function fetchCatalogOverrides(token) {
+  try {
+    const res = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/settings/materialCatalog`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (res.status === 404) return { extraCatalog: [], extraDefaults: {}, puncionOverrides: {}, patientDefaultMaterial: null };
+    const doc = await res.json();
+    const parsed = parseFirestoreDoc(doc);
+    return {
+      extraCatalog: parsed.extraCatalog || [],
+      extraDefaults: parsed.extraDefaults || {},
+      puncionOverrides: parsed.puncionOverrides || {},
+      patientDefaultMaterial: parsed.patientDefaultMaterial || null,
+    };
+  } catch (e) {
+    return { extraCatalog: [], extraDefaults: {}, puncionOverrides: {}, patientDefaultMaterial: null };
+  }
+}
+
 async function fetchSessionsByNurse(token, nurseId) {
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
   const res = await fetch(url, {
@@ -403,6 +423,14 @@ function SessionCard({ session, token, onRefresh, user }) {
   const [editingId, setEditingId] = useState(null);
   const [showSignModal, setShowSignModal] = useState(false);
   const [showMaterialModal, setShowMaterialModal] = useState(false);
+  const [catalogOverrides, setCatalogOverrides] = useState(null);
+  const [excludePatientDefault, setExcludePatientDefault] = useState(!!session.excludePatientDefault);
+
+  useEffect(() => {
+    if (showMaterialModal && catalogOverrides === null) {
+      fetchCatalogOverrides(token).then(setCatalogOverrides);
+    }
+  }, [showMaterialModal]);
   const [catheterType, setCatheterType] = useState(session.catheterType || "");
   const [catheterGauge, setCatheterGauge] = useState(session.catheterGauge || "");
   const [excludedItems, setExcludedItems] = useState(session.excludedMaterial || []);
@@ -561,7 +589,7 @@ function SessionCard({ session, token, onRefresh, user }) {
     }
   };
 
-  const saveMaterialRequest = async (newCatheterType, newCatheterGauge, newExtraItems, newExcludedItems) => {
+  const saveMaterialRequest = async (newCatheterType, newCatheterGauge, newExtraItems, newExcludedItems, newExcludePatientDefault) => {
     setSavingMaterial(true);
     try {
       const freshToken = await user.getIdToken(true);
@@ -570,6 +598,7 @@ function SessionCard({ session, token, onRefresh, user }) {
         catheterGauge: newCatheterGauge || null,
         extraMaterial: newExtraItems,
         excludedMaterial: newExcludedItems,
+        excludePatientDefault: !!newExcludePatientDefault,
       });
       onRefresh();
     } catch(e) {
@@ -966,9 +995,23 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
       )}
 
       {showMaterialModal && (() => {
-        const preview = computeSessionMaterial({ ...session, catheterType, catheterGauge });
+        if (catalogOverrides === null) {
+          return (
+            <div onClick={e => e.stopPropagation()} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 }}>
+              <div style={{ color:"#888", fontSize:13 }}>Cargando catálogo…</div>
+            </div>
+          );
+        }
+        const sessionForCalc = { ...session, catheterType, catheterGauge, excludePatientDefault };
+        const calcOverrides = {
+          extraDefaults: catalogOverrides.extraDefaults,
+          extraCatalog: catalogOverrides.extraCatalog,
+          puncionOverrides: catalogOverrides.puncionOverrides,
+          patientDefaultMaterial: catalogOverrides.patientDefaultMaterial,
+        };
+        const preview = computeSessionMaterial(sessionForCalc, calcOverrides);
         const medPieces = (session.meds || [])
-          .map(m => ({ name: m.name, dose: m.dose, calc: computeMedicationPieces(m.name, m.dose) }))
+          .map(m => ({ name: m.name, dose: m.dose, calc: computeMedicationPieces(m.name, m.dose, catalogOverrides.extraCatalog, catalogOverrides.extraDefaults) }))
           .filter(p => p.calc);
         // Combinar defaults + extras, respetando lo excluido, en una sola lista consolidada
         const combined = {};
@@ -979,7 +1022,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
         extraItems.forEach(({ item, qty }) => { combined[item] = (combined[item]||0) + (qty||0); });
         const totalList = Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
         const filteredCatalog = extraSearch.trim().length >= 2
-          ? MASTER_CATALOG.filter(c => c.item.toUpperCase().includes(extraSearch.toUpperCase())).slice(0, 8)
+          ? [...MASTER_CATALOG, ...catalogOverrides.extraCatalog].filter(c => c.item.toUpperCase().includes(extraSearch.toUpperCase())).slice(0, 8)
           : [];
         const toggleExcluded = (item) => setExcludedItems(prev => prev.includes(item) ? prev.filter(x => x!==item) : [...prev, item]);
 
@@ -1008,6 +1051,13 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                 </div>
                 <div style={{ fontSize:10, color:"#555", marginTop:4 }}>Puedes definirlo o cambiarlo aquí mismo aunque el paciente ya haya ingresado.</div>
               </div>
+
+              {catalogOverrides.patientDefaultMaterial && (
+                <label style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 12px", borderRadius:9, background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.2)", cursor:"pointer" }}>
+                  <input type="checkbox" checked={!excludePatientDefault} onChange={e => setExcludePatientDefault(!e.target.checked)} />
+                  <span style={{ fontSize:12, color:"#ccc" }}>Incluir material base del paciente ({(catalogOverrides.patientDefaultMaterial.insumos?.length||0) + (catalogOverrides.patientDefaultMaterial.soluciones?.length||0)} artículos)</span>
+                </label>
+              )}
 
               {preview.pendingAlternatives.map((alt, ai) => (
                 <div key={ai}>
@@ -1114,7 +1164,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                   style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingMaterial ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                   Cancelar
                 </button>
-                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems); setShowMaterialModal(false); }} disabled={savingMaterial}
+                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault); setShowMaterialModal(false); }} disabled={savingMaterial}
                   style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingMaterial ? "wait" : "pointer", background:"linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color:"#fff", opacity: savingMaterial ? 0.6 : 1 }}>
                   {savingMaterial ? "Guardando…" : "✓ Guardar solicitud"}
                 </button>
