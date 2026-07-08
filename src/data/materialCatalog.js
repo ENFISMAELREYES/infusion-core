@@ -2425,8 +2425,9 @@ export function computeMedicationPieces(medName, doseStr, extraCatalog = [], ext
 // en cada medicamento cuando es posible — lo del catálogo son solo probables.
 // Devuelve { items: [{item, qty}], unmatched: [...], pendingAlternatives: [...] }
 export function computeSessionMaterial(session, overrides = {}) {
-  const { extraDefaults = {}, extraCatalog = [] } = overrides;
+  const { extraDefaults = {}, extraCatalog = [], puncionOverrides = {}, patientDefaultMaterial = null } = overrides;
   const allDefaults = { ...MATERIAL_DEFAULTS, ...extraDefaults };
+  const allPuncion = { ...PUNCION_DEFAULTS, ...puncionOverrides };
   const allCatalog = [...MASTER_CATALOG, ...extraCatalog];
   const combined = {};
   const unmatched = [];
@@ -2437,6 +2438,13 @@ export function computeSessionMaterial(session, overrides = {}) {
     const re = new RegExp(`${wanted}\\s+${vol}\\s*ML\\b`, "i");
     return allCatalog.find(c => re.test(c.item));
   };
+
+  // Material base del paciente: aplica a (casi) todas las sesiones por defecto,
+  // salvo que se excluya explícitamente para esa sesión en particular.
+  if (patientDefaultMaterial && !session.excludePatientDefault) {
+    (patientDefaultMaterial.insumos || []).forEach(({ item, qty }) => add(item, qty));
+    (patientDefaultMaterial.soluciones || []).forEach(({ item, qty }) => add(item, qty));
+  }
 
   (session.meds || []).forEach(m => {
     if (!m.name) return;
@@ -2456,8 +2464,8 @@ export function computeSessionMaterial(session, overrides = {}) {
   });
 
   const pendingAlternatives = [];
-  if (session.catheterType && PUNCION_DEFAULTS[session.catheterType]) {
-    const p = PUNCION_DEFAULTS[session.catheterType];
+  if (session.catheterType && allPuncion[session.catheterType]) {
+    const p = allPuncion[session.catheterType];
     p.insumos.forEach(({ item, qty }) => add(item, qty));
     p.soluciones.forEach(({ item, qty }) => add(item, qty));
     (p.alternativas || []).forEach(alt => {
