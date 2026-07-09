@@ -2006,6 +2006,20 @@ function parseDoseMg(doseStr) {
 // para cubrir la dosis prescrita de un medicamento (usa las presentaciones más
 // grandes primero para minimizar el número de piezas abiertas).
 // Devuelve { doseMg, pieces: [{item, mg, count}], totalMg, waste } o null si no se pudo calcular.
+// Devuelve todas las presentaciones disponibles en el catálogo para un medicamento
+// (no solo las que el cálculo automático eligió) — útil para ajustar manualmente
+// cuándo, por ejemplo, físicamente solo hay una de las presentaciones en existencia.
+export function getMedicationPresentations(medName, extraCatalog = [], extraDefaults = {}) {
+  const key = matchMedication(medName, extraDefaults);
+  const searchTerm = key || normalize(medName).split(" ")[0];
+  const allCatalog = [...MASTER_CATALOG, ...extraCatalog];
+  return allCatalog
+    .filter(c => ["Oncológicos", "Inmunoterapia", "Medicamentos"].includes(c.category))
+    .map(c => ({ item: c.item, mg: parsePresentationMg(c.item) }))
+    .filter(c => c.mg && normalize(c.item).startsWith(searchTerm))
+    .sort((a,b) => b.mg - a.mg);
+}
+
 export function computeMedicationPieces(medName, doseStr, extraCatalog = [], extraDefaults = {}) {
   const doseMg = parseDoseMg(doseStr);
   if (!doseMg) return null;
