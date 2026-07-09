@@ -5,14 +5,6 @@ export const MATERIAL_DEFAULTS = {
     "insumos": [
       {
         "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
         "qty": 2
       },
       {
@@ -27,20 +19,6 @@ export const MATERIAL_DEFAULTS = {
         "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
         "qty": 1
       },
-      {
-        "item": "EQUIPO PRIMARIO C/ FILTRO 22 MICRAS FOTOPROTECTOR",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 100 ML.",
-        "qty": 1
-      }
     ]
   },
   "IPILIBUMAB": {
