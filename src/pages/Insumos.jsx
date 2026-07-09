@@ -78,6 +78,24 @@ async function saveOverrides(token, data) {
 const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:12, outline:"none" };
 const labelStyle = { fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:5 };
 
+// Sugerencias del catálogo existente mientras se escribe, para elegir un producto
+// ya existente en vez de teclear uno nuevo (evita duplicados).
+function CatalogSuggestions({ query, catalog, onSelect }) {
+  if (!query || query.trim().length < 2) return null;
+  const term = query.trim().toUpperCase();
+  const matches = catalog.filter(c => c.item.toUpperCase().includes(term)).slice(0, 6);
+  if (matches.length === 0) return null;
+  return (
+    <div style={{ marginTop:4, display:"flex", flexDirection:"column", gap:2, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)", borderRadius:7, padding:4 }}>
+      {matches.map((c,i) => (
+        <button key={i} onClick={() => onSelect(c.item)} style={{ textAlign:"left", padding:"5px 8px", borderRadius:5, fontSize:11, cursor:"pointer", background:"transparent", border:"none", color:"#ccc" }}>
+          {c.item} <span style={{ color:"#555" }}>({c.category})</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Insumos() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
@@ -368,17 +386,31 @@ export default function Insumos() {
 
           <div>
             <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>+ Agregar artículo al catálogo</div>
-            {isJefe && (
-              <div style={{ display:"flex", gap:8, marginBottom:10 }}>
-                <select value={newCatCategory} onChange={e => setNewCatCategory(e.target.value)} style={{ ...inputStyle, flex:"0 0 160px" }}>
-                  <option>Insumos</option><option>Medicamentos</option><option>Oncológicos</option><option>Inmunoterapia</option>
-                </select>
-                <input value={newCatItem} onChange={e => setNewCatItem(e.target.value)} placeholder="Nombre del artículo..." style={inputStyle} />
-                <button onClick={addCatalogItem} disabled={savingCat} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa", whiteSpace:"nowrap" }}>
-                  {savingCat ? "..." : "+ Agregar"}
-                </button>
-              </div>
-            )}
+            {isJefe && (() => {
+              const fullCatalog = [...MASTER_CATALOG, ...overrides.extraCatalog];
+              const term = newCatItem.trim().toUpperCase();
+              const exact = term.length >= 2 && fullCatalog.find(c => c.item.toUpperCase() === term);
+              const similar = term.length >= 2 && !exact ? fullCatalog.filter(c => c.item.toUpperCase().includes(term)).slice(0, 4) : [];
+              return (
+                <div style={{ marginBottom:10 }}>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <select value={newCatCategory} onChange={e => setNewCatCategory(e.target.value)} style={{ ...inputStyle, flex:"0 0 160px" }}>
+                      <option>Insumos</option><option>Medicamentos</option><option>Oncológicos</option><option>Inmunoterapia</option>
+                    </select>
+                    <input value={newCatItem} onChange={e => setNewCatItem(e.target.value)} placeholder="Nombre del artículo..." style={inputStyle} />
+                    <button onClick={addCatalogItem} disabled={savingCat || !!exact} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor: exact ? "not-allowed" : "pointer", background: exact ? "rgba(255,255,255,0.03)" : "rgba(0,212,170,0.12)", border: `1px solid ${exact ? "rgba(255,255,255,0.06)" : "rgba(0,212,170,0.3)"}`, color: exact ? "#555" : "#00d4aa", whiteSpace:"nowrap" }}>
+                      {savingCat ? "..." : "+ Agregar"}
+                    </button>
+                  </div>
+                  {exact && <div style={{ fontSize:11, color:"#ffb347", marginTop:5 }}>⚠️ Ya existe exactamente igual en {exact.category} — no se puede duplicar.</div>}
+                  {!exact && similar.length > 0 && (
+                    <div style={{ fontSize:11, color:"#ffb347", marginTop:5 }}>
+                      Ya hay productos parecidos, revisa antes de agregar: {similar.map(s => s.item).join(", ")}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div style={{ maxHeight:180, overflowY:"auto", display:"flex", flexDirection:"column", gap:4 }}>
               {overrides.extraCatalog.map((c,i) => (
                 <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", borderRadius:7, background:"rgba(255,255,255,0.03)", fontSize:11 }}>
@@ -414,6 +446,7 @@ export default function Insumos() {
                   <button onClick={() => addDraftRow(newMedInsumos, setNewMedInsumos)} style={{ padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc", whiteSpace:"nowrap" }}>+ Insumo</button>
                   <button onClick={() => addDraftRow(newMedSoluciones, setNewMedSoluciones)} style={{ padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(79,195,247,0.1)", border:"1px solid rgba(79,195,247,0.25)", color:"#4fc3f7", whiteSpace:"nowrap" }}>+ Solución</button>
                 </div>
+                <CatalogSuggestions query={draftItem} catalog={[...MASTER_CATALOG, ...overrides.extraCatalog]} onSelect={setDraftItem} />
                 {newMedInsumos.length > 0 && (
                   <div>
                     <div style={{ fontSize:10, color:"#666", marginBottom:4 }}>INSUMOS</div>
@@ -468,6 +501,7 @@ export default function Insumos() {
                     <button onClick={() => addDraftRow(puncionInsumos, setPuncionInsumos)} style={{ padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc", whiteSpace:"nowrap" }}>+ Insumo</button>
                     <button onClick={() => addDraftRow(puncionSoluciones, setPuncionSoluciones)} style={{ padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(79,195,247,0.1)", border:"1px solid rgba(79,195,247,0.25)", color:"#4fc3f7", whiteSpace:"nowrap" }}>+ Solución</button>
                   </div>
+                  <CatalogSuggestions query={draftItem} catalog={[...MASTER_CATALOG, ...overrides.extraCatalog]} onSelect={setDraftItem} />
                   {puncionInsumos.length > 0 && (
                     <div>
                       <div style={{ fontSize:10, color:"#666", marginBottom:4 }}>INSUMOS</div>
@@ -543,6 +577,7 @@ export default function Insumos() {
                   <button onClick={() => addDraftRow(patientInsumos, setPatientInsumos)} style={{ padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc", whiteSpace:"nowrap" }}>+ Insumo</button>
                   <button onClick={() => addDraftRow(patientSoluciones, setPatientSoluciones)} style={{ padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(79,195,247,0.1)", border:"1px solid rgba(79,195,247,0.25)", color:"#4fc3f7", whiteSpace:"nowrap" }}>+ Solución</button>
                 </div>
+                <CatalogSuggestions query={draftItem} catalog={[...MASTER_CATALOG, ...overrides.extraCatalog]} onSelect={setDraftItem} />
                 {patientInsumos.length > 0 && (
                   <div>
                     <div style={{ fontSize:10, color:"#666", marginBottom:4 }}>INSUMOS</div>
