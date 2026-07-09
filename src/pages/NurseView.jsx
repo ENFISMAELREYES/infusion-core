@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
-import { computeSessionMaterial, computeMedicationPieces, MASTER_CATALOG } from "../data/materialCatalog";
+import { computeSessionMaterial, computeMedicationPieces, getMedicationPresentations, MASTER_CATALOG } from "../data/materialCatalog";
 
 const PROJECT_ID = "infusion-core";
 const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
@@ -436,6 +436,9 @@ function SessionCard({ session, token, onRefresh, user }) {
   const [excludedItems, setExcludedItems] = useState(session.excludedMaterial || []);
   const [extraItems, setExtraItems] = useState(session.extraMaterial || []);
   const [extraSearch, setExtraSearch] = useState("");
+  const [qtyOverrides, setQtyOverrides] = useState(session.qtyOverrides || {});
+  const [pieceOverrides, setPieceOverrides] = useState(session.pieceOverrides || {});
+  const [materialNote, setMaterialNote] = useState(session.materialNote || "");
   const [savingMaterial, setSavingMaterial] = useState(false);
   const [sigPaciente, setSigPaciente]     = useState(null);
   const [sigEnfermeria, setSigEnfermeria] = useState(null);
@@ -589,7 +592,7 @@ function SessionCard({ session, token, onRefresh, user }) {
     }
   };
 
-  const saveMaterialRequest = async (newCatheterType, newCatheterGauge, newExtraItems, newExcludedItems, newExcludePatientDefault) => {
+  const saveMaterialRequest = async (newCatheterType, newCatheterGauge, newExtraItems, newExcludedItems, newExcludePatientDefault, newQtyOverrides, newPieceOverrides, newNote) => {
     setSavingMaterial(true);
     try {
       const freshToken = await user.getIdToken(true);
@@ -599,6 +602,9 @@ function SessionCard({ session, token, onRefresh, user }) {
         extraMaterial: newExtraItems,
         excludedMaterial: newExcludedItems,
         excludePatientDefault: !!newExcludePatientDefault,
+        qtyOverrides: newQtyOverrides,
+        pieceOverrides: newPieceOverrides,
+        materialNote: newNote || "",
       });
       onRefresh();
     } catch(e) {
@@ -1011,20 +1017,38 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
         };
         const preview = computeSessionMaterial(sessionForCalc, calcOverrides);
         const medPieces = (session.meds || [])
-          .map(m => ({ name: m.name, dose: m.dose, calc: computeMedicationPieces(m.name, m.dose, catalogOverrides.extraCatalog, catalogOverrides.extraDefaults) }))
-          .filter(p => p.calc);
-        // Combinar defaults + extras, respetando lo excluido, en una sola lista consolidada
+          .map(m => {
+            const auto = computeMedicationPieces(m.name, m.dose, catalogOverrides.extraCatalog, catalogOverrides.extraDefaults);
+            if (!auto) return null;
+            const overridden = pieceOverrides[m.name];
+            return { name: m.name, dose: m.dose, calc: overridden ? { ...auto, pieces: overridden } : auto, isOverridden: !!overridden, autoPieces: auto.pieces };
+          })
+          .filter(Boolean);
+        // Combinar defaults + extras, respetando lo excluido y las cantidades editadas, en una sola lista consolidada
         const combined = {};
         preview.items.forEach(({ item, qty }) => {
           if (excludedItems.includes(item)) return;
-          combined[item] = (combined[item]||0) + qty;
+          const finalQty = qtyOverrides[item] !== undefined ? qtyOverrides[item] : qty;
+          combined[item] = (combined[item]||0) + finalQty;
         });
+        medPieces.forEach(p => p.calc.pieces.forEach(({ item, count }) => { combined[item] = (combined[item]||0) + count; }));
         extraItems.forEach(({ item, qty }) => { combined[item] = (combined[item]||0) + (qty||0); });
         const totalList = Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
         const filteredCatalog = extraSearch.trim().length >= 2
           ? [...MASTER_CATALOG, ...catalogOverrides.extraCatalog].filter(c => c.item.toUpperCase().includes(extraSearch.toUpperCase())).slice(0, 8)
           : [];
         const toggleExcluded = (item) => setExcludedItems(prev => prev.includes(item) ? prev.filter(x => x!==item) : [...prev, item]);
+        const setItemQty = (item, qty) => setQtyOverrides(prev => ({ ...prev, [item]: qty }));
+        const setPieceCount = (medName, allPresentations, item, mg, newCount) => {
+          setPieceOverrides(prev => {
+            const currentPieces = prev[medName] || medPieces.find(p => p.name === medName)?.autoPieces || [];
+            const map = new Map(currentPieces.map(p => [p.item, p.count]));
+            map.set(item, Math.max(0, newCount));
+            const next = allPresentations.map(pr => ({ item: pr.item, mg: pr.mg, count: map.get(pr.item) || 0 })).filter(p => p.count > 0);
+            return { ...prev, [medName]: next };
+          });
+        };
+        const resetPieceOverride = (medName) => setPieceOverrides(prev => { const n = { ...prev }; delete n[medName]; return n; });
 
         return (
           <div onClick={e => { e.stopPropagation(); !savingMaterial && setShowMaterialModal(false); }}
@@ -1084,34 +1108,53 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
 
               {medPieces.length > 0 && (
                 <div>
-                  <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Piezas de medicamento (frascos/ampolletas según dosis)</label>
+                  <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Piezas de medicamento (frascos/ampolletas según dosis — ajustables si en existencia solo hay ciertas presentaciones)</label>
                   <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                    {medPieces.map((p, i) => (
-                      <div key={i} style={{ padding:"8px 10px", borderRadius:8, background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.15)" }}>
-                        <div style={{ fontSize:11, color:"#ccc", marginBottom:4 }}>{p.name} — dosis {p.dose}</div>
-                        {p.calc.pieces.map((pc, pi) => (
-                          <div key={pi} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#00d4aa", padding:"1px 0" }}>
-                            <span>{pc.item}</span><span>× {pc.count}</span>
+                    {medPieces.map((p, i) => {
+                      const allPresentations = getMedicationPresentations(p.name, catalogOverrides.extraCatalog, catalogOverrides.extraDefaults);
+                      const countFor = (item) => p.calc.pieces.find(pc => pc.item === item)?.count || 0;
+                      const totalMg = allPresentations.reduce((acc, pr) => acc + pr.mg * countFor(pr.item), 0);
+                      return (
+                        <div key={i} style={{ padding:"8px 10px", borderRadius:8, background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.15)" }}>
+                          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+                            <span style={{ fontSize:11, color:"#ccc" }}>{p.name} — dosis {p.dose}</span>
+                            {p.isOverridden && <button onClick={() => resetPieceOverride(p.name)} style={{ fontSize:10, color:"#ffb347", background:"none", border:"none", cursor:"pointer" }}>↺ Restaurar auto</button>}
                           </div>
-                        ))}
-                        {p.calc.waste > 0 && <div style={{ fontSize:10, color:"#666", marginTop:2 }}>Sobrante: {p.calc.waste} mg (se desecha)</div>}
-                      </div>
-                    ))}
+                          {allPresentations.map((pr, pri) => (
+                            <div key={pri} style={{ display:"flex", alignItems:"center", gap:8, padding:"2px 0" }}>
+                              <span style={{ flex:1, fontSize:11, color:"#00d4aa" }}>{pr.item}</span>
+                              <input type="number" min="0" value={countFor(pr.item)}
+                                onChange={e => setPieceCount(p.name, allPresentations, pr.item, pr.mg, parseInt(e.target.value) || 0)}
+                                style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#f0f0f0", fontSize:11, outline:"none", textAlign:"center" }} />
+                            </div>
+                          ))}
+                          <div style={{ fontSize:10, color:"#666", marginTop:2 }}>Total: {totalMg} mg (dosis {p.calc.doseMg} mg, sobrante {Math.max(0, totalMg - p.calc.doseMg)} mg)</div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
               <div>
-                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Material por defecto (desmarca lo que no aplique a este paciente)</label>
+                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Nota</label>
+                <textarea value={materialNote} onChange={e => setMaterialNote(e.target.value)} placeholder="Ej: aumento de material durante la infusión, motivo del cambio, etc."
+                  rows={2} style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:12, outline:"none", resize:"vertical" }} />
+              </div>
+
+              <div>
+                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Material por defecto (desmarca lo que no aplique, o ajusta la cantidad)</label>
                 <div style={{ maxHeight:160, overflowY:"auto", display:"flex", flexDirection:"column", gap:3 }}>
                   {preview.items.map((t,i) => {
                     const excluded = excludedItems.includes(t.item);
+                    const currentQty = qtyOverrides[t.item] !== undefined ? qtyOverrides[t.item] : t.qty;
                     return (
-                      <label key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 8px", borderRadius:6, cursor:"pointer", opacity: excluded ? 0.4 : 1 }}>
-                        <input type="checkbox" checked={!excluded} onChange={() => toggleExcluded(t.item)} />
+                      <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 8px", borderRadius:6, opacity: excluded ? 0.4 : 1 }}>
+                        <input type="checkbox" checked={!excluded} onChange={() => toggleExcluded(t.item)} style={{ cursor:"pointer" }} />
                         <span style={{ flex:1, fontSize:11, color:"#ccc", textDecoration: excluded ? "line-through" : "none" }}>{t.item}</span>
-                        <span style={{ fontSize:11, color:"#888" }}>{t.qty}</span>
-                      </label>
+                        <input type="number" min="0" value={currentQty} disabled={excluded} onChange={e => setItemQty(t.item, parseInt(e.target.value) || 0)}
+                          style={{ width:46, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 4px", color:"#f0f0f0", fontSize:11, outline:"none", textAlign:"center" }} />
+                      </div>
                     );
                   })}
                 </div>
@@ -1164,7 +1207,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                   style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingMaterial ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                   Cancelar
                 </button>
-                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault); setShowMaterialModal(false); }} disabled={savingMaterial}
+                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault, qtyOverrides, pieceOverrides, materialNote); setShowMaterialModal(false); }} disabled={savingMaterial}
                   style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingMaterial ? "wait" : "pointer", background:"linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color:"#fff", opacity: savingMaterial ? 0.6 : 1 }}>
                   {savingMaterial ? "Guardando…" : "✓ Guardar solicitud"}
                 </button>
