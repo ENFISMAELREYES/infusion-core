@@ -132,20 +132,52 @@ export default function Insumos() {
     puncionOverrides: overrides.puncionOverrides,
     patientDefaultMaterial: overrides.patientDefaultMaterial,
   };
-  const perPatient = filtered.map(s => ({
-    session: s,
-    material: computeSessionMaterial(s, calcOverrides),
-    pieces: (s.meds || [])
-      .map(m => ({ name: m.name, dose: m.dose, calc: computeMedicationPieces(m.name, m.dose, overrides.extraCatalog, overrides.extraDefaults) }))
-      .filter(p => p.calc),
-  }));
+  const perPatient = filtered.map(s => {
+    const preview = computeSessionMaterial(s, calcOverrides);
+    const excluded = s.excludedMaterial || [];
+    const qtyOv = s.qtyOverrides || {};
+    const pieceOv = s.pieceOverrides || {};
+    const combined = {};
+    preview.items.forEach(({ item, qty }) => {
+      if (excluded.includes(item)) return;
+      combined[item] = (combined[item] || 0) + (qtyOv[item] !== undefined ? qtyOv[item] : qty);
+    });
+    (s.meds || []).forEach(m => {
+      const auto = computeMedicationPieces(m.name, m.dose, overrides.extraCatalog, overrides.extraDefaults);
+      if (!auto) return;
+      const finalPieces = pieceOv[m.name] || auto.pieces;
+      finalPieces.forEach(({ item, count }) => { combined[item] = (combined[item] || 0) + count; });
+    });
+    (s.extraMaterial || []).forEach(({ item, qty }) => { combined[item] = (combined[item] || 0) + (qty || 0); });
+    const items = Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
+    return { session: s, material: { items, unmatched: preview.unmatched }, note: s.materialNote || "" };
+  });
 
   const grandTotal = {};
-  perPatient.forEach(({ material, pieces }) => {
+  perPatient.forEach(({ material }) => {
     material.items.forEach(({ item, qty }) => { grandTotal[item] = (grandTotal[item] || 0) + qty; });
-    pieces.forEach(({ calc }) => calc.pieces.forEach(({ item, count }) => { grandTotal[item] = (grandTotal[item] || 0) + count; }));
   });
   const grandTotalList = Object.entries(grandTotal).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
+
+  const downloadPharmacyOrder = (s, material, note) => {
+    const csvEscape = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = [];
+    lines.push([csvEscape("Centro"), csvEscape(s.center || "")].join(","));
+    lines.push([csvEscape("Paciente (Ciclo)"), csvEscape(`${s.patientName || ""} (${s.cycle || ""})`)].join(","));
+    lines.push([csvEscape("Fecha de aplicación"), csvEscape(s.date || "")].join(","));
+    lines.push("");
+    if (note) { lines.push([csvEscape("Nota"), csvEscape(note)].join(",")); lines.push(""); }
+    lines.push([csvEscape("Artículo"), csvEscape("Cantidad")].join(","));
+    material.items.forEach(t => lines.push([csvEscape(t.item), csvEscape(t.qty)].join(",")));
+    const csv = "\uFEFF" + lines.join("\r\n"); // BOM para acentos correctos en Excel
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pedido-${(s.patientName||"paciente").replace(/\s+/g,"_")}-${s.date||""}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const addCatalogItem = async () => {
     if (!newCatItem.trim()) return;
@@ -291,13 +323,18 @@ export default function Insumos() {
 
           <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>Por paciente</div>
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {perPatient.map(({ session: s, material, pieces }, i) => (
+            {perPatient.map(({ session: s, material, note }, i) => (
               <div key={i} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
                 <div onClick={() => setExpandedPatient(p => p===i ? null : i)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10 }}>
                   <span style={{ fontSize:11, color:"#666", background:"rgba(255,255,255,0.05)", padding:"2px 8px", borderRadius:99 }}>{s.center}</span>
                   <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
                   <span style={{ fontSize:11, color:"#555" }}>{material.items.length} art.</span>
                   {material.unmatched.length > 0 && <span style={{ fontSize:11, color:"#ffb347" }}>⚠️ {material.unmatched.length}</span>}
+                  {note && <span style={{ fontSize:11, color:"#4fc3f7" }}>📝</span>}
+                  <button onClick={e => { e.stopPropagation(); downloadPharmacyOrder(s, material, note); }} title="Descargar pedido para farmacia"
+                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
+                    📄 Pedido
+                  </button>
                   <span style={{ color:"#555" }}>{expandedPatient===i ? "▲" : "▼"}</span>
                 </div>
                 {expandedPatient===i && (
@@ -305,15 +342,8 @@ export default function Insumos() {
                     {material.unmatched.length > 0 && (
                       <div style={{ fontSize:11, color:"#ffb347", marginBottom:6 }}>Sin material por defecto: {material.unmatched.join(", ")}</div>
                     )}
-                    {pieces.length > 0 && (
-                      <div style={{ marginBottom:6 }}>
-                        <div style={{ fontSize:10, color:"#00d4aa", marginBottom:2 }}>PIEZAS DE MEDICAMENTO</div>
-                        {pieces.map((p,pi) => p.calc.pieces.map((pc,pci) => (
-                          <div key={`${pi}-${pci}`} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#00d4aa", padding:"2px 0" }}>
-                            <span>{pc.item}</span><span>× {pc.count}</span>
-                          </div>
-                        )))}
-                      </div>
+                    {note && (
+                      <div style={{ fontSize:11, color:"#4fc3f7", marginBottom:6, padding:"6px 8px", background:"rgba(79,195,247,0.06)", borderRadius:6 }}>📝 {note}</div>
                     )}
                     {material.items.map((t,ti) => (
                       <div key={ti} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#aaa", padding:"3px 0" }}>
