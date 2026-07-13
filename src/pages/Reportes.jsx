@@ -161,6 +161,10 @@ export default function Reportes() {
   ).map(([label, value]) => ({ label, value })).sort((a,b) => b.value - a.value);
 
   // Por mes
+  const monthLabel = (key) => {
+    const [y, m] = key.split("-").map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString("es-MX", { month:"short", year:"2-digit" });
+  };
   const byMonth = Object.entries(
     clinicSessions.reduce((acc, s) => {
       if (!s.date) return acc;
@@ -169,10 +173,7 @@ export default function Reportes() {
       return acc;
     }, {})
   ).sort(([a],[b]) => a.localeCompare(b))
-   .map(([key, value]) => ({
-     label: new Date(key+"-01").toLocaleDateString("es-MX", { month:"short", year:"2-digit" }),
-     value
-   }));
+   .map(([key, value]) => ({ label: monthLabel(key), value }));
 
   // Pacientes nuevos por mes (primera vez)
   const firstVisit = {};
@@ -182,10 +183,19 @@ export default function Reportes() {
   const newByMonth = Object.entries(
     Object.values(firstVisit).reduce((acc, month) => { if (month) acc[month] = (acc[month]||0)+1; return acc; }, {})
   ).sort(([a],[b]) => a.localeCompare(b))
-   .map(([key, value]) => ({
-     label: new Date(key+"-01").toLocaleDateString("es-MX", { month:"short", year:"2-digit" }),
-     value
-   }));
+   .map(([key, value]) => ({ label: monthLabel(key), value }));
+
+  // Medicamento más ocupado (se descarta todo lo de premedicación)
+  const byMedication = Object.entries(
+    clinicSessions.reduce((acc, s) => {
+      (s.meds || []).forEach(m => {
+        if (!m.name || m.category === "premedicacion") return;
+        const key = m.name.trim();
+        acc[key] = (acc[key]||0) + 1;
+      });
+      return acc;
+    }, {})
+  ).map(([label, value]) => ({ label, value })).sort((a,b) => b.value - a.value);
 
   const inputStyle = { background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"8px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
 
@@ -257,15 +267,22 @@ export default function Reportes() {
             </div>
           )}
 
-          {/* Por médico y diagnóstico */}
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-            <div style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
-              <BarChart data={byPhysician} color="rgba(0,212,170,0.7)" label="Por médico" />
-            </div>
-            <div style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px" }}>
-              <BarChart data={byDiagnosis} color="rgba(175,169,236,0.7)" label="Por diagnóstico" />
-            </div>
+          {/* Por médico */}
+          <div style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px", marginBottom:20 }}>
+            <BarChart data={byPhysician} color="rgba(0,212,170,0.7)" label="Por médico" />
           </div>
+
+          {/* Por diagnóstico */}
+          <div style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px", marginBottom:20 }}>
+            <BarChart data={byDiagnosis} color="rgba(175,169,236,0.7)" label="Por diagnóstico" />
+          </div>
+
+          {/* Medicamento más ocupado (sin premedicación) */}
+          {byMedication.length > 0 && (
+            <div style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px", marginBottom:20 }}>
+              <BarChart data={byMedication} color="rgba(250,199,117,0.7)" label="Medicamento más ocupado (sin premedicación)" />
+            </div>
+          )}
         </>
       )}
     </div>
