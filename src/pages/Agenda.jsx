@@ -108,17 +108,61 @@ async function fetchAppointments(token) {
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
 
-async function rescheduleAppointment(token, apptId, newDate) {
+async function rescheduleAppointment(token, apptId, newDate, existingOriginalDate) {
   await fetch(
     `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${apptId}?updateMask.fieldPaths=date&updateMask.fieldPaths=rescheduled&updateMask.fieldPaths=originalDate`,
     { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
       body: JSON.stringify({ fields: {
         date:         { stringValue: newDate },
         rescheduled:  { booleanValue: true },
-        originalDate: { stringValue: newDate },
+        originalDate: { stringValue: existingOriginalDate },
       }})
     }
   );
+}
+
+// Genera y agrega citas para ciclos adicionales cuando un esquema ya no tiene
+// citas por delante (terminado). Mantiene la misma cadencia original del
+// esquema (fecha de inicio + duración de ciclo), solo continuando a partir
+// del último ciclo ya generado.
+async function addMoreCycles(token, ps, scheme, additionalCycles) {
+  const toFV = (val) => {
+    if (typeof val === "string") return { stringValue: val };
+    if (typeof val === "number") return { integerValue: String(val) };
+    return { stringValue: String(val) };
+  };
+  const effectiveCycles = ps.totalCyclesOverride || scheme.totalCycles;
+  const newTotal = effectiveCycles + additionalCycles;
+
+  // Ampliar el total de ciclos del esquema del paciente
+  await fetch(
+    `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/patientSchemes/${ps.id}?updateMask.fieldPaths=totalCyclesOverride`,
+    { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+      body: JSON.stringify({ fields: { totalCyclesOverride: toFV(newTotal) } }) }
+  );
+
+  // Generar solo las citas de los ciclos nuevos
+  const effectiveScheme = { ...scheme, totalCycles: newTotal };
+  const newDates = calcDates(ps.startDate, effectiveScheme, effectiveCycles + 1);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+  for (const d of newDates) {
+    const apptFields = {
+      patientSchemeId: toFV(ps.id),
+      patientName:     toFV(ps.patientName),
+      schemeId:        toFV(ps.schemeId),
+      date:            toFV(d.date),
+      cycle:           toFV(d.cycle),
+      day:             toFV(d.day),
+      label:           toFV(d.label),
+      status:          toFV(d.date < today ? "past" : "scheduled"),
+      center:          toFV(ps.center || ""),
+      createdAt:       toFV(new Date().toISOString()),
+    };
+    await fetch(
+      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments?key=${API_KEY}`,
+      { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields: apptFields }) }
+    );
+  }
 }
 
 async function deletePatientScheme(token, id) {
@@ -737,32 +781,30 @@ const handleDeleteScheme = async (id) => {
         const newDate = prompt(`Nueva fecha para ${e.patientName} ${e.label}:`, e.date);
         if (!newDate || newDate === e.date) return;
         const t = await user.getIdToken(true);
-        
+
         // Calcular desfase en días
         const oldD = new Date(e.date + "T12:00:00");
         const newD = new Date(newDate + "T12:00:00");
         const diffDays = Math.round((newD - oldD) / (1000 * 60 * 60 * 24));
-        
-        // Reagendar esta cita
-        await rescheduleAppointment(t, e.apptId, newDate);
-        
-        // Preguntar si recalcular posteriores
+
+        // Reagendar esta cita, preservando su fecha original real (si ya se había reagendado antes)
+        await rescheduleAppointment(t, e.apptId, newDate, e.originalDate || e.date);
+
+        // Mover automáticamente el resto del bloque (citas futuras del mismo esquema),
+        // manteniendo el mismo desfase, para que nunca queden desincronizadas entre sí.
         if (diffDays !== 0) {
-          const recalc = confirm(`¿Recorrer ${diffDays > 0 ? "+" : ""}${diffDays} días a las citas futuras de este esquema?\n\n"Aceptar" = Sí, recorrer todas las citas futuras\n"Cancelar" = No, solo esta cita`);
-          if (recalc) {
-            const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-            const futureAppts = appointments.filter(a =>
-              a.patientSchemeId === e.patientSchemeId &&
-              a.id !== e.apptId &&
-              a.date > today &&
-              a.status !== "confirmed"
-            );
-            for (const appt of futureAppts) {
-              const apptDate = new Date(appt.date + "T12:00:00");
-              apptDate.setDate(apptDate.getDate() + diffDays);
-              const newApptDate = apptDate.toISOString().split("T")[0];
-              await rescheduleAppointment(t, appt.id, newApptDate);
-            }
+          const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+          const futureAppts = appointments.filter(a =>
+            a.patientSchemeId === e.patientSchemeId &&
+            a.id !== e.apptId &&
+            a.date > todayStr &&
+            a.status !== "confirmed"
+          );
+          for (const appt of futureAppts) {
+            const apptDate = new Date(appt.date + "T12:00:00");
+            apptDate.setDate(apptDate.getDate() + diffDays);
+            const newApptDate = apptDate.toISOString().split("T")[0];
+            await rescheduleAppointment(t, appt.id, newApptDate, appt.originalDate || appt.date);
           }
         }
         load();
@@ -853,6 +895,18 @@ const handleDeleteScheme = async (id) => {
                       </div>
                       {isJefe && (
                         <div style={{ display:"flex", gap:6 }}>
+                          {nextDates.length === 0 && scheme && (
+                            <button onClick={async () => {
+                              const n = prompt(`${ps.patientName} ya no tiene citas por delante en "${scheme.name}".\n¿Cuántos ciclos adicionales quieres anexar?`, "1");
+                              const additional = parseInt(n);
+                              if (!additional || additional < 1) return;
+                              const t = await user.getIdToken(true);
+                              await addMoreCycles(t, ps, scheme, additional);
+                              load();
+                            }} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
+                              ➕ Anexar ciclos
+                            </button>
+                          )}
                           <button onClick={() => { setEditing(ps); setShowForm(true); }} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️</button>
                           <button onClick={() => handleDelete(ps.id)} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
                         </div>
