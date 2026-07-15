@@ -74,17 +74,17 @@ function BarChart({ data, color, label }) {
   );
 }
 
-function MonthlyChart({ data }) {
+function MonthlyChart({ data, label, color = "rgba(0,212,170,0.7)" }) {
   if (!data.length) return null;
   const max = Math.max(...data.map(d => d.value), 1);
   return (
     <div>
-      <div style={{ fontSize: 11, color: "#555", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 12 }}>Infusiones por mes</div>
+      <div style={{ fontSize: 11, color: "#555", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 12 }}>{label}</div>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120 }}>
         {data.map((d, i) => (
           <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
             <div style={{ fontSize: 10, color: "#666" }}>{d.value}</div>
-            <div style={{ width: "100%", background: "rgba(0,212,170,0.7)", borderRadius: "4px 4px 0 0", height: `${(d.value / max) * 90}px`, minHeight: d.value ? 4 : 0, transition: "height 0.5s" }} />
+            <div style={{ width: "100%", background: color, borderRadius: "4px 4px 0 0", height: `${(d.value / max) * 90}px`, minHeight: d.value ? 4 : 0, transition: "height 0.5s" }} />
             <div style={{ fontSize: 9, color: "#555", textAlign: "center" }}>{d.label}</div>
           </div>
         ))}
@@ -197,6 +197,45 @@ export default function Reportes() {
     }, {})
   ).map(([label, value]) => ({ label, value })).sort((a,b) => b.value - a.value);
 
+  // Totales por tipo de sesión (todas, incluyendo entregas)
+  const totalIV            = sessions.filter(s => s.sessionType === "iv").length;
+  const totalIM             = sessions.filter(s => s.sessionType === "im").length;
+  const totalSC             = sessions.filter(s => s.sessionType === "sc").length;
+  const totalEntregas       = sessions.filter(s => s.sessionType === "entrega").length;
+  const totalProcedimientos = sessions.filter(s => s.sessionType === "procedimiento").length;
+
+  // Atenciones en total por mes (todos los tipos, incluye entregas)
+  const byMonthTotal = Object.entries(
+    sessions.reduce((acc, s) => {
+      if (!s.date) return acc;
+      const month = s.date.substring(0, 7);
+      acc[month] = (acc[month]||0)+1;
+      return acc;
+    }, {})
+  ).sort(([a],[b]) => a.localeCompare(b))
+   .map(([key, value]) => ({ label: monthLabel(key), value }));
+
+  // Pacientes atendidos por mes (únicos dentro de cada mes, sin importar si ya habían venido antes)
+  const patientsPerMonth = {};
+  sessions.forEach(s => {
+    if (!s.date || !s.patientName) return;
+    const month = s.date.substring(0, 7);
+    (patientsPerMonth[month] ||= new Set()).add(s.patientName);
+  });
+  const attendedByMonth = Object.entries(patientsPerMonth)
+    .sort(([a],[b]) => a.localeCompare(b))
+    .map(([key, set]) => ({ label: monthLabel(key), value: set.size }));
+
+  // Médicos nuevos por mes (primera vez que aparecen como médico tratante)
+  const firstDoctorVisit = {};
+  sessions.slice().sort((a,b) => (a.date||"").localeCompare(b.date||"")).forEach(s => {
+    if (s.physician && !firstDoctorVisit[s.physician]) firstDoctorVisit[s.physician] = s.date?.substring(0,7);
+  });
+  const newDoctorsByMonth = Object.entries(
+    Object.values(firstDoctorVisit).reduce((acc, month) => { if (month) acc[month] = (acc[month]||0)+1; return acc; }, {})
+  ).sort(([a],[b]) => a.localeCompare(b))
+   .map(([key, value]) => ({ label: monthLabel(key), value }));
+
   const inputStyle = { background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"8px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
 
   return (
@@ -231,6 +270,13 @@ export default function Reportes() {
       ) : (
         <>
           {/* Stats principales */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(160px, 1fr))", gap:12, marginBottom:14 }}>
+            <StatBox label="Sesiones IV"          value={totalIV}             color="#4fc3f7" />
+            <StatBox label="Sesiones IM"           value={totalIM}             color="#AFA9EC" />
+            <StatBox label="Sesiones SC"           value={totalSC}             color="#5DCAA5" />
+            <StatBox label="Entregas"              value={totalEntregas}       color="#82C4F8" />
+            <StatBox label="Procedimientos"        value={totalProcedimientos} color="#FAC775" />
+          </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(160px, 1fr))", gap:12, marginBottom:28 }}>
             <StatBox label="Total sesiones"    value={clinicSessions.length} color="#00d4aa" />
             <StatBox label="Completadas"        value={completed}       color="#4fc3f7" />
@@ -238,38 +284,46 @@ export default function Reportes() {
             <StatBox label="Estancia promedio"  value={avgStay ? `${Math.floor(avgStay/60)}h ${avgStay%60}m` : "—"} color="#FAC775" />
            <StatBox label="CIPI"  value={cipi}  sub={`${clinicSessions.length ? Math.round(cipi/clinicSessions.length*100) : 0}% del total`} color="#5DCAA5" />
             <StatBox label="CITIO" value={citio} sub={`${clinicSessions.length ? Math.round(citio/clinicSessions.length*100) : 0}% del total`} color="#F09595" />
-            <StatBox label="Entregas de medicamento" value={deliveries.length} color="#82C4F8" />
           </div>
 
-          {/* Gráfica por mes */}
+          {/* Atenciones en total por mes (todos los tipos) */}
+          {byMonthTotal.length > 0 && (
+            <div style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px", marginBottom:20 }}>
+              <MonthlyChart data={byMonthTotal} label="Atenciones en total por mes" color="rgba(0,212,170,0.7)" />
+            </div>
+          )}
+
+          {/* Gráfica por mes (infusiones) */}
           {byMonth.length > 0 && (
             <div style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px", marginBottom:20 }}>
-              <MonthlyChart data={byMonth} />
+              <MonthlyChart data={byMonth} label="Infusiones por mes" color="rgba(79,195,247,0.7)" />
+            </div>
+          )}
+
+          {/* Pacientes atendidos por mes (total) */}
+          {attendedByMonth.length > 0 && (
+            <div style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px", marginBottom:20 }}>
+              <MonthlyChart data={attendedByMonth} label="Pacientes atendidos por mes" color="rgba(250,199,117,0.7)" />
             </div>
           )}
 
           {/* Pacientes nuevos por mes */}
           {newByMonth.length > 0 && (
             <div style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px", marginBottom:20 }}>
-              <div style={{ fontSize:11, color:"#555", letterSpacing:1.5, textTransform:"uppercase", marginBottom:12 }}>Pacientes nuevos por mes</div>
-              <div style={{ display:"flex", alignItems:"flex-end", gap:6, height:100 }}>
-                {newByMonth.map((d,i) => {
-                  const max = Math.max(...newByMonth.map(x => x.value), 1);
-                  return (
-                    <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
-                      <div style={{ fontSize:10, color:"#666" }}>{d.value}</div>
-                      <div style={{ width:"100%", background:"rgba(175,169,236,0.7)", borderRadius:"4px 4px 0 0", height:`${(d.value/max)*80}px`, minHeight:d.value?4:0 }} />
-                      <div style={{ fontSize:9, color:"#555", textAlign:"center" }}>{d.label}</div>
-                    </div>
-                  );
-                })}
-              </div>
+              <MonthlyChart data={newByMonth} label="Pacientes nuevos por mes" color="rgba(175,169,236,0.7)" />
             </div>
           )}
 
-          {/* Por médico */}
+          {/* Médicos nuevos por mes */}
+          {newDoctorsByMonth.length > 0 && (
+            <div style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px", marginBottom:20 }}>
+              <MonthlyChart data={newDoctorsByMonth} label="Médicos nuevos por mes" color="rgba(240,149,149,0.7)" />
+            </div>
+          )}
+
+          {/* Pacientes por médico */}
           <div style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:14, padding:"20px 22px", marginBottom:20 }}>
-            <BarChart data={byPhysician} color="rgba(0,212,170,0.7)" label="Por médico" />
+            <BarChart data={byPhysician} color="rgba(0,212,170,0.7)" label="Pacientes por médico" />
           </div>
 
           {/* Por diagnóstico */}
