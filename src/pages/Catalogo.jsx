@@ -457,8 +457,11 @@ const handleDataEdit = async (patientName, draft) => {
       if (!hasSessions) return false;
     }
     if (!search) return true;
-    return normalize(g.canonical).includes(normalize(search)) ||
-           g.variants.some(v => normalize(v).includes(normalize(search)));
+    const term = normalize(search);
+    const expediente = String(g.sessions?.[0]?.expedienteNumber ?? "");
+    return normalize(g.canonical).includes(term) ||
+           g.variants.some(v => normalize(v).includes(term)) ||
+           (expediente && expediente.includes(search.trim()));
   });
 
   const handleEdit = async (oldVal) => {
@@ -563,7 +566,7 @@ const handleDataEdit = async (patientName, draft) => {
 
   return (
     <div>
-      <input placeholder="Buscar paciente..." value={search} onChange={e => setSearch(e.target.value)}
+      <input placeholder="Buscar paciente o número de expediente..." value={search} onChange={e => setSearch(e.target.value)}
         style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"9px 13px", color:"#f0f0f0", fontSize:13, outline:"none", marginBottom:12 }} />
 
       <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
@@ -999,6 +1002,7 @@ export default function Catalogo() {
   const [schemes, setSchemes] = useState([]);
 const [patientSchemes, setPatientSchemes] = useState([]);
 const [appointments, setAppointments] = useState([]);
+const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   const load = async () => {
     if (!user) return;
@@ -1016,7 +1020,7 @@ const [appointments, setAppointments] = useState([]);
       setPatientSchemes(patientSchemesData);
       setAppointments(appointmentsData);
     } catch(e) { console.error(e); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setHasLoadedOnce(true); }
   };
 
   useEffect(() => { load(); }, [user]);
@@ -1086,10 +1090,11 @@ schemeOnlyNames.forEach(name => {
         ))}
       </div>
 
-      {loading ? (
+      {loading && !hasLoadedOnce ? (
         <div style={{ color:"#555", fontSize:14, padding:24 }}>Cargando catálogo...</div>
       ) : (
         <>
+          {loading && <div style={{ color:"#555", fontSize:11, marginBottom:10 }}>Actualizando…</div>}
           {tab === "patients" && (
            <PatientCatalogSection
               groups={patientGroups}
