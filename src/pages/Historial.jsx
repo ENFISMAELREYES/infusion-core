@@ -648,6 +648,7 @@ const isJefe = profile?.role === "jefe";
   const [selected, setSelected] = useState(null);
   const [token, setToken] = useState("");
   const [filters, setFilters]   = useState({ date:"", center:"", search:"" });
+  const [typeFilter, setTypeFilter] = useState(""); // "" = todos
 
   const load = async () => {
     if (!user) return;
@@ -664,13 +665,14 @@ setToken(t);
 
   useEffect(() => { load(); }, [user]);
 
-  const filtered = sessions.filter(s => {
+  const searchFiltered = sessions.filter(s => {
     if (!filters.search) return true;
     const q = filters.search.toLowerCase();
     return s.patientName?.toLowerCase().includes(q) ||
            s.physician?.toLowerCase().includes(q) ||
            s.diagnosis?.toLowerCase().includes(q);
   });
+  const filtered = typeFilter ? searchFiltered.filter(s => (s.sessionType || "iv") === typeFilter) : searchFiltered;
 
   const inputStyle = { background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"8px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
 
@@ -705,18 +707,31 @@ setToken(t);
       ) : (
         <div>
          {(() => {
-            const iv = filtered.filter(s => !s.sessionType || s.sessionType === "iv");
-            const im = filtered.filter(s => s.sessionType === "intramuscular");
-            const sc = filtered.filter(s => s.sessionType === "subcutaneo");
-            const entregas = filtered.filter(s => s.sessionType === "entrega");
-            const procs = filtered.filter(s => s.sessionType === "procedimiento");
+            const counts = { iv:0, im:0, sc:0, entrega:0, procedimiento:0 };
+            searchFiltered.forEach(s => { const t = s.sessionType || "iv"; if (counts[t] !== undefined) counts[t]++; });
+            const TYPES = [
+              { key:"iv", label:"IV", color:"#4fc3f7" },
+              { key:"im", label:"IM", color:"#AFA9EC" },
+              { key:"sc", label:"SC", color:"#5DCAA5" },
+              { key:"entrega", label:"Entregas", color:"#82C4F8" },
+              { key:"procedimiento", label:"Procedimientos", color:"#FAC775" },
+            ];
             return (
               <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:12 }}>
-                {iv.length > 0 && <span style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background:"rgba(79,195,247,0.1)", color:"#4fc3f7", border:"1px solid rgba(79,195,247,0.25)" }}>IV: {iv.length}</span>}
-                {im.length > 0 && <span style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background:"rgba(175,169,236,0.1)", color:"#AFA9EC", border:"1px solid rgba(175,169,236,0.25)" }}>IM: {im.length}</span>}
-                {sc.length > 0 && <span style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background:"rgba(93,202,165,0.1)", color:"#5DCAA5", border:"1px solid rgba(93,202,165,0.25)" }}>SC: {sc.length}</span>}
-                {entregas.length > 0 && <span style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background:"rgba(130,196,248,0.1)", color:"#82C4F8", border:"1px solid rgba(130,196,248,0.25)" }}>Entregas: {entregas.length}</span>}
-                {procs.length > 0 && <span style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background:"rgba(250,199,117,0.1)", color:"#FAC775", border:"1px solid rgba(250,199,117,0.25)" }}>Procedimientos: {procs.length}</span>}
+                {TYPES.map(({ key, label, color }) => counts[key] > 0 && (
+                  <button key={key} onClick={() => setTypeFilter(f => f === key ? "" : key)}
+                    style={{ fontSize:10, padding:"3px 10px", borderRadius:99, cursor:"pointer",
+                      background: typeFilter===key ? `${color}33` : `${color}1A`,
+                      color, border:`1px solid ${typeFilter===key ? color : `${color}40`}`,
+                      fontWeight: typeFilter===key ? 700 : 400 }}>
+                    {label}: {counts[key]}
+                  </button>
+                ))}
+                {typeFilter && (
+                  <button onClick={() => setTypeFilter("")} style={{ fontSize:10, padding:"3px 10px", borderRadius:99, cursor:"pointer", background:"rgba(255,107,107,0.1)", color:"#ff6b6b", border:"1px solid rgba(255,107,107,0.25)" }}>
+                    ✕ Quitar filtro
+                  </button>
+                )}
                 <span style={{ fontSize:10, padding:"3px 10px", borderRadius:99, background:"rgba(255,255,255,0.05)", color:"#666", border:"1px solid rgba(255,255,255,0.09)" }}>Total: {filtered.length}</span>
               </div>
             );
