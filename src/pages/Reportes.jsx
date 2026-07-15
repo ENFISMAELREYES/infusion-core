@@ -114,6 +114,24 @@ export default function Reportes() {
     finally { setLoading(false); }
   };
 
+  const exportCSV = () => {
+    const csvEscape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const headers = ["date","patientName","dob","physician","diagnosis","sessionType","center","status","cycle","schemeName","insurance","allergies","medications"];
+    const rows = sessions.map(s => [
+      s.date, s.patientName, s.dob, s.physician, s.diagnosis, s.sessionType, s.center, s.status, s.cycle, s.schemeName || "",
+      s.insurance, s.allergies,
+      (s.meds || []).map(m => m.name).filter(Boolean).join(" | "),
+    ]);
+    const csv = "\uFEFF" + [headers, ...rows].map(r => r.map(csvEscape).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sesiones_${filters.from || "inicio"}_a_${filters.to || "hoy"}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   useEffect(() => { load(); }, [user]);
 
   // Separar entregas del resto
@@ -262,6 +280,9 @@ export default function Reportes() {
         </select>
         <button onClick={load} style={{ padding:"8px 20px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
           Buscar
+        </button>
+        <button onClick={exportCSV} disabled={!sessions.length} style={{ padding:"8px 20px", borderRadius:9, fontSize:13, fontWeight:600, cursor: sessions.length ? "pointer" : "not-allowed", background:"rgba(79,195,247,0.12)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7", opacity: sessions.length ? 1 : 0.5 }}>
+          ⬇ Exportar CSV
         </button>
       </div>
 
