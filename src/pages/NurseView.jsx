@@ -433,6 +433,7 @@ function SessionCard({ session, token, onRefresh, user }) {
   }, [showMaterialModal]);
   const [catheterType, setCatheterType] = useState(session.catheterType || "");
   const [catheterGauge, setCatheterGauge] = useState(session.catheterGauge || "");
+  const [equipoChoice, setEquipoChoice] = useState(session.equipoChoice || "");
   const [excludedItems, setExcludedItems] = useState(session.excludedMaterial || []);
   const [extraItems, setExtraItems] = useState(session.extraMaterial || []);
   const [extraSearch, setExtraSearch] = useState("");
@@ -592,7 +593,7 @@ function SessionCard({ session, token, onRefresh, user }) {
     }
   };
 
-  const saveMaterialRequest = async (newCatheterType, newCatheterGauge, newExtraItems, newExcludedItems, newExcludePatientDefault, newQtyOverrides, newPieceOverrides, newNote) => {
+  const saveMaterialRequest = async (newCatheterType, newCatheterGauge, newExtraItems, newExcludedItems, newExcludePatientDefault, newQtyOverrides, newPieceOverrides, newNote, newEquipoChoice) => {
     setSavingMaterial(true);
     try {
       const freshToken = await user.getIdToken(true);
@@ -605,6 +606,7 @@ function SessionCard({ session, token, onRefresh, user }) {
         qtyOverrides: newQtyOverrides,
         pieceOverrides: newPieceOverrides,
         materialNote: newNote || "",
+        equipoChoice: newEquipoChoice || null,
       });
       onRefresh();
     } catch(e) {
@@ -1008,7 +1010,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
             </div>
           );
         }
-        const sessionForCalc = { ...session, catheterType, catheterGauge, excludePatientDefault };
+        const sessionForCalc = { ...session, catheterType, catheterGauge, excludePatientDefault, equipoChoice };
         const calcOverrides = {
           extraDefaults: catalogOverrides.extraDefaults,
           extraCatalog: catalogOverrides.extraCatalog,
@@ -1083,6 +1085,25 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                 </label>
               )}
 
+              <div>
+                <label style={{ fontSize:11, color: preview.pendingEquipo ? "#ffb347" : "#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Equipo de infusión {preview.pendingEquipo && "(elige uno)"}</label>
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                  {[
+                    ["fotoprotector", "Primario c/ filtro 22 micras fotoprotector"],
+                    ["plum", "Plum c/ filtro 0.15 micras"],
+                    ["ninguno", "Sin equipo"],
+                  ].map(([val, label]) => (
+                    <button key={val} onClick={() => setEquipoChoice(val)}
+                      style={{ flex:"1 1 auto", padding:"8px 10px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer",
+                        background: equipoChoice===val ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
+                        border: `1px solid ${equipoChoice===val ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.08)"}`,
+                        color: equipoChoice===val ? "#00d4aa" : "#888" }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {preview.pendingAlternatives.map((alt, ai) => (
                 <div key={ai}>
                   <label style={{ fontSize:11, color:"#ffb347", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>{alt.label} (elige uno)</label>
@@ -1103,6 +1124,12 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
               {preview.unmatched.length > 0 && (
                 <div style={{ padding:"8px 12px", borderRadius:8, background:"rgba(255,179,71,0.08)", border:"1px solid rgba(255,179,71,0.25)", fontSize:11, color:"#ffb347" }}>
                   ⚠️ No se encontró material por defecto para: {preview.unmatched.join(", ")}. Agrégalo manualmente abajo si hace falta.
+                </div>
+              )}
+
+              {preview.unmatchedSolutions.length > 0 && (
+                <div style={{ padding:"8px 12px", borderRadius:8, background:"rgba(255,179,71,0.08)", border:"1px solid rgba(255,179,71,0.25)", fontSize:11, color:"#ffb347" }}>
+                  ⚠️ No se pudo calcular la solución de: {preview.unmatchedSolutions.map(u => `${u.name} (${u.diluent})`).join(", ")}. Agrégala manualmente abajo si hace falta.
                 </div>
               )}
 
@@ -1207,7 +1234,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                   style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingMaterial ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                   Cancelar
                 </button>
-                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault, qtyOverrides, pieceOverrides, materialNote); setShowMaterialModal(false); }} disabled={savingMaterial}
+                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault, qtyOverrides, pieceOverrides, materialNote, equipoChoice); setShowMaterialModal(false); }} disabled={savingMaterial}
                   style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingMaterial ? "wait" : "pointer", background:"linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color:"#fff", opacity: savingMaterial ? 0.6 : 1 }}>
                   {savingMaterial ? "Guardando…" : "✓ Guardar solicitud"}
                 </button>
