@@ -1446,11 +1446,6 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Medicamentos",
-    "item": "FOSAPREPITANT 150 MG SOL. INY.",
-    "unit": "FRASCO"
-  },
-  {
-    "category": "Medicamentos",
     "item": "FUROSEMIDA 20 MG",
     "unit": "AMPOLLETA"
   },
