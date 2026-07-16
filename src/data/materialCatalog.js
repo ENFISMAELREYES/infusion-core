@@ -1038,7 +1038,7 @@ export const PUNCION_DEFAULTS = {
         "qty": 5
       },
       {
-        "item": "AGUJA HIPODERMICA 18G X 1 1/2\" ROSA",
+        "item": "AGUJA 18G X 1 1/2\" ROSA",
         "qty": 2
       },
       {
