@@ -178,21 +178,61 @@ export default function Insumos() {
   const grandTotalList = Object.entries(grandTotal).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
 
   const downloadPharmacyOrder = (s, material, note) => {
-    const csvEscape = (v) => `"${String(v).replace(/"/g, '""')}"`;
-    const lines = [];
-    lines.push([csvEscape("Centro"), csvEscape(s.center || "")].join(","));
-    lines.push([csvEscape("Paciente (Ciclo)"), csvEscape(`${s.patientName || ""} (${s.cycle || ""})`)].join(","));
-    lines.push([csvEscape("Fecha de aplicación"), csvEscape(s.date || "")].join(","));
-    lines.push("");
-    if (note) { lines.push([csvEscape("Nota"), csvEscape(note)].join(",")); lines.push(""); }
-    lines.push([csvEscape("Artículo"), csvEscape("Cantidad")].join(","));
-    material.items.forEach(t => lines.push([csvEscape(t.item), csvEscape(t.qty)].join(",")));
-    const csv = "\uFEFF" + lines.join("\r\n"); // BOM para acentos correctos en Excel
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    // Clasifica cada artículo en Medicamentos / Soluciones / Insumos según el catálogo maestro
+    const catalogByName = {};
+    MASTER_CATALOG.forEach(c => { catalogByName[c.item.toUpperCase()] = c.category; });
+    const categoryFor = (itemName) => {
+      const up = itemName.toUpperCase();
+      if (up.includes("CLORURO DE SODIO") || up.includes("GLUCOSA") || up.includes("HARTMANN")) return "SOLUCIONES";
+      if (catalogByName[up]) {
+        const cat = catalogByName[up];
+        return (cat === "Medicamentos" || cat === "Oncológicos" || cat === "Inmunoterapia") ? "MEDICAMENTOS" : "INSUMOS";
+      }
+      // Respaldo: si no hay coincidencia exacta, buscar por coincidencia parcial
+      const fuzzy = MASTER_CATALOG.find(c => up.startsWith(c.item.toUpperCase()) || c.item.toUpperCase().startsWith(up));
+      if (fuzzy) return (["Medicamentos","Oncológicos","Inmunoterapia"].includes(fuzzy.category)) ? "MEDICAMENTOS" : "INSUMOS";
+      return "INSUMOS";
+    };
+    const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
+    material.items.forEach(t => groups[categoryFor(t.item)].push(t));
+
+    const today = new Date().toLocaleDateString("es-MX");
+    const entrega = s.date ? new Date(s.date + "T12:00:00").toLocaleDateString("es-MX") : "";
+    const empresa = s.center || "";
+    const concepto = `${(s.patientName || "").toUpperCase()} ${s.cycle || ""}`.trim();
+
+    const lbl = 'style="font-size:11px;font-weight:bold;font-family:Calibri;"';
+    const val = 'style="font-size:11px;font-family:Calibri;"';
+    const sectionRow = (label) => `<tr><td colspan="8" ${lbl}>${label}</td></tr>`;
+    const itemRow = (item, qty) => `<tr><td colspan="7" ${lbl}>${item}</td><td ${lbl} align="right">${qty}</td></tr>`;
+    const esc = (v) => String(v ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+    let html = `<table border="0">
+      <tr><td colspan="8" align="center" style="font-size:14px;font-weight:bold;font-family:Calibri;">SOLICITUD DE MATERIAL</td></tr>
+      <tr><td colspan="8"></td></tr>
+      <tr><td ${lbl}>EMPRESA</td><td colspan="3" ${val}>${esc(empresa)}</td><td colspan="2" ${lbl}>FECHA DE SOLICITUD:</td><td colspan="2" ${val}>${today}</td></tr>
+      <tr><td ${lbl}>CONCEPTO</td><td colspan="7" ${val}>${esc(concepto)}</td></tr>
+      <tr><td colspan="2" ${lbl}>FECHA DE ENTREGA:</td><td colspan="6" ${val}>${entrega}</td></tr>
+      <tr><td colspan="8"></td></tr>`;
+
+    ["MEDICAMENTOS", "SOLUCIONES", "INSUMOS"].forEach(cat => {
+      if (groups[cat].length === 0) return;
+      html += sectionRow(cat);
+      groups[cat].forEach(t => { html += itemRow(esc(t.item), t.qty); });
+      html += `<tr><td colspan="8"></td></tr>`;
+    });
+
+    if (note) {
+      html += sectionRow("NOTA");
+      html += `<tr><td colspan="8" ${val}>${esc(note)}</td></tr>`;
+    }
+    html += "</table>";
+
+    const blob = new Blob(["\ufeff", html], { type: "application/vnd.ms-excel" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `pedido-${(s.patientName||"paciente").replace(/\s+/g,"_")}-${s.date||""}.csv`;
+    a.download = `SOLICITUD_${empresa}_${(s.patientName || "paciente").replace(/\s+/g, "_")}.xls`;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   };
