@@ -677,7 +677,7 @@ function parseDiluent(diluent) {
   const volMatch = diluent.match(/(\d+)\s*ML/i);
   const vol = volMatch ? parseInt(volMatch[1]) : null;
   const isSG = /SG/i.test(diluent);
-  const isSF = /SF/i.test(diluent);
+  const isSF = /\bSF\b/i.test(diluent) || /\bCS\b/i.test(diluent);
   if (!vol || (!isSG && !isSF)) return null;
   return { vol, type: isSG ? "SG" : "SF" };
 }
