@@ -546,7 +546,7 @@ export const MASTER_CATALOG = [
   { "category": "Medicamentos", "item": "DIFENHIDRAMINA 100 MG.", "unit": "FRASCO" },
   { "category": "Medicamentos", "item": "ERITROPOYETINA ALFA 4000 UI", "unit": "CAJA" },
   { "category": "Medicamentos", "item": "FEXOFENADINA 180 MG", "unit": "CAJA" },
-  { "category": "Medicamentos", "item": "FILGRASTIM 300 UG", "unit": "CAJA" },
+  { "category": "Medicamentos", "item": "FILGRASTIM 300 MCG", "unit": "CAJA" },
   { "category": "Medicamentos", "item": "FOSAPREPITANT 150 MG", "unit": "FRASCO" },
   { "category": "Medicamentos", "item": "FUROSEMIDA 20 MG", "unit": "AMPOLLETA" },
   { "category": "Medicamentos", "item": "GLUCOSA 5% 100 ML.", "unit": "FRASCO" },
