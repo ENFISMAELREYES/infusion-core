@@ -457,7 +457,7 @@ export const PUNCION_DEFAULTS = {
       { "item": "GASA ESTERIL 10x10 CM", "qty": 2 },
       { "item": "AGUJA LUER LOCK", "qty": 1 },
       { "item": "APOSITO TRANSPARENTE ESTERIL 10CM X 12CM.", "qty": 1 },
-      { "item": "GUANTE DE LATEX MEDIANO ESTERIL", "qty": 5 },
+      { "item": "GUANTE DE LATEX MEDIANO ESTERIL", "qty": 6 },
       { "item": "AGUJA 18G X 1 1/2\" ROSA", "qty": 2 },
       { "item": "BANDA ADHESIVA CIRCULAR", "qty": 1 },
       { "item": "CLORURO DE SODIO 0.9% 50 ML", "qty": 1 }
