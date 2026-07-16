@@ -1,6 +1,731 @@
-// Generado a partir de CATALOGO_INFUSIONCORE.xlsx (única fuente del catálogo)
-// Los productos sin coincidencia clara se eliminaron de estas listas — agrégalos a mano.
+// Generado a partir de catalogo_medicamentos_2026-07-09.ods y LISTA_DE_INSUMOS.xlsx (version corregida)
 export const MATERIAL_DEFAULTS = {
+  "FOSAPREPITANT": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "PALONOSETRON": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "DEXAMETASONA": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "ONDANSETRON": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "DIFENHIDRAMINA": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "HIDROCORTISONA": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "ACIDO ZOLEDRONICO": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "CARBOXIMALTOSA": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "FUROSEMIDA": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "HIOSCINA": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "KETOROLACO": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "MESNA": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "METILPREDNISOLONA": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "METOCLOPRAMIDA": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "OMEPRAZOL": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "TRAMADOL": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "CARBOPLATINO": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "CISPLATINO": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "DOCETAXEL": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "DOXORUBICINA": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "ETOPOSIDO": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "FLUORACILO": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 50 ML",
+        "qty": 1
+      },
+      {
+        "item": "BOMBA ELASTOMERICA  270ML. 5 ML/ HL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "GEMCITABINA": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "IFOSFAMIDA": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "IRINOTECAN": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "OXALIPLATINO": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "PACLITAXEL": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "PEMETREXED": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "VINCLISTINA": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "CICLOFOSFAMIDA": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "ACIDO FOLINICO": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "BENDAMUSTINA": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "BLEOMICINA": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "CETUXIMAB": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "NAB PACLITAXEL": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "DACARBAZINA": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "DEXRAZOXANO": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "ROMIPLOSTIM": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 3 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA 27G X 1/2\" GRIS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
   "NIVOLUMAB": {
     "insumos": [
       {
@@ -12,27 +737,20 @@ export const MATERIAL_DEFAULTS = {
         "qty": 1
       },
       {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
         "qty": 2
       },
       {
         "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
         "qty": 1
-      },
-    ]
+      }
+    ],
+    "soluciones": []
   },
   "IPILIBUMAB": {
     "insumos": [
       {
         "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
         "qty": 2
       },
       {
@@ -46,35 +764,14 @@ export const MATERIAL_DEFAULTS = {
       {
         "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
         "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO C/ FILTRO 22 MICRAS FOTOPROTECTOR",
-        "qty": 1
       }
     ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 100 ML.",
-        "qty": 1
-      }
-    ]
+    "soluciones": []
   },
   "PEMBROLIZUMAB": {
     "insumos": [
       {
         "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
         "qty": 2
       },
       {
@@ -82,41 +779,20 @@ export const MATERIAL_DEFAULTS = {
         "qty": 1
       },
       {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
         "qty": 2
       },
       {
         "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
         "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO C/ FILTRO 22 MICRAS FOTOPROTECTOR",
-        "qty": 1
       }
     ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 100 ML.",
-        "qty": 1
-      }
-    ]
+    "soluciones": []
   },
   "ATEZOLIZUMAB": {
     "insumos": [
       {
         "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
         "qty": 2
       },
       {
@@ -124,41 +800,20 @@ export const MATERIAL_DEFAULTS = {
         "qty": 1
       },
       {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
         "qty": 2
       },
       {
         "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
         "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO C/ FILTRO 22 MICRAS FOTOPROTECTOR",
-        "qty": 1
       }
     ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      }
-    ]
+    "soluciones": []
   },
   "BEVACIZUMAB": {
     "insumos": [
       {
         "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
         "qty": 2
       },
       {
@@ -166,100 +821,29 @@ export const MATERIAL_DEFAULTS = {
         "qty": 1
       },
       {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
         "qty": 2
       },
       {
         "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
         "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO C/ FILTRO 22 MICRAS FOTOPROTECTOR",
-        "qty": 1
       }
     ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 100 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "CETUXIMAB": {
-    "insumos": [
-      {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "JERINGA DESECHABLE 20 ML",
-        "qty": 1
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      },
-      {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO C/ FILTRO 22 MICRAS FOTOPROTECTOR",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      }
-    ]
+    "soluciones": []
   },
   "PERTUZUMAB/TRASTUZUMAB": {
     "insumos": [
       {
         "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
         "qty": 2
       },
       {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 27G X 1/2\" GRIS",
+        "item": "JERINGA DESECHABLE 10 ML",
         "qty": 1
       },
       {
-        "item": "TOALLITAS DE ALCOHOL",
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
         "qty": 2
-      },
-      {
-        "item": "BANDA ADHESIVA CIRCULAR",
-        "qty": 1
       }
     ],
     "soluciones": []
@@ -268,14 +852,6 @@ export const MATERIAL_DEFAULTS = {
     "insumos": [
       {
         "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
         "qty": 2
       },
       {
@@ -283,49 +859,88 @@ export const MATERIAL_DEFAULTS = {
         "qty": 1
       },
       {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
         "qty": 2
       },
       {
         "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
         "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "DENOSUMAB": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 3 ML",
+        "qty": 1
       },
       {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA 27G X 1/2\" GRIS",
         "qty": 1
       }
     ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 500 ML.",
-        "qty": 1
-      }
-    ]
+    "soluciones": []
   },
-  "CARBOPLATINO": {
+  "DURVALUMAB": {
     "insumos": [
       {
         "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
         "qty": 2
       },
       {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      }
+    ],
+    "soluciones": []
+  },
+  "OCLELIZUMAB": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
         "qty": 2
       },
       {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      }
+    ],
+    "soluciones": []
+  },
+  "PANITUMAB": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
+      }
+    ],
+    "soluciones": []
+  },
+  "PERTUZUMAB": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
         "qty": 2
       },
       {
@@ -333,45 +948,20 @@ export const MATERIAL_DEFAULTS = {
         "qty": 1
       },
       {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
+        "qty": 2
       },
       {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
+        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
         "qty": 1
       }
     ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 500 ML.",
-        "qty": 1
-      }
-    ]
+    "soluciones": []
   },
-  "CISPLATINO": {
+  "AMIVANTAMAB": {
     "insumos": [
       {
         "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
         "qty": 2
       },
       {
@@ -379,95 +969,20 @@ export const MATERIAL_DEFAULTS = {
         "qty": 1
       },
       {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 500 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 1000 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "DOCETAXEL": {
-    "insumos": [
-      {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
         "qty": 2
       },
       {
         "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
         "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
-        "qty": 1
       }
     ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 100 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 500 ML.",
-        "qty": 1
-      }
-    ]
+    "soluciones": []
   },
-  "DOXORUBICINA": {
+  "TRASTUZUMAB": {
     "insumos": [
       {
         "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
         "qty": 2
       },
       {
@@ -475,568 +990,15 @@ export const MATERIAL_DEFAULTS = {
         "qty": 1
       },
       {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 100 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "ETOPOSIDO": {
-    "insumos": [
-      {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
+        "item": "AGUJA  18G X 1 1/2\" ROSA",
         "qty": 2
       },
       {
         "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
         "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO C/ FILTRO 22 MICRAS FOTOPROTECTOR",
-        "qty": 1
       }
     ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 500 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "FLUORACILO": {
-    "insumos": [
-      {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      },
-      {
-        "item": "JERINGA DESECHABLE 20 ML",
-        "qty": 1
-      },
-      {
-        "item": "JERINGA DESECHABLE 50 ML",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "BOMBA ELASTOMERICA  270ML. 5 ML/ HL",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 100 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "GEMCITABINA": {
-    "insumos": [
-      {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      },
-      {
-        "item": "JERINGA DESECHABLE 20 ML",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 100 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 500 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "IFOSFAMIDA": {
-    "insumos": [
-      {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      },
-      {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 100 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 500 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "IRINOTECAN": {
-    "insumos": [
-      {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      },
-      {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 500 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "OXALIPLATINO": {
-    "insumos": [
-      {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      },
-      {
-        "item": "JERINGA DESECHABLE 20 ML",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "GLUCOSA 5% 250 ML.",
-        "qty": 1
-      },
-      {
-        "item": "GLUCOSA 5% 100 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "PACLITAXEL": {
-    "insumos": [
-      {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      },
-      {
-        "item": "JERINGA DESECHABLE 20 ML",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO C/ FILTRO 22 MICRAS FOTOPROTECTOR",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 500 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "PEMETREXED": {
-    "insumos": [
-      {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      },
-      {
-        "item": "JERINGA DESECHABLE 20 ML",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 100 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "VINCLISTINA": {
-    "insumos": [
-      {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      },
-      {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "CICLOFOSFAMIDA": {
-    "insumos": [
-      {
-        "item": "GASA ESTERIL 10x10 CM",
-        "qty": 3
-      },
-      {
-        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
-        "qty": 2
-      },
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 3
-      },
-      {
-        "item": "JERINGA DESECHABLE 20 ML",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
-        "qty": 1
-      },
-      {
-        "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
-        "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 100 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
-      },
-      {
-        "item": "CLORURO DE SODIO 0.9% 500 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "FOSAPREPITANT": {
-    "insumos": [
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 100 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "PALONOSETRON": {
-    "insumos": [
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "DEXAMETASONA": {
-    "insumos": [
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "ONDANSETRON": {
-    "insumos": [
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "DIFENHIDRAMINA": {
-    "insumos": [
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      }
-    ]
-  },
-  "HIDROCORTISONA": {
-    "insumos": [
-      {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 2
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
-      }
-    ]
+    "soluciones": []
   }
 };
 
@@ -1044,19 +1006,27 @@ export const PUNCION_DEFAULTS = {
   "puerto": {
     "insumos": [
       {
+        "item": "CAMPO QUIRURGICO ESTERIL",
+        "qty": 1
+      },
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 2
+      },
+      {
         "item": "JERINGA DESECHABLE 20 ML",
         "qty": 1
       },
       {
         "item": "TOALLITAS DE ALCOHOL",
-        "qty": 7
+        "qty": 5
       },
       {
         "item": "GASA ESTERIL 10x10 CM",
         "qty": 2
       },
       {
-        "item": "AGUJA 20G X 19MM LUER LOCK",
+        "item": "AGUJA LUER LOCK",
         "qty": 1
       },
       {
@@ -1064,41 +1034,32 @@ export const PUNCION_DEFAULTS = {
         "qty": 1
       },
       {
-        "item": "AGUJA 18G X 1 1/2\" ROSA",
-        "qty": 3
+        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
+        "qty": 5
+      },
+      {
+        "item": "AGUJA HIPODERMICA 18G X 1 1/2\" ROSA",
+        "qty": 2
       },
       {
         "item": "BANDA ADHESIVA CIRCULAR",
         "qty": 1
-      }
-    ],
-    "soluciones": [
-      {
-        "item": "CLORURO DE SODIO 0.9% 50 ML.",
-        "qty": 1
       },
       {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
+        "item": "CLORURO DE SODIO 0.9% 50 ML",
         "qty": 1
       }
-    ]
+    ],
+    "soluciones": []
   },
   "periferico": {
     "insumos": [
       {
         "item": "GASA ESTERIL 10x10 CM",
-        "qty": 1
-      },
-      {
-        "item": "CATETER INTRAVENOSO PERIFERICO 22G",
         "qty": 2
       },
       {
-        "item": "CATETER INTRAVENOSO PERIFERICO 24G",
-        "qty": 2
-      },
-      {
-        "item": "TOALLITAS DE ALCOHOL",
+        "item": "TOALLITAS DE ALCOHOL INDIVIDUALES",
         "qty": 4
       },
       {
@@ -1106,24 +1067,39 @@ export const PUNCION_DEFAULTS = {
         "qty": 1
       },
       {
-        "item": "GUANTE DE LATEX CHICO ESTERIL",
+        "item": "GUANTE DE LATEX MEDIANO ESTERIL",
         "qty": 2
       },
       {
-        "item": "APOSITO TRANSPARENTE ESTERIL 10CM X 12CM.",
+        "item": "APOSITO TRANSPARENTE ESTERIL 6 CM X 7 CM.",
         "qty": 1
       }
     ],
-    "soluciones": [
+    "soluciones": [],
+    "alternativas": [
       {
-        "item": "CLORURO DE SODIO 0.9% 250 ML.",
-        "qty": 1
+        "label": "Calibre del catéter",
+        "options": [
+          {
+            "item": "CATETER INTRAVENOSO PERIFERICO 22G",
+            "qty": 1
+          },
+          {
+            "item": "CATETER INTRAVENOSO PERIFERICO 24G",
+            "qty": 1
+          }
+        ]
       }
     ]
   }
 };
 
 export const MASTER_CATALOG = [
+  {
+    "category": "Insumos",
+    "item": "GORRO DESECHABLE",
+    "unit": "PIEZA"
+  },
   {
     "category": "Insumos",
     "item": "AGUJA 20G X 19MM LUER LOCK",
@@ -1166,7 +1142,7 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Insumos",
-    "item": "BOMBA ELASTOMERICA  270ML. 5 ML/ HL",
+    "item": "BOMBA ELASTOMERICA 270ML. 5 ML/ HL",
     "unit": "PIEZA"
   },
   {
@@ -1296,11 +1272,6 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Medicamentos",
-    "item": "METILPREDNISOLONA 40 MG",
-    "unit": "FRASCO"
-  },
-  {
-    "category": "Medicamentos",
     "item": "ACIDO ACETILSALICILICO 100 MG",
     "unit": "CAJA"
   },
@@ -1351,7 +1322,7 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Medicamentos",
-    "item": "CARBOXIMALTOSA 500 MG",
+    "item": "CARBOXIMALTOSA FERRICA 500 MG",
     "unit": "FRASCO"
   },
   {
@@ -1521,7 +1492,7 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Medicamentos",
-    "item": "PALONOSETRON/ NETUPITANT  0.5/300 MG",
+    "item": "PALONOSETRON/ NETUPITANT 0.5/300 MG",
     "unit": "CAJA"
   },
   {
@@ -1578,11 +1549,6 @@ export const MASTER_CATALOG = [
     "category": "Oncológicos",
     "item": "AXITINIB 5 MG",
     "unit": "CAJA"
-  },
-  {
-    "category": "Oncológicos",
-    "item": "AZACITADINA 100 MG",
-    "unit": "FRASCO"
   },
   {
     "category": "Oncológicos",
@@ -1646,11 +1612,6 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Oncológicos",
-    "item": "DAROLUTAMIDA 300 MG",
-    "unit": "CAJA"
-  },
-  {
-    "category": "Oncológicos",
     "item": "DEXRAZOXANO 500 MG",
     "unit": "FRASCO"
   },
@@ -1662,7 +1623,7 @@ export const MASTER_CATALOG = [
   {
     "category": "Oncológicos",
     "item": "DOCETAXEL 80 MG",
-    "unit": "FCO"
+    "unit": "FRASCO"
   },
   {
     "category": "Oncológicos",
@@ -1913,8 +1874,55 @@ export const MASTER_CATALOG = [
     "category": "Inmunoterapia",
     "item": "TRASTUZUMAB DERUXTECAN 100 MG",
     "unit": "FRASCO"
+  },
+  {
+    "category": "Insumos",
+    "item": "AGUJA LUER LOCK",
+    "unit": "PIEZA"
   }
 ];
+
+export const PATIENT_DEFAULT_MATERIAL = {
+  "insumos": [
+    {
+      "item": "CAMPO QUIRURGICO ESTERIL",
+      "qty": 1
+    },
+    {
+      "item": "GASA ESTERIL 10x10 CM",
+      "qty": 3
+    },
+    {
+      "item": "GORRO DESECHABLE",
+      "qty": 1
+    },
+    {
+      "item": "BATA P/ CIRUJANO DESECHABLE",
+      "qty": 1
+    },
+    {
+      "item": "BOTA DESECHABLE PAR",
+      "qty": 1
+    },
+    {
+      "item": "GUANTE DE LATEX MEDIANO ESTERIL",
+      "qty": 2
+    },
+    {
+      "item": "GUANTE DE NITRILO MEDIANO NO ESTERIL",
+      "qty": 2
+    },
+    {
+      "item": "CLORURO DE SODIO 0.9% 250 ML.",
+      "qty": 1
+    },
+    {
+      "item": "CLORURO DE SODIO 0.9% 50 ML.",
+      "qty": 1
+    }
+  ],
+  "soluciones": []
+};
 // ---------- Lógica de emparejamiento y consolidado ----------
 
 function normalize(s) {
@@ -1979,20 +1987,6 @@ function parseDoseMg(doseStr) {
 // para cubrir la dosis prescrita de un medicamento (usa las presentaciones más
 // grandes primero para minimizar el número de piezas abiertas).
 // Devuelve { doseMg, pieces: [{item, mg, count}], totalMg, waste } o null si no se pudo calcular.
-// Devuelve todas las presentaciones disponibles en el catálogo para un medicamento
-// (no solo las que el cálculo automático eligió) — útil para ajustar manualmente
-// cuándo, por ejemplo, físicamente solo hay una de las presentaciones en existencia.
-export function getMedicationPresentations(medName, extraCatalog = [], extraDefaults = {}) {
-  const key = matchMedication(medName, extraDefaults);
-  const searchTerm = key || normalize(medName).split(" ")[0];
-  const allCatalog = [...MASTER_CATALOG, ...extraCatalog];
-  return allCatalog
-    .filter(c => ["Oncológicos", "Inmunoterapia", "Medicamentos"].includes(c.category))
-    .map(c => ({ item: c.item, mg: parsePresentationMg(c.item) }))
-    .filter(c => c.mg && normalize(c.item).startsWith(searchTerm))
-    .sort((a,b) => b.mg - a.mg);
-}
-
 export function computeMedicationPieces(medName, doseStr, extraCatalog = [], extraDefaults = {}) {
   const doseMg = parseDoseMg(doseStr);
   if (!doseMg) return null;
@@ -2038,7 +2032,8 @@ export function computeMedicationPieces(medName, doseStr, extraCatalog = [], ext
 // en cada medicamento cuando es posible — lo del catálogo son solo probables.
 // Devuelve { items: [{item, qty}], unmatched: [...], pendingAlternatives: [...] }
 export function computeSessionMaterial(session, overrides = {}) {
-  const { extraDefaults = {}, extraCatalog = [], puncionOverrides = {}, patientDefaultMaterial = null } = overrides;
+  const { extraDefaults = {}, extraCatalog = [], puncionOverrides = {}, patientDefaultMaterial } = overrides;
+  const effectivePatientDefault = patientDefaultMaterial || PATIENT_DEFAULT_MATERIAL;
   const allDefaults = { ...MATERIAL_DEFAULTS, ...extraDefaults };
   const allPuncion = { ...PUNCION_DEFAULTS, ...puncionOverrides };
   const allCatalog = [...MASTER_CATALOG, ...extraCatalog];
@@ -2054,9 +2049,9 @@ export function computeSessionMaterial(session, overrides = {}) {
 
   // Material base del paciente: aplica a (casi) todas las sesiones por defecto,
   // salvo que se excluya explícitamente para esa sesión en particular.
-  if (patientDefaultMaterial && !session.excludePatientDefault) {
-    (patientDefaultMaterial.insumos || []).forEach(({ item, qty }) => add(item, qty));
-    (patientDefaultMaterial.soluciones || []).forEach(({ item, qty }) => add(item, qty));
+  if (effectivePatientDefault && !session.excludePatientDefault) {
+    (effectivePatientDefault.insumos || []).forEach(({ item, qty }) => add(item, qty));
+    (effectivePatientDefault.soluciones || []).forEach(({ item, qty }) => add(item, qty));
   }
 
   (session.meds || []).forEach(m => {
