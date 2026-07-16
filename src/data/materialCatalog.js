@@ -1102,12 +1102,7 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Insumos",
-    "item": "AGUJA 20G X 19MM LUER LOCK",
-    "unit": "PIEZA"
-  },
-  {
-    "category": "Insumos",
-    "item": "AGUJA 22G X 19MM LUER LOCK",
+    "item": "AGUJA LUER LOCK",
     "unit": "PIEZA"
   },
   {
@@ -1193,11 +1188,6 @@ export const MASTER_CATALOG = [
   {
     "category": "Insumos",
     "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
-    "unit": "PIEZA"
-  },
-  {
-    "category": "Insumos",
-    "item": "EQUIPO SECUNDARIO CON FILTRO 15 MICRAS",
     "unit": "PIEZA"
   },
   {
