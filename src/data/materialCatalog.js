@@ -1102,12 +1102,7 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Insumos",
-    "item": "AGUJA 20G X 19MM LUER LOCK",
-    "unit": "PIEZA"
-  },
-  {
-    "category": "Insumos",
-    "item": "AGUJA 22G X 19MM LUER LOCK",
+    "item": "AGUJA LUER LOCK",
     "unit": "PIEZA"
   },
   {
@@ -1182,17 +1177,12 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Insumos",
-    "item": "CUBREBOCAS DE TRES PLIEGOS NO ESTERIL (AZUL)",
+    "item": "CUBREBOCAS",
     "unit": "PIEZA"
   },
   {
     "category": "Insumos",
     "item": "EQUIPO PRIMARIO C/ FILTRO 22 MICRAS FOTOPROTECTOR",
-    "unit": "PIEZA"
-  },
-  {
-    "category": "Insumos",
-    "item": "EQUIPO PRIMARIO PLUM C/ FILTRO 0.15 MICRAS",
     "unit": "PIEZA"
   },
   {
