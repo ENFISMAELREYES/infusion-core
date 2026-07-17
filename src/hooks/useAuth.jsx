@@ -16,7 +16,7 @@ const PROFILES = {
   "dmMg7E4GfteR3Huc9hVYu9G4v5s1": { name: "Ana Flores",        role: "visualizador", center: "CIPI"  },
   "Ms8W1cGrrtY7bDDeSkt3RISvDZM2": { name: "Paola Itzel Sandre", role: "visualizador", center: "CIPI"  },
   "GstGhEoU7AbfbNwU8Lq2KZ2wiL52": { name: "Maricruz Zorrosa",  role: "visualizador", center: "CITIO" },
-
+  "mUmYTTlSDwTcu2MY1kOoRhP1rMt2": { name: "Elizabet Sorroza",  role: "visualizador", center: "CITIO" },  
   
 };
 
