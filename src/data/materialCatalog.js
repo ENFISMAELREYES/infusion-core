@@ -564,7 +564,7 @@ export const MASTER_CATALOG = [
   { "category": "Medicamentos", "item": "ONDANSETRON 8 MG", "unit": "AMPOLLETA" },
   { "category": "Medicamentos", "item": "PALONOSETRON 0.25 MG", "unit": "FRASCO" },
   { "category": "Medicamentos", "item": "PALONOSETRON/ NETUPITANT 0.5/300 MG", "unit": "CAJA" },
-  { "category": "Medicamentos", "item": "PARACETAMOL 100 MG", "unit": "FRASCO" },
+  { "category": "Medicamentos", "item": "PARACETAMOL 1000 MG", "unit": "FRASCO" },
   { "category": "Medicamentos", "item": "PARACETAMOL 500 MG", "unit": "TABLETAS" },
   { "category": "Medicamentos", "item": "PEGFILGRASTIM 6 MG", "unit": "CAJA" },
   { "category": "Medicamentos", "item": "PREDNISONA 20 MG", "unit": "CAJA" },
