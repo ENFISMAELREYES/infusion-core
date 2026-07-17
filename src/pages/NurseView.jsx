@@ -108,6 +108,13 @@ async function patchSession(token, sessionId, updates) {
     if (typeof val === "object") return { mapValue:{ fields:Object.fromEntries(Object.entries(val).map(([k,v]) => [k,toFV(v)])) } };
     return { stringValue:String(val) };
   };
+  const checkOk = async (res) => {
+    if (!res.ok) {
+      let msg = `Error ${res.status}`;
+      try { const body = await res.json(); msg = body?.error?.message || msg; } catch {}
+      throw new Error(msg);
+    }
+  };
   const simpleUpdates = {}, nestedUpdates = {};
   Object.entries(updates).forEach(([k,v]) => {
     if (k.includes(".")) nestedUpdates[k] = v;
@@ -116,8 +123,9 @@ async function patchSession(token, sessionId, updates) {
   if (Object.keys(simpleUpdates).length > 0) {
     const fields = Object.fromEntries(Object.entries(simpleUpdates).map(([k,v]) => [k,toFV(v)]));
     const mask   = Object.keys(simpleUpdates).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
-    await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
+    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
+    await checkOk(res);
   }
   for (const [path, value] of Object.entries(nestedUpdates)) {
     const parts = path.split(".");
@@ -125,8 +133,9 @@ async function patchSession(token, sessionId, updates) {
     let fields  = {};
     if (parts.length === 2) fields[parts[0]] = { mapValue:{ fields:{ [parts[1]]:toFV(value) } } };
     else if (parts.length === 3) fields[parts[0]] = { mapValue:{ fields:{ [parts[1]]:{ mapValue:{ fields:{ [parts[2]]:toFV(value) } } } } } };
-    await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
+    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
+    await checkOk(res);
   }
 }
 
