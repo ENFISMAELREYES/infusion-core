@@ -133,6 +133,19 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     } catch (err) { /* si falla el marcado, no bloquea la descarga */ }
   };
 
+  const toggleExcludeFromOrder = async (e) => {
+    e.stopPropagation();
+    try {
+      const newVal = !s.excludeFromOrder;
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${s.id}?updateMask.fieldPaths=excludeFromOrder`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: { excludeFromOrder: { booleanValue: newVal } } }) });
+      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, excludeFromOrder: newVal } : x));
+    } catch (err) {
+      alert("Error al actualizar: " + err.message);
+    }
+  };
+
   const generateAnexo = async () => {
     if (anexoItems.length === 0) return;
     setSavingAnexo(true);
@@ -174,8 +187,12 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           style={{ width:20, height:20, borderRadius:"50%", objectFit:"cover", opacity:0.9, flexShrink:0 }} />
         <span style={{ fontSize:11, color:"#666", background:"rgba(255,255,255,0.05)", padding:"2px 8px", borderRadius:99 }}>{s.center}</span>
         <span style={{ fontSize:10, color:"#555" }}>{s.date}</span>
-        <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600, minWidth:120 }}>{s.patientName}</span>
-        <span style={{ fontSize:11, color:"#555" }}>{material.items.length} art.</span>
+        <span style={{ flex:1, fontSize:13, color: s.excludeFromOrder ? "#555" : "#f0f0f0", fontWeight:600, minWidth:120, textDecoration: s.excludeFromOrder ? "line-through" : "none" }}>{s.patientName}</span>
+        {s.excludeFromOrder ? (
+          <span style={{ fontSize:11, color:"#888" }}>Material ya cubierto</span>
+        ) : (
+          <span style={{ fontSize:11, color:"#555" }}>{material.items.length} art.</span>
+        )}
         {material.unmatched.length > 0 && <span style={{ fontSize:11, color:"#ffb347" }}>⚠️ {material.unmatched.length}</span>}
         {note && <span style={{ fontSize:11, color:"#4fc3f7" }}>📝</span>}
         {anexos.length > 0 && <span style={{ fontSize:11, color:"#AFA9EC" }}>📎 {anexos.length}</span>}
@@ -215,6 +232,15 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
             ➕ Anexar
           </button>
         )}
+
+        <button onClick={toggleExcludeFromOrder}
+          title={s.excludeFromOrder ? "Volver a cargar material en esta sesión" : "Marcar que el material de esta sesión ya está cubierto (ej. se pidió para varios días de una vez) y no incluirla en el consolidado"}
+          style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
+            background: s.excludeFromOrder ? "rgba(136,136,136,0.15)" : "rgba(255,255,255,0.04)",
+            border: `1px solid ${s.excludeFromOrder ? "rgba(136,136,136,0.4)" : "rgba(255,255,255,0.08)"}`,
+            color: s.excludeFromOrder ? "#aaa" : "#666" }}>
+          {s.excludeFromOrder ? "↺ Volver a cargar" : "🚫 Ya cubierto"}
+        </button>
 
         <span style={{ color:"#555" }}>{expanded ? "▲" : "▼"}</span>
       </div>
@@ -332,6 +358,7 @@ export default function Insumos() {
   useEffect(() => { user.getIdToken().then(setToken); }, [user]);
   useEffect(() => { if (token) load(); }, [token]);
 
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const load = async () => {
     setLoading(true);
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
@@ -339,12 +366,13 @@ export default function Insumos() {
     setSessions(s.filter(x => Array.isArray(x.meds) && x.meds.length > 0));
     setOverrides(ov);
     setLoading(false);
+    setHasLoadedOnce(true);
   };
 
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
   const rangeEnd = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); };
   const DATE_RANGES = { hoy: 0, "7dias": 6, "14dias": 13, "21dias": 20 };
-  const dateFiltered = dateFilter === "todas" ? sessions
+  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.pedidoGeneradoAt)
     : sessions.filter(s => s.date >= today && s.date <= rangeEnd(DATE_RANGES[dateFilter]));
   const filtered = centerFilter === "Todos" ? dateFiltered : dateFiltered.filter(s => s.center === centerFilter);
   const calcOverrides = {
@@ -354,6 +382,9 @@ export default function Insumos() {
     patientDefaultMaterial: overrides.patientDefaultMaterial,
   };
   const perPatient = filtered.map(s => {
+    if (s.excludeFromOrder) {
+      return { session: s, material: { items: [], unmatched: [] }, note: s.materialNote || "" };
+    }
     const preview = computeSessionMaterial(s, calcOverrides);
     const excluded = s.excludedMaterial || [];
     const qtyOv = s.qtyOverrides || {};
@@ -516,7 +547,7 @@ export default function Insumos() {
     setOverrides(o => ({ ...o, patientDefaultMaterial: null }));
   };
 
-  if (loading) return <div style={{ padding:40, color:"#666", textAlign:"center" }}>Cargando…</div>;
+  if (loading && !hasLoadedOnce) return <div style={{ padding:40, color:"#666", textAlign:"center" }}>Cargando…</div>;
 
   return (
     <div style={{ padding:"24px 28px", maxWidth:820, margin:"0 auto" }}>
@@ -549,7 +580,7 @@ export default function Insumos() {
             ))}
           </div>
           <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
-            {[["hoy","Hoy"],["7dias","7 días"],["14dias","14 días"],["21dias","21 días"],["todas","Todas las cargadas"]].map(([val,label]) => (
+            {[["hoy","Hoy"],["7dias","7 días"],["14dias","14 días"],["21dias","21 días"],["todas","Con solicitud generada"]].map(([val,label]) => (
               <button key={val} onClick={() => setDateFilter(val)} style={{
                 padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
                 background: dateFilter===val ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
