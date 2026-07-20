@@ -30,14 +30,15 @@ function toFV(val) {
   return { stringValue: String(val) };
 }
 
-async function fetchTodaySessions(token, date) {
+async function fetchUpcomingSessions(token, fromDate) {
   const res = await fetch(
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
     { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
       body: JSON.stringify({ structuredQuery: {
         from: [{ collectionId: "sessions" }],
-        where: { fieldFilter: { field: { fieldPath: "date" }, op: "EQUAL", value: { stringValue: date } } },
-        limit: 300,
+        where: { fieldFilter: { field: { fieldPath: "date" }, op: "GREATER_THAN_OR_EQUAL", value: { stringValue: fromDate } } },
+        orderBy: [{ field: { fieldPath: "date" }, direction: "ASCENDING" }],
+        limit: 500,
       }})
     }
   );
@@ -103,6 +104,7 @@ export default function Insumos() {
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [centerFilter, setCenterFilter] = useState("Todos");
+  const [dateFilter, setDateFilter] = useState("semana"); // "hoy" | "semana" | "todas"
   const [overrides, setOverrides] = useState({ extraCatalog: [], extraDefaults: {} });
   const [loading, setLoading] = useState(true);
   const [expandedPatient, setExpandedPatient] = useState(null);
@@ -137,13 +139,18 @@ export default function Insumos() {
   const load = async () => {
     setLoading(true);
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-    const [s, ov] = await Promise.all([fetchTodaySessions(token, today), fetchOverrides(token)]);
+    const [s, ov] = await Promise.all([fetchUpcomingSessions(token, today), fetchOverrides(token)]);
     setSessions(s.filter(x => Array.isArray(x.meds) && x.meds.length > 0));
     setOverrides(ov);
     setLoading(false);
   };
 
-  const filtered = centerFilter === "Todos" ? sessions : sessions.filter(s => s.center === centerFilter);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+  const weekEnd = (() => { const d = new Date(); d.setDate(d.getDate() + 6); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); })();
+  const dateFiltered = dateFilter === "todas" ? sessions
+    : dateFilter === "hoy" ? sessions.filter(s => s.date === today)
+    : sessions.filter(s => s.date >= today && s.date <= weekEnd); // "semana"
+  const filtered = centerFilter === "Todos" ? dateFiltered : dateFiltered.filter(s => s.center === centerFilter);
   const calcOverrides = {
     extraDefaults: overrides.extraDefaults,
     extraCatalog: overrides.extraCatalog,
@@ -354,7 +361,7 @@ export default function Insumos() {
 
       {tab === "consolidado" && (
         <div>
-          <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+          <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
             {["Todos","CITIO","CIPI"].map(c => (
               <button key={c} onClick={() => setCenterFilter(c)} style={{
                 padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
@@ -363,7 +370,17 @@ export default function Insumos() {
                 color: centerFilter===c ? "#4fc3f7" : "#666",
               }}>{c}</button>
             ))}
-            <span style={{ marginLeft:"auto", fontSize:12, color:"#555", alignSelf:"center" }}>{perPatient.length} paciente{perPatient.length!==1?"s":""} hoy</span>
+          </div>
+          <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+            {[["hoy","Hoy"],["semana","Próximos 7 días"],["todas","Todas las cargadas"]].map(([val,label]) => (
+              <button key={val} onClick={() => setDateFilter(val)} style={{
+                padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
+                background: dateFilter===val ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
+                border: `1px solid ${dateFilter===val ? "rgba(0,212,170,0.3)" : "rgba(255,255,255,0.08)"}`,
+                color: dateFilter===val ? "#00d4aa" : "#666",
+              }}>{label}</button>
+            ))}
+            <span style={{ marginLeft:"auto", fontSize:12, color:"#555", alignSelf:"center" }}>{perPatient.length} sesión{perPatient.length!==1?"es":""}</span>
           </div>
 
           <div style={{ background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.2)", borderRadius:14, padding:16, marginBottom:20 }}>
@@ -375,23 +392,42 @@ export default function Insumos() {
                   <span style={{ color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace", fontWeight:600 }}>{t.qty}</span>
                 </div>
               ))}
-              {grandTotalList.length === 0 && <div style={{ fontSize:12, color:"#444", textAlign:"center", padding:16 }}>Sin sesiones con medicamentos hoy.</div>}
+              {grandTotalList.length === 0 && <div style={{ fontSize:12, color:"#444", textAlign:"center", padding:16 }}>Sin sesiones con medicamentos en este rango.</div>}
             </div>
           </div>
 
           <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>Por paciente</div>
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {perPatient.map(({ session: s, material, note }, i) => (
+            {perPatient.map(({ session: s, material, note }, i) => {
+              const pedidoHecho = !!s.pedidoGeneradoAt;
+              return (
               <div key={i} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
                 <div onClick={() => setExpandedPatient(p => p===i ? null : i)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10 }}>
+                  <img src={s.center === "CIPI" ? "/logo-cipi-icon.png" : "/logo-citio-icon.png"} alt={s.center}
+                    style={{ width:20, height:20, borderRadius:"50%", objectFit:"cover", opacity:0.9, flexShrink:0 }} />
                   <span style={{ fontSize:11, color:"#666", background:"rgba(255,255,255,0.05)", padding:"2px 8px", borderRadius:99 }}>{s.center}</span>
+                  <span style={{ fontSize:10, color:"#555" }}>{s.date}</span>
                   <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
                   <span style={{ fontSize:11, color:"#555" }}>{material.items.length} art.</span>
                   {material.unmatched.length > 0 && <span style={{ fontSize:11, color:"#ffb347" }}>⚠️ {material.unmatched.length}</span>}
                   {note && <span style={{ fontSize:11, color:"#4fc3f7" }}>📝</span>}
-                  <button onClick={e => { e.stopPropagation(); downloadPharmacyOrder(s, material, note); }} title="Descargar pedido para farmacia"
-                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
-                    📄 Pedido
+                  <button onClick={async e => {
+                      e.stopPropagation();
+                      downloadPharmacyOrder(s, material, note);
+                      try {
+                        const nowIso = new Date().toISOString();
+                        await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${s.id}?updateMask.fieldPaths=pedidoGeneradoAt`,
+                          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+                            body: JSON.stringify({ fields: { pedidoGeneradoAt: { stringValue: nowIso } } }) });
+                        setSessions(prev => prev.map(x => x.id === s.id ? { ...x, pedidoGeneradoAt: nowIso } : x));
+                      } catch (err) { /* si falla el marcado, no bloquea la descarga */ }
+                    }}
+                    title={pedidoHecho ? `Pedido generado ${new Date(s.pedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Descargar pedido para farmacia"}
+                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
+                      background: pedidoHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
+                      border: `1px solid ${pedidoHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
+                      color: pedidoHecho ? "#666" : "#00d4aa" }}>
+                    {pedidoHecho ? "✓ Pedido hecho" : "📄 Pedido"}
                   </button>
                   <span style={{ color:"#555" }}>{expandedPatient===i ? "▲" : "▼"}</span>
                 </div>
@@ -411,7 +447,8 @@ export default function Insumos() {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
