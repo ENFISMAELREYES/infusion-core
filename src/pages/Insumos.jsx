@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { computeSessionMaterial, computeMedicationPieces, MASTER_CATALOG, MATERIAL_DEFAULTS, PUNCION_DEFAULTS } from "../data/materialCatalog";
+import MaterialModal from "../components/MaterialModal";
 
 const PROJECT_ID = "infusion-core";
 
@@ -97,6 +98,201 @@ function CatalogSuggestions({ query, catalog, onSelect }) {
   );
 }
 
+// Fila de sesión en el consolidado: incluye el botón de Solicitar material
+// (reutilizando el mismo modal que antes vivía en NurseView), el botón de
+// Pedido, y — cuando se está viendo "todas las cargadas" — el botón de Anexar
+// para agregar material extra si hubo cambios el día de la sesión o después
+// (hasta 3 anexos por sesión).
+function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user, onRefresh, setSessions, downloadPharmacyOrder, showAnexo }) {
+  const pedidoHecho = !!s.pedidoGeneradoAt;
+  const anexos = s.anexos || [];
+  const isCipi = s.center === "CIPI";
+  const [cipiVariant, setCipiVariant] = useState(s.cipiVariant || "PRO");
+  const [showAnexoModal, setShowAnexoModal] = useState(false);
+  const [anexoItems, setAnexoItems] = useState([]);
+  const [anexoSearch, setAnexoSearch] = useState("");
+  const [anexoQty, setAnexoQty] = useState("1");
+  const [anexoNote, setAnexoNote] = useState("");
+  const [savingAnexo, setSavingAnexo] = useState(false);
+
+  const toFV = (val) => {
+    if (typeof val === "string") return { stringValue: val };
+    if (typeof val === "number") return { integerValue: String(val) };
+    if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
+    if (val && typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k,v]) => [k, toFV(v)])) } };
+    return { stringValue: String(val) };
+  };
+
+  const markPedidoHecho = async () => {
+    try {
+      const nowIso = new Date().toISOString();
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${s.id}?updateMask.fieldPaths=pedidoGeneradoAt`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: { pedidoGeneradoAt: { stringValue: nowIso } } }) });
+      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, pedidoGeneradoAt: nowIso } : x));
+    } catch (err) { /* si falla el marcado, no bloquea la descarga */ }
+  };
+
+  const generateAnexo = async () => {
+    if (anexoItems.length === 0) return;
+    setSavingAnexo(true);
+    try {
+      const anexoNumber = anexos.length + 1;
+      const res = await fetch("/api/generate-material-order", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          center: s.center, cipiVariant, patientName: s.patientName, cycle: s.cycle, date: s.date,
+          groups: { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: anexoItems },
+          note: anexoNote, anexoNumber,
+        }),
+      });
+      if (!res.ok) throw new Error(`Error ${res.status} al generar el anexo`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `ANEXO${anexoNumber}_${s.center}_${(s.patientName||"paciente").replace(/\s+/g,"_")}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+
+      const newAnexos = [...anexos, { number: anexoNumber, items: anexoItems, note: anexoNote, generatedAt: new Date().toISOString() }];
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${s.id}?updateMask.fieldPaths=anexos`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: { anexos: toFV(newAnexos) } }) });
+      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, anexos: newAnexos } : x));
+      setShowAnexoModal(false); setAnexoItems([]); setAnexoNote("");
+    } catch (e) {
+      alert("Error al generar el anexo: " + e.message);
+    } finally {
+      setSavingAnexo(false);
+    }
+  };
+
+  return (
+    <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
+      <div onClick={onToggle} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+        <img src={s.center === "CIPI" ? "/logo-cipi-icon.png" : "/logo-citio-icon.png"} alt={s.center}
+          style={{ width:20, height:20, borderRadius:"50%", objectFit:"cover", opacity:0.9, flexShrink:0 }} />
+        <span style={{ fontSize:11, color:"#666", background:"rgba(255,255,255,0.05)", padding:"2px 8px", borderRadius:99 }}>{s.center}</span>
+        <span style={{ fontSize:10, color:"#555" }}>{s.date}</span>
+        <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600, minWidth:120 }}>{s.patientName}</span>
+        <span style={{ fontSize:11, color:"#555" }}>{material.items.length} art.</span>
+        {material.unmatched.length > 0 && <span style={{ fontSize:11, color:"#ffb347" }}>⚠️ {material.unmatched.length}</span>}
+        {note && <span style={{ fontSize:11, color:"#4fc3f7" }}>📝</span>}
+        {anexos.length > 0 && <span style={{ fontSize:11, color:"#AFA9EC" }}>📎 {anexos.length}</span>}
+
+        {isCipi && (
+          <div onClick={e => e.stopPropagation()} style={{ display:"flex", gap:2 }}>
+            {["PRO","PED"].map(v => (
+              <button key={v} onClick={() => setCipiVariant(v)}
+                title={v === "PRO" ? "Centro de Infusión Profesional Integral" : "Centro de Infusión Pediátrica Integral"}
+                style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:600, cursor:"pointer",
+                  background: cipiVariant===v ? "rgba(175,169,236,0.15)" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${cipiVariant===v ? "rgba(175,169,236,0.4)" : "rgba(255,255,255,0.08)"}`,
+                  color: cipiVariant===v ? "#AFA9EC" : "#666" }}>
+                {v}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div onClick={e => e.stopPropagation()}>
+          <MaterialModal session={s} token={token} user={user} onRefresh={onRefresh} compact />
+        </div>
+
+        <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant); await markPedidoHecho(); }}
+          title={pedidoHecho ? `Pedido generado ${new Date(s.pedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Descargar pedido para farmacia"}
+          style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
+            background: pedidoHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
+            border: `1px solid ${pedidoHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
+            color: pedidoHecho ? "#666" : "#00d4aa" }}>
+          {pedidoHecho ? "✓ Pedido hecho" : "📄 Pedido"}
+        </button>
+
+        {showAnexo && anexos.length < 3 && (
+          <button onClick={e => { e.stopPropagation(); setShowAnexoModal(true); }}
+            title="Anexar material adicional (cambios el día de la sesión o después)"
+            style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+            ➕ Anexar
+          </button>
+        )}
+
+        <span style={{ color:"#555" }}>{expanded ? "▲" : "▼"}</span>
+      </div>
+      {expanded && (
+        <div style={{ padding:"0 16px 14px", display:"flex", flexDirection:"column", gap:4 }}>
+          {material.unmatched.length > 0 && (
+            <div style={{ fontSize:11, color:"#ffb347", marginBottom:6 }}>Sin material por defecto: {material.unmatched.join(", ")}</div>
+          )}
+          {note && (
+            <div style={{ fontSize:11, color:"#4fc3f7", marginBottom:6, padding:"6px 8px", background:"rgba(79,195,247,0.06)", borderRadius:6 }}>📝 {note}</div>
+          )}
+          {material.items.map((t,ti) => (
+            <div key={ti} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#aaa", padding:"3px 0" }}>
+              <span>{t.item}</span><span style={{ color:"#00d4aa" }}>{t.qty}</span>
+            </div>
+          ))}
+          {anexos.map((an,ai) => (
+            <div key={ai} style={{ marginTop:8, padding:"8px 10px", borderRadius:8, background:"rgba(175,169,236,0.06)" }}>
+              <div style={{ fontSize:11, color:"#AFA9EC", fontWeight:600, marginBottom:4 }}>Anexo {an.number} — {new Date(an.generatedAt).toLocaleDateString("es-MX")}</div>
+              {(an.items||[]).map((t,ti) => (
+                <div key={ti} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#ccc", padding:"2px 0" }}>
+                  <span>{t.item}</span><span style={{ color:"#AFA9EC" }}>{t.qty}</span>
+                </div>
+              ))}
+              {an.note && <div style={{ fontSize:10, color:"#888", marginTop:4 }}>{an.note}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showAnexoModal && (
+        <div onClick={e => { e.stopPropagation(); !savingAnexo && setShowAnexoModal(false); }}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:440, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>📎 Anexo {anexos.length + 1} — {s.patientName}</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>Material adicional por cambios el día de la sesión o después (máximo 3 anexos)</div>
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <input value={anexoSearch} onChange={e => setAnexoSearch(e.target.value)} placeholder="Buscar en el catálogo..." style={inputStyle} />
+              <input type="number" min="1" value={anexoQty} onChange={e => setAnexoQty(e.target.value)} style={{ ...inputStyle, width:60 }} />
+            </div>
+            {anexoSearch.trim().length >= 2 && (
+              <div style={{ display:"flex", flexDirection:"column", gap:3, maxHeight:140, overflowY:"auto" }}>
+                {MASTER_CATALOG.filter(c => c.item.toUpperCase().includes(anexoSearch.toUpperCase())).slice(0,6).map((c,i) => (
+                  <button key={i} onClick={() => { setAnexoItems(prev => [...prev, { item:c.item, qty: parseInt(anexoQty)||1 }]); setAnexoSearch(""); }}
+                    style={{ textAlign:"left", padding:"6px 9px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", color:"#ccc" }}>
+                    + {c.item}
+                  </button>
+                ))}
+              </div>
+            )}
+            {anexoItems.length > 0 && (
+              <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                {anexoItems.map((it,i) => (
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <span style={{ flex:1, fontSize:11, color:"#ccc" }}>{it.item}</span>
+                    <span style={{ fontSize:11, color:"#ffb347" }}>{it.qty}</span>
+                    <button onClick={() => setAnexoItems(prev => prev.filter((_,pi)=>pi!==i))} style={{ padding:"2px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <textarea value={anexoNote} onChange={e => setAnexoNote(e.target.value)} placeholder="Motivo del anexo (opcional)" rows={2}
+              style={{ ...inputStyle, resize:"vertical" }} />
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setShowAnexoModal(false)} disabled={savingAnexo} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
+              <button onClick={generateAnexo} disabled={savingAnexo || anexoItems.length===0} style={{ flex:2, padding:"9px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"linear-gradient(135deg,#ffb347,#e08e2a)", border:"none", color:"#000", opacity: (savingAnexo||anexoItems.length===0)?0.5:1 }}>
+                {savingAnexo ? "Generando…" : `✓ Generar Anexo ${anexos.length+1}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Insumos() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
@@ -104,7 +300,7 @@ export default function Insumos() {
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [centerFilter, setCenterFilter] = useState("Todos");
-  const [dateFilter, setDateFilter] = useState("semana"); // "hoy" | "semana" | "todas"
+  const [dateFilter, setDateFilter] = useState("7dias"); // "hoy" | "7dias" | "14dias" | "21dias" | "todas"
   const [overrides, setOverrides] = useState({ extraCatalog: [], extraDefaults: {} });
   const [loading, setLoading] = useState(true);
   const [expandedPatient, setExpandedPatient] = useState(null);
@@ -146,10 +342,10 @@ export default function Insumos() {
   };
 
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const weekEnd = (() => { const d = new Date(); d.setDate(d.getDate() + 6); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); })();
+  const rangeEnd = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); };
+  const DATE_RANGES = { hoy: 0, "7dias": 6, "14dias": 13, "21dias": 20 };
   const dateFiltered = dateFilter === "todas" ? sessions
-    : dateFilter === "hoy" ? sessions.filter(s => s.date === today)
-    : sessions.filter(s => s.date >= today && s.date <= weekEnd); // "semana"
+    : sessions.filter(s => s.date >= today && s.date <= rangeEnd(DATE_RANGES[dateFilter]));
   const filtered = centerFilter === "Todos" ? dateFiltered : dateFiltered.filter(s => s.center === centerFilter);
   const calcOverrides = {
     extraDefaults: overrides.extraDefaults,
@@ -184,7 +380,7 @@ export default function Insumos() {
   });
   const grandTotalList = Object.entries(grandTotal).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
 
-  const downloadPharmacyOrder = (s, material, note) => {
+  const downloadPharmacyOrder = async (s, material, note, cipiVariant) => {
     // Clasifica cada artículo en Medicamentos / Soluciones / Insumos según el catálogo maestro
     const catalogByName = {};
     MASTER_CATALOG.forEach(c => { catalogByName[c.item.toUpperCase()] = c.category; });
@@ -203,45 +399,26 @@ export default function Insumos() {
     const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
     material.items.forEach(t => groups[categoryFor(t.item)].push(t));
 
-    const today = new Date().toLocaleDateString("es-MX");
-    const entrega = s.date ? new Date(s.date + "T12:00:00").toLocaleDateString("es-MX") : "";
-    const empresa = s.center || "";
-    const concepto = `${(s.patientName || "").toUpperCase()} ${s.cycle || ""}`.trim();
-
-    const lbl = 'style="font-size:11px;font-weight:bold;font-family:Calibri;"';
-    const val = 'style="font-size:11px;font-family:Calibri;"';
-    const sectionRow = (label) => `<tr><td colspan="8" ${lbl}>${label}</td></tr>`;
-    const itemRow = (item, qty) => `<tr><td colspan="7" ${lbl}>${item}</td><td ${lbl} align="right">${qty}</td></tr>`;
-    const esc = (v) => String(v ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-
-    let html = `<table border="0">
-      <tr><td colspan="8" align="center" style="font-size:14px;font-weight:bold;font-family:Calibri;">SOLICITUD DE MATERIAL</td></tr>
-      <tr><td colspan="8"></td></tr>
-      <tr><td ${lbl}>EMPRESA</td><td colspan="3" ${val}>${esc(empresa)}</td><td colspan="2" ${lbl}>FECHA DE SOLICITUD:</td><td colspan="2" ${val}>${today}</td></tr>
-      <tr><td ${lbl}>CONCEPTO</td><td colspan="7" ${val}>${esc(concepto)}</td></tr>
-      <tr><td colspan="2" ${lbl}>FECHA DE ENTREGA:</td><td colspan="6" ${val}>${entrega}</td></tr>
-      <tr><td colspan="8"></td></tr>`;
-
-    ["MEDICAMENTOS", "SOLUCIONES", "INSUMOS"].forEach(cat => {
-      if (groups[cat].length === 0) return;
-      html += sectionRow(cat);
-      groups[cat].forEach(t => { html += itemRow(esc(t.item), t.qty); });
-      html += `<tr><td colspan="8"></td></tr>`;
-    });
-
-    if (note) {
-      html += sectionRow("NOTA");
-      html += `<tr><td colspan="8" ${val}>${esc(note)}</td></tr>`;
+    try {
+      const res = await fetch("/api/generate-material-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          center: s.center, cipiVariant, patientName: s.patientName, cycle: s.cycle, date: s.date,
+          groups, note,
+        }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `SOLICITUD_${s.center || ""}_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Error al generar el pedido: " + e.message);
     }
-    html += "</table>";
-
-    const blob = new Blob(["\ufeff", html], { type: "application/vnd.ms-excel" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `SOLICITUD_${empresa}_${(s.patientName || "paciente").replace(/\s+/g, "_")}.xls`;
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
   };
 
   const addCatalogItem = async () => {
@@ -372,7 +549,7 @@ export default function Insumos() {
             ))}
           </div>
           <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
-            {[["hoy","Hoy"],["semana","Próximos 7 días"],["todas","Todas las cargadas"]].map(([val,label]) => (
+            {[["hoy","Hoy"],["7dias","7 días"],["14dias","14 días"],["21dias","21 días"],["todas","Todas las cargadas"]].map(([val,label]) => (
               <button key={val} onClick={() => setDateFilter(val)} style={{
                 padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
                 background: dateFilter===val ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
@@ -384,7 +561,28 @@ export default function Insumos() {
           </div>
 
           <div style={{ background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.2)", borderRadius:14, padding:16, marginBottom:20 }}>
-            <div style={{ fontSize:13, color:"#00d4aa", fontWeight:600, marginBottom:10 }}>Total consolidado ({grandTotalList.length} artículos)</div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+              <div style={{ fontSize:13, color:"#00d4aa", fontWeight:600 }}>Total consolidado ({grandTotalList.length} artículos)</div>
+              <button onClick={() => {
+                  const rows = grandTotalList.map(t => `<tr><td>${t.item}</td><td style="text-align:right;font-weight:bold;">${t.qty}</td></tr>`).join("");
+                  const win = window.open("", "_blank", "width=700,height=900");
+                  win.document.write(`<!DOCTYPE html><html><head><title>Total consolidado</title><style>
+                    body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;}
+                    h1{font-size:18px;margin-bottom:2px;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
+                    table{width:100%;border-collapse:collapse;font-size:12px;}
+                    td{padding:6px 8px;border-bottom:1px solid #ddd;}
+                  </style></head><body>
+                    <h1>Total consolidado de material</h1>
+                    <p>${centerFilter} · ${dateFilter === "todas" ? "Todas las cargadas" : dateFilter} · Generado ${new Date().toLocaleString("es-MX")}</p>
+                    <table>${rows}</table>
+                    <script>window.onload = () => window.print();<\/script>
+                  </body></html>`);
+                  win.document.close();
+                }}
+                style={{ padding:"6px 14px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>
+                🖨️ Imprimir
+              </button>
+            </div>
             <div style={{ maxHeight:280, overflowY:"auto", display:"flex", flexDirection:"column", gap:4 }}>
               {grandTotalList.map((t,i) => (
                 <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"6px 10px", borderRadius:7, background:"rgba(255,255,255,0.03)", fontSize:12 }}>
@@ -398,57 +596,12 @@ export default function Insumos() {
 
           <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>Por paciente</div>
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {perPatient.map(({ session: s, material, note }, i) => {
-              const pedidoHecho = !!s.pedidoGeneradoAt;
-              return (
-              <div key={i} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
-                <div onClick={() => setExpandedPatient(p => p===i ? null : i)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10 }}>
-                  <img src={s.center === "CIPI" ? "/logo-cipi-icon.png" : "/logo-citio-icon.png"} alt={s.center}
-                    style={{ width:20, height:20, borderRadius:"50%", objectFit:"cover", opacity:0.9, flexShrink:0 }} />
-                  <span style={{ fontSize:11, color:"#666", background:"rgba(255,255,255,0.05)", padding:"2px 8px", borderRadius:99 }}>{s.center}</span>
-                  <span style={{ fontSize:10, color:"#555" }}>{s.date}</span>
-                  <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
-                  <span style={{ fontSize:11, color:"#555" }}>{material.items.length} art.</span>
-                  {material.unmatched.length > 0 && <span style={{ fontSize:11, color:"#ffb347" }}>⚠️ {material.unmatched.length}</span>}
-                  {note && <span style={{ fontSize:11, color:"#4fc3f7" }}>📝</span>}
-                  <button onClick={async e => {
-                      e.stopPropagation();
-                      downloadPharmacyOrder(s, material, note);
-                      try {
-                        const nowIso = new Date().toISOString();
-                        await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${s.id}?updateMask.fieldPaths=pedidoGeneradoAt`,
-                          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-                            body: JSON.stringify({ fields: { pedidoGeneradoAt: { stringValue: nowIso } } }) });
-                        setSessions(prev => prev.map(x => x.id === s.id ? { ...x, pedidoGeneradoAt: nowIso } : x));
-                      } catch (err) { /* si falla el marcado, no bloquea la descarga */ }
-                    }}
-                    title={pedidoHecho ? `Pedido generado ${new Date(s.pedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Descargar pedido para farmacia"}
-                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
-                      background: pedidoHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
-                      border: `1px solid ${pedidoHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
-                      color: pedidoHecho ? "#666" : "#00d4aa" }}>
-                    {pedidoHecho ? "✓ Pedido hecho" : "📄 Pedido"}
-                  </button>
-                  <span style={{ color:"#555" }}>{expandedPatient===i ? "▲" : "▼"}</span>
-                </div>
-                {expandedPatient===i && (
-                  <div style={{ padding:"0 16px 14px", display:"flex", flexDirection:"column", gap:4 }}>
-                    {material.unmatched.length > 0 && (
-                      <div style={{ fontSize:11, color:"#ffb347", marginBottom:6 }}>Sin material por defecto: {material.unmatched.join(", ")}</div>
-                    )}
-                    {note && (
-                      <div style={{ fontSize:11, color:"#4fc3f7", marginBottom:6, padding:"6px 8px", background:"rgba(79,195,247,0.06)", borderRadius:6 }}>📝 {note}</div>
-                    )}
-                    {material.items.map((t,ti) => (
-                      <div key={ti} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#aaa", padding:"3px 0" }}>
-                        <span>{t.item}</span><span style={{ color:"#00d4aa" }}>{t.qty}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              );
-            })}
+            {perPatient.map(({ session: s, material, note }, i) => (
+              <PatientMaterialRow key={s.id} s={s} material={material} note={note}
+                expanded={expandedPatient===i} onToggle={() => setExpandedPatient(p => p===i ? null : i)}
+                token={token} user={user} onRefresh={load} setSessions={setSessions}
+                downloadPharmacyOrder={downloadPharmacyOrder} showAnexo={dateFilter==="todas"} />
+            ))}
           </div>
         </div>
       )}
