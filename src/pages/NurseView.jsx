@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
-import { computeSessionMaterial, computeMedicationPieces, getMedicationPresentations, MASTER_CATALOG } from "../data/materialCatalog";
 
 const PROJECT_ID = "infusion-core";
 const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
@@ -37,26 +36,6 @@ function parseFirestoreDoc(doc) {
   };
   const id = doc.name.split("/").pop();
   return { id, ...Object.fromEntries(Object.entries(doc.fields || {}).map(([k, v]) => [k, parse(v)])) };
-}
-
-async function fetchCatalogOverrides(token) {
-  try {
-    const res = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/settings/materialCatalog`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (res.status === 404) return { extraCatalog: [], extraDefaults: {}, puncionOverrides: {}, patientDefaultMaterial: null };
-    const doc = await res.json();
-    const parsed = parseFirestoreDoc(doc);
-    return {
-      extraCatalog: parsed.extraCatalog || [],
-      extraDefaults: parsed.extraDefaults || {},
-      puncionOverrides: parsed.puncionOverrides || {},
-      patientDefaultMaterial: parsed.patientDefaultMaterial || null,
-    };
-  } catch (e) {
-    return { extraCatalog: [], extraDefaults: {}, puncionOverrides: {}, patientDefaultMaterial: null };
-  }
 }
 
 async function fetchSessionsByNurse(token, nurseId) {
@@ -431,25 +410,6 @@ function SessionCard({ session, token, onRefresh, user }) {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [showSignModal, setShowSignModal] = useState(false);
-  const [showMaterialModal, setShowMaterialModal] = useState(false);
-  const [catalogOverrides, setCatalogOverrides] = useState(null);
-  const [excludePatientDefault, setExcludePatientDefault] = useState(!!session.excludePatientDefault);
-
-  useEffect(() => {
-    if (showMaterialModal && catalogOverrides === null) {
-      fetchCatalogOverrides(token).then(setCatalogOverrides);
-    }
-  }, [showMaterialModal]);
-  const [catheterType, setCatheterType] = useState(session.catheterType || "");
-  const [catheterGauge, setCatheterGauge] = useState(session.catheterGauge || "");
-  const [equipoChoice, setEquipoChoice] = useState(session.equipoChoice || "");
-  const [excludedItems, setExcludedItems] = useState(session.excludedMaterial || []);
-  const [extraItems, setExtraItems] = useState(session.extraMaterial || []);
-  const [extraSearch, setExtraSearch] = useState("");
-  const [qtyOverrides, setQtyOverrides] = useState(session.qtyOverrides || {});
-  const [pieceOverrides, setPieceOverrides] = useState(session.pieceOverrides || {});
-  const [materialNote, setMaterialNote] = useState(session.materialNote || "");
-  const [savingMaterial, setSavingMaterial] = useState(false);
   const [sigPaciente, setSigPaciente]     = useState(null);
   const [sigEnfermeria, setSigEnfermeria] = useState(null);
   const [signing, setSigning]             = useState(false);
@@ -602,29 +562,6 @@ function SessionCard({ session, token, onRefresh, user }) {
     }
   };
 
-  const saveMaterialRequest = async (newCatheterType, newCatheterGauge, newExtraItems, newExcludedItems, newExcludePatientDefault, newQtyOverrides, newPieceOverrides, newNote, newEquipoChoice) => {
-    setSavingMaterial(true);
-    try {
-      const freshToken = await user.getIdToken(true);
-      await patchSession(freshToken, session.id, {
-        catheterType: newCatheterType || null,
-        catheterGauge: newCatheterGauge || null,
-        extraMaterial: newExtraItems,
-        excludedMaterial: newExcludedItems,
-        excludePatientDefault: !!newExcludePatientDefault,
-        qtyOverrides: newQtyOverrides,
-        pieceOverrides: newPieceOverrides,
-        materialNote: newNote || "",
-        equipoChoice: newEquipoChoice || null,
-      });
-      onRefresh();
-    } catch(e) {
-      alert("Error al guardar el material: " + e.message);
-    } finally {
-      setSavingMaterial(false);
-    }
-  };
-
   const recordMedEvent = async (medId, key) => {
     try {
       const freshToken = await user.getIdToken(true);
@@ -761,10 +698,6 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
         </div>
         {events.ingreso && <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace" }}>{pct}%</div>}
         {!session.authorized && <span style={{ fontSize:11, color:"#ffb347", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", padding:"3px 10px", borderRadius:99 }}>⏳ Sin autorizar</span>}
-        <button onClick={e => { e.stopPropagation(); setShowMaterialModal(true); }}
-          title="Solicitar material" style={{ padding:"5px 9px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC", flexShrink:0 }}>
-          🧰
-        </button>
         <span style={{ color:"#555" }}>{open?"▲":"▼"}</span>
       </div>
 
@@ -1010,248 +943,6 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
           </div>
         </div>
       )}
-
-      {showMaterialModal && (() => {
-        if (catalogOverrides === null) {
-          return (
-            <div onClick={e => e.stopPropagation()} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 }}>
-              <div style={{ color:"#888", fontSize:13 }}>Cargando catálogo…</div>
-            </div>
-          );
-        }
-        const sessionForCalc = { ...session, catheterType, catheterGauge, excludePatientDefault, equipoChoice };
-        const calcOverrides = {
-          extraDefaults: catalogOverrides.extraDefaults,
-          extraCatalog: catalogOverrides.extraCatalog,
-          puncionOverrides: catalogOverrides.puncionOverrides,
-          patientDefaultMaterial: catalogOverrides.patientDefaultMaterial,
-        };
-        const preview = computeSessionMaterial(sessionForCalc, calcOverrides);
-        const medPieces = (session.meds || [])
-          .map(m => {
-            const auto = computeMedicationPieces(m.name, m.dose, catalogOverrides.extraCatalog, catalogOverrides.extraDefaults);
-            if (!auto) return null;
-            const overridden = pieceOverrides[m.name];
-            return { name: m.name, dose: m.dose, calc: overridden ? { ...auto, pieces: overridden } : auto, isOverridden: !!overridden, autoPieces: auto.pieces };
-          })
-          .filter(Boolean);
-        // Combinar defaults + extras, respetando lo excluido y las cantidades editadas, en una sola lista consolidada
-        const combined = {};
-        preview.items.forEach(({ item, qty }) => {
-          if (excludedItems.includes(item)) return;
-          const finalQty = qtyOverrides[item] !== undefined ? qtyOverrides[item] : qty;
-          combined[item] = (combined[item]||0) + finalQty;
-        });
-        medPieces.forEach(p => p.calc.pieces.forEach(({ item, count }) => { combined[item] = (combined[item]||0) + count; }));
-        extraItems.forEach(({ item, qty }) => { combined[item] = (combined[item]||0) + (qty||0); });
-        const totalList = Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
-        const filteredCatalog = extraSearch.trim().length >= 2
-          ? [...MASTER_CATALOG, ...catalogOverrides.extraCatalog].filter(c => c.item.toUpperCase().includes(extraSearch.toUpperCase())).slice(0, 8)
-          : [];
-        const toggleExcluded = (item) => setExcludedItems(prev => prev.includes(item) ? prev.filter(x => x!==item) : [...prev, item]);
-        const setItemQty = (item, qty) => setQtyOverrides(prev => ({ ...prev, [item]: qty }));
-        const setPieceCount = (medName, allPresentations, item, mg, newCount) => {
-          setPieceOverrides(prev => {
-            const currentPieces = prev[medName] || medPieces.find(p => p.name === medName)?.autoPieces || [];
-            const map = new Map(currentPieces.map(p => [p.item, p.count]));
-            map.set(item, Math.max(0, newCount));
-            const next = allPresentations.map(pr => ({ item: pr.item, mg: pr.mg, count: map.get(pr.item) || 0 })).filter(p => p.count > 0);
-            return { ...prev, [medName]: next };
-          });
-        };
-        const resetPieceOverride = (medName) => setPieceOverrides(prev => { const n = { ...prev }; delete n[medName]; return n; });
-
-        return (
-          <div onClick={e => { e.stopPropagation(); !savingMaterial && setShowMaterialModal(false); }}
-            style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
-            <div onClick={e => e.stopPropagation()}
-              style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:480, maxHeight:"88vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:14 }}>
-              <div>
-                <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>🧰 Solicitar material</div>
-                <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{session.patientName} — según medicamentos de la sesión{catheterType && " + acceso venoso"}</div>
-              </div>
-
-              <div>
-                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Tipo de acceso venoso</label>
-                <div style={{ display:"flex", gap:8 }}>
-                  {[["", "Sin definir"], ["periferico", "Periférico"], ["puerto", "Puerto"]].map(([val, label]) => (
-                    <button key={val} onClick={() => { setCatheterType(val); setCatheterGauge(""); }}
-                      style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer",
-                        background: catheterType===val ? "rgba(175,169,236,0.15)" : "rgba(255,255,255,0.04)",
-                        border: `1px solid ${catheterType===val ? "rgba(175,169,236,0.4)" : "rgba(255,255,255,0.08)"}`,
-                        color: catheterType===val ? "#AFA9EC" : "#666" }}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ fontSize:10, color:"#555", marginTop:4 }}>Puedes definirlo o cambiarlo aquí mismo aunque el paciente ya haya ingresado.</div>
-              </div>
-
-              {catalogOverrides.patientDefaultMaterial && (
-                <label style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 12px", borderRadius:9, background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.2)", cursor:"pointer" }}>
-                  <input type="checkbox" checked={!excludePatientDefault} onChange={e => setExcludePatientDefault(!e.target.checked)} />
-                  <span style={{ fontSize:12, color:"#ccc" }}>Incluir material base del paciente ({(catalogOverrides.patientDefaultMaterial.insumos?.length||0) + (catalogOverrides.patientDefaultMaterial.soluciones?.length||0)} artículos)</span>
-                </label>
-              )}
-
-              <div>
-                <label style={{ fontSize:11, color: preview.pendingEquipo ? "#ffb347" : "#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Equipo de infusión {preview.pendingEquipo && "(elige uno)"}</label>
-                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                  {[
-                    ["fotoprotector", "Primario c/ filtro 22 micras fotoprotector"],
-                    ["plum", "Plum c/ filtro 0.15 micras"],
-                    ["ninguno", "Sin equipo"],
-                  ].map(([val, label]) => (
-                    <button key={val} onClick={() => setEquipoChoice(val)}
-                      style={{ flex:"1 1 auto", padding:"8px 10px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer",
-                        background: equipoChoice===val ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
-                        border: `1px solid ${equipoChoice===val ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.08)"}`,
-                        color: equipoChoice===val ? "#00d4aa" : "#888" }}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {preview.pendingAlternatives.map((alt, ai) => (
-                <div key={ai}>
-                  <label style={{ fontSize:11, color:"#ffb347", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>{alt.label} (elige uno)</label>
-                  <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                    {alt.options.map((opt, oi) => (
-                      <button key={oi} onClick={() => setCatheterGauge(opt.item)}
-                        style={{ flex:"1 1 auto", padding:"8px 10px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer",
-                          background: catheterGauge===opt.item ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
-                          border: `1px solid ${catheterGauge===opt.item ? "rgba(0,212,170,0.35)" : "rgba(255,255,255,0.08)"}`,
-                          color: catheterGauge===opt.item ? "#00d4aa" : "#888" }}>
-                        {opt.item}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              {preview.unmatched.length > 0 && (
-                <div style={{ padding:"8px 12px", borderRadius:8, background:"rgba(255,179,71,0.08)", border:"1px solid rgba(255,179,71,0.25)", fontSize:11, color:"#ffb347" }}>
-                  ⚠️ No se encontró material por defecto para: {preview.unmatched.join(", ")}. Agrégalo manualmente abajo si hace falta.
-                </div>
-              )}
-
-              {preview.unmatchedSolutions.length > 0 && (
-                <div style={{ padding:"8px 12px", borderRadius:8, background:"rgba(255,179,71,0.08)", border:"1px solid rgba(255,179,71,0.25)", fontSize:11, color:"#ffb347" }}>
-                  ⚠️ No se pudo calcular la solución de: {preview.unmatchedSolutions.map(u => `${u.name} (${u.diluent})`).join(", ")}. Agrégala manualmente abajo si hace falta.
-                </div>
-              )}
-
-              {medPieces.length > 0 && (
-                <div>
-                  <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Piezas de medicamento (frascos/ampolletas según dosis — ajustables si en existencia solo hay ciertas presentaciones)</label>
-                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                    {medPieces.map((p, i) => {
-                      const allPresentations = getMedicationPresentations(p.name, catalogOverrides.extraCatalog, catalogOverrides.extraDefaults);
-                      const countFor = (item) => p.calc.pieces.find(pc => pc.item === item)?.count || 0;
-                      const totalMg = allPresentations.reduce((acc, pr) => acc + pr.mg * countFor(pr.item), 0);
-                      return (
-                        <div key={i} style={{ padding:"8px 10px", borderRadius:8, background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.15)" }}>
-                          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
-                            <span style={{ fontSize:11, color:"#ccc" }}>{p.name} — dosis {p.dose}</span>
-                            {p.isOverridden && <button onClick={() => resetPieceOverride(p.name)} style={{ fontSize:10, color:"#ffb347", background:"none", border:"none", cursor:"pointer" }}>↺ Restaurar auto</button>}
-                          </div>
-                          {allPresentations.map((pr, pri) => (
-                            <div key={pri} style={{ display:"flex", alignItems:"center", gap:8, padding:"2px 0" }}>
-                              <span style={{ flex:1, fontSize:11, color:"#00d4aa" }}>{pr.item}</span>
-                              <input type="number" min="0" value={countFor(pr.item)}
-                                onChange={e => setPieceCount(p.name, allPresentations, pr.item, pr.mg, parseInt(e.target.value) || 0)}
-                                style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#f0f0f0", fontSize:11, outline:"none", textAlign:"center" }} />
-                            </div>
-                          ))}
-                          <div style={{ fontSize:10, color:"#666", marginTop:2 }}>Total: {totalMg} mg (dosis {p.calc.doseMg} mg, sobrante {Math.max(0, totalMg - p.calc.doseMg)} mg)</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Nota</label>
-                <textarea value={materialNote} onChange={e => setMaterialNote(e.target.value)} placeholder="Ej: aumento de material durante la infusión, motivo del cambio, etc."
-                  rows={2} style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:12, outline:"none", resize:"vertical" }} />
-              </div>
-
-              <div>
-                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Material por defecto (desmarca lo que no aplique, o ajusta la cantidad)</label>
-                <div style={{ maxHeight:160, overflowY:"auto", display:"flex", flexDirection:"column", gap:3 }}>
-                  {preview.items.map((t,i) => {
-                    const excluded = excludedItems.includes(t.item);
-                    const currentQty = qtyOverrides[t.item] !== undefined ? qtyOverrides[t.item] : t.qty;
-                    return (
-                      <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 8px", borderRadius:6, opacity: excluded ? 0.4 : 1 }}>
-                        <input type="checkbox" checked={!excluded} onChange={() => toggleExcluded(t.item)} style={{ cursor:"pointer" }} />
-                        <span style={{ flex:1, fontSize:11, color:"#ccc", textDecoration: excluded ? "line-through" : "none" }}>{t.item}</span>
-                        <input type="number" min="0" value={currentQty} disabled={excluded} onChange={e => setItemQty(t.item, parseInt(e.target.value) || 0)}
-                          style={{ width:46, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 4px", color:"#f0f0f0", fontSize:11, outline:"none", textAlign:"center" }} />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>+ Anexar material adicional</label>
-                <input value={extraSearch} onChange={e => setExtraSearch(e.target.value)} placeholder="Buscar en el catálogo (mín. 2 letras)..."
-                  style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 12px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
-                {filteredCatalog.length > 0 && (
-                  <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:4 }}>
-                    {filteredCatalog.map((c,i) => (
-                      <button key={i} onClick={() => { setExtraItems(prev => [...prev, { item:c.item, qty:1 }]); setExtraSearch(""); }}
-                        style={{ textAlign:"left", padding:"7px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", color:"#ccc" }}>
-                        + {c.item} <span style={{ color:"#555" }}>({c.category})</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {extraItems.length > 0 && (
-                  <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:5 }}>
-                    {extraItems.map((ei, i) => (
-                      <div key={i} style={{ display:"flex", alignItems:"center", gap:6 }}>
-                        <span style={{ flex:1, fontSize:11, color:"#ccc" }}>{ei.item}</span>
-                        <input type="number" min="1" value={ei.qty} onChange={e => setExtraItems(prev => prev.map((p,pi) => pi===i ? {...p, qty:parseInt(e.target.value)||1} : p))}
-                          style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:11, outline:"none", textAlign:"center" }} />
-                        <button onClick={() => setExtraItems(prev => prev.filter((_,pi) => pi!==i))}
-                          style={{ padding:"4px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Consolidado final ({totalList.length} artículos)</label>
-                <div style={{ maxHeight:220, overflowY:"auto", display:"flex", flexDirection:"column", gap:4 }}>
-                  {totalList.map((t,i) => (
-                    <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"6px 10px", borderRadius:7, background:"rgba(255,255,255,0.025)", fontSize:11 }}>
-                      <span style={{ color:"#ccc" }}>{t.item}</span>
-                      <span style={{ color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace", fontWeight:600 }}>{t.qty}</span>
-                    </div>
-                  ))}
-                  {totalList.length === 0 && <div style={{ fontSize:11, color:"#444", textAlign:"center", padding:12 }}>Sin material aún — agrega medicamentos o elige el tipo de acceso.</div>}
-                </div>
-              </div>
-
-              <div style={{ display:"flex", gap:8 }}>
-                <button onClick={() => setShowMaterialModal(false)} disabled={savingMaterial}
-                  style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingMaterial ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
-                  Cancelar
-                </button>
-                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault, qtyOverrides, pieceOverrides, materialNote, equipoChoice); setShowMaterialModal(false); }} disabled={savingMaterial}
-                  style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingMaterial ? "wait" : "pointer", background:"linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color:"#fff", opacity: savingMaterial ? 0.6 : 1 }}>
-                  {savingMaterial ? "Guardando…" : "✓ Guardar solicitud"}
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }
