@@ -61,12 +61,15 @@ export default async function handler(req, res) {
 
     drawWatermark();
 
-    // Encabezado: logo institucional (según centro/variante) + nombre completo de la empresa
+    // Encabezado: logo institucional (según centro/variante), apilado sobre el
+    // nombre completo de la empresa (evita que se encimen sin importar la
+    // proporción de cada logo).
     let y = 45;
     if (hasHeaderLogo) {
-      doc.image(logos.header, 45, y, { height: 40 });
-      doc.fontSize(9).fillColor(NAVY).font("Helvetica-Bold").text(logos.name, 95, y + 4, { width: W - 50 });
+      doc.image(logos.header, 45, y, { fit: [160, 42], align: "left" });
       y += 48;
+      doc.fontSize(9).fillColor(NAVY).font("Helvetica-Bold").text(logos.name, 45, y, { width: W });
+      y += 18;
     } else {
       doc.fontSize(11).fillColor(NAVY).font("Helvetica-Bold").text(logos.name, 45, y, { width: W });
       y += 24;
