@@ -326,7 +326,9 @@ export default function Insumos() {
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [centerFilter, setCenterFilter] = useState("Todos");
-  const [dateFilter, setDateFilter] = useState("7dias"); // "hoy" | "7dias" | "14dias" | "21dias" | "todas"
+  const [dateFilter, setDateFilter] = useState("rango"); // "hoy" | "rango" | "todas"
+  const [rangeFrom, setRangeFrom] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }));
+  const [rangeTo, setRangeTo] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 6); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); });
   const [overrides, setOverrides] = useState({ extraCatalog: [], extraDefaults: {} });
   const [loading, setLoading] = useState(true);
   const [expandedPatient, setExpandedPatient] = useState(null);
@@ -370,10 +372,9 @@ export default function Insumos() {
   };
 
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const rangeEnd = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); };
-  const DATE_RANGES = { hoy: 0, "7dias": 6, "14dias": 13, "21dias": 20 };
   const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.pedidoGeneradoAt)
-    : sessions.filter(s => s.date >= today && s.date <= rangeEnd(DATE_RANGES[dateFilter]));
+    : dateFilter === "hoy" ? sessions.filter(s => s.date === today)
+    : sessions.filter(s => s.date >= rangeFrom && s.date <= rangeTo); // "rango"
   const filtered = centerFilter === "Todos" ? dateFiltered : dateFiltered.filter(s => s.center === centerFilter);
   const calcOverrides = {
     extraDefaults: overrides.extraDefaults,
@@ -579,8 +580,8 @@ export default function Insumos() {
               }}>{c}</button>
             ))}
           </div>
-          <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
-            {[["hoy","Hoy"],["7dias","7 días"],["14dias","14 días"],["21dias","21 días"],["todas","Con solicitud generada"]].map(([val,label]) => (
+          <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
+            {[["hoy","Hoy"],["rango","Rango de fechas"],["todas","Con solicitud generada"]].map(([val,label]) => (
               <button key={val} onClick={() => setDateFilter(val)} style={{
                 padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
                 background: dateFilter===val ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
@@ -588,6 +589,15 @@ export default function Insumos() {
                 color: dateFilter===val ? "#00d4aa" : "#666",
               }}>{label}</button>
             ))}
+            {dateFilter === "rango" && (
+              <>
+                <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)}
+                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"5px 8px", color:"#f0f0f0", fontSize:12 }} />
+                <span style={{ fontSize:12, color:"#555" }}>a</span>
+                <input type="date" value={rangeTo} onChange={e => setRangeTo(e.target.value)}
+                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"5px 8px", color:"#f0f0f0", fontSize:12 }} />
+              </>
+            )}
             <span style={{ marginLeft:"auto", fontSize:12, color:"#555", alignSelf:"center" }}>{perPatient.length} sesión{perPatient.length!==1?"es":""}</span>
           </div>
 
@@ -604,7 +614,7 @@ export default function Insumos() {
                     td{padding:6px 8px;border-bottom:1px solid #ddd;}
                   </style></head><body>
                     <h1>Total consolidado de material</h1>
-                    <p>${centerFilter} · ${dateFilter === "todas" ? "Todas las cargadas" : dateFilter} · Generado ${new Date().toLocaleString("es-MX")}</p>
+                    <p>${centerFilter} · ${dateFilter === "todas" ? "Con solicitud generada" : dateFilter === "hoy" ? "Hoy" : `${rangeFrom} a ${rangeTo}`} · Generado ${new Date().toLocaleString("es-MX")}</p>
                     <table>${rows}</table>
                     <script>window.onload = () => window.print();<\/script>
                   </body></html>`);
