@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import UpdateBanner from "./UpdateBanner";
 
 const NAV = {
   jefe: [
@@ -121,6 +122,8 @@ export default function Layout() {
           </NavLink>
         ))}
       </nav>
+
+      <UpdateBanner />
     </div>
   );
 }
