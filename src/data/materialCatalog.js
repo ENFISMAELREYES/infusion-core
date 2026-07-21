@@ -1637,7 +1637,7 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Medicamentos",
-    "item": "PARACETAMOL 1000 MG",
+    "item": "PARACETAMOL 100 MG",
     "unit": "FRASCO"
   },
   {
@@ -2064,7 +2064,7 @@ export const PATIENT_DEFAULT_MATERIAL = {
   "soluciones": []
 };
 function normalize(s) {
-  return (s || "").toUpperCase().trim().replace(/\s+/g, " ")
+  return (s || "").toUpperCase().trim().replace(/[-_]/g, " ").replace(/\s+/g, " ")
     .replace(/Á/g,"A").replace(/É/g,"E").replace(/Í/g,"I").replace(/Ó/g,"O").replace(/Ú/g,"U");
 }
 
