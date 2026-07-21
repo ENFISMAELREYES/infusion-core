@@ -1637,7 +1637,7 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Medicamentos",
-    "item": "PARACETAMOL 100 MG",
+    "item": "PARACETAMOL 1000 MG",
     "unit": "FRASCO"
   },
   {
