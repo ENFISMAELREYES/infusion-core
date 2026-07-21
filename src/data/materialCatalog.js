@@ -2045,6 +2045,10 @@ export const PATIENT_DEFAULT_MATERIAL = {
       "qty": 1
     },
     {
+      "item": "CLORURO DE SODIO 0.9% 250 ML",
+      "qty": 1
+    },
+    {
       "item": "CLORURO DE SODIO 0.9% 50 ML",
       "qty": 1
     },
@@ -2218,6 +2222,13 @@ export function computeSessionMaterial(session, overrides = {}) {
     (effectivePatientDefault.soluciones || []).forEach(({ item, qty }) => add(item, qty));
   }
 
+const PREMEDICACION_DRUGS = new Set([
+  "FOSAPREPITANT", "PALONOSETRON", "DEXAMETASONA", "ONDANSETRON", "DIFENHIDRAMINA",
+  "HIDROCORTISONA", "ACIDO ZOLEDRONICO", "CARBOXIMALTOSA", "FUROSEMIDA", "HIOSCINA",
+  "KETOROLACO", "MESNA", "METILPREDNISOLONA", "METOCLOPRAMIDA", "OMEPRAZOL",
+  "TRAMADOL", "CLOROPIRAMINA",
+]);
+
   (session.meds || []).forEach(m => {
     if (!m.name) return;
     const norm = normalize(m.name);
@@ -2231,6 +2242,13 @@ export function computeSessionMaterial(session, overrides = {}) {
 
     const entry = allDefaults[key];
     entry.insumos.forEach(({ item, qty }) => add(item, qty));
+
+    // Premedicación: no se calcula solución (van directo en bolo/IV corto),
+    // excepto Fosaprepitant, que siempre lleva Cloruro de Sodio 100 ML fijo.
+    if (PREMEDICACION_DRUGS.has(key)) {
+      if (key === "FOSAPREPITANT") add("CLORURO DE SODIO 0.9% 100 ML", 1);
+      return;
+    }
 
     const parsed = parseDiluent(m.diluent);
     const solItem = parsed && solutionItemFor(parsed.vol, parsed.type, allCatalog);
