@@ -150,11 +150,12 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
         };
         const preview = computeSessionMaterial(sessionForCalc, calcOverrides);
         const medPieces = (session.meds || [])
-          .map(m => {
+          .map((m, idx) => {
             const auto = computeMedicationPieces(m.name, m.dose, catalogOverrides.extraCatalog, catalogOverrides.extraDefaults);
             if (!auto) return null;
-            const overridden = pieceOverrides[m.name];
-            return { name: m.name, dose: m.dose, calc: overridden ? { ...auto, pieces: overridden } : auto, isOverridden: !!overridden, autoPieces: auto.pieces };
+            const medKey = `${idx}_${m.name}`;
+            const overridden = pieceOverrides[medKey];
+            return { medKey, name: m.name, dose: m.dose, calc: overridden ? { ...auto, pieces: overridden } : auto, isOverridden: !!overridden, autoPieces: auto.pieces };
           })
           .filter(Boolean);
         // Combinar defaults + extras, respetando lo excluido y las cantidades editadas, en una sola lista consolidada
@@ -172,16 +173,16 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
           : [];
         const toggleExcluded = (item) => setExcludedItems(prev => prev.includes(item) ? prev.filter(x => x!==item) : [...prev, item]);
         const setItemQty = (item, qty) => setQtyOverrides(prev => ({ ...prev, [item]: qty }));
-        const setPieceCount = (medName, allPresentations, item, mg, newCount) => {
+        const setPieceCount = (medKey, allPresentations, item, mg, newCount) => {
           setPieceOverrides(prev => {
-            const currentPieces = prev[medName] || medPieces.find(p => p.name === medName)?.autoPieces || [];
+            const currentPieces = prev[medKey] || medPieces.find(p => p.medKey === medKey)?.autoPieces || [];
             const map = new Map(currentPieces.map(p => [p.item, p.count]));
             map.set(item, Math.max(0, newCount));
             const next = allPresentations.map(pr => ({ item: pr.item, mg: pr.mg, count: map.get(pr.item) || 0 })).filter(p => p.count > 0);
-            return { ...prev, [medName]: next };
+            return { ...prev, [medKey]: next };
           });
         };
-        const resetPieceOverride = (medName) => setPieceOverrides(prev => { const n = { ...prev }; delete n[medName]; return n; });
+        const resetPieceOverride = (medKey) => setPieceOverrides(prev => { const n = { ...prev }; delete n[medKey]; return n; });
 
         return (
           <div onClick={e => { e.stopPropagation(); !savingMaterial && setShowMaterialModal(false); }}
@@ -273,16 +274,16 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
                       const countFor = (item) => p.calc.pieces.find(pc => pc.item === item)?.count || 0;
                       const totalMg = allPresentations.reduce((acc, pr) => acc + pr.mg * countFor(pr.item), 0);
                       return (
-                        <div key={i} style={{ padding:"8px 10px", borderRadius:8, background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.15)" }}>
+                        <div key={p.medKey} style={{ padding:"8px 10px", borderRadius:8, background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.15)" }}>
                           <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
                             <span style={{ fontSize:11, color:"#ccc" }}>{p.name} — dosis {p.dose}</span>
-                            {p.isOverridden && <button onClick={() => resetPieceOverride(p.name)} style={{ fontSize:10, color:"#ffb347", background:"none", border:"none", cursor:"pointer" }}>↺ Restaurar auto</button>}
+                            {p.isOverridden && <button onClick={() => resetPieceOverride(p.medKey)} style={{ fontSize:10, color:"#ffb347", background:"none", border:"none", cursor:"pointer" }}>↺ Restaurar auto</button>}
                           </div>
                           {allPresentations.map((pr, pri) => (
                             <div key={pri} style={{ display:"flex", alignItems:"center", gap:8, padding:"2px 0" }}>
                               <span style={{ flex:1, fontSize:11, color:"#00d4aa" }}>{pr.item}</span>
                               <input type="number" min="0" value={countFor(pr.item)}
-                                onChange={e => setPieceCount(p.name, allPresentations, pr.item, pr.mg, parseInt(e.target.value) || 0)}
+                                onChange={e => setPieceCount(p.medKey, allPresentations, pr.item, pr.mg, parseInt(e.target.value) || 0)}
                                 style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#f0f0f0", fontSize:11, outline:"none", textAlign:"center" }} />
                             </div>
                           ))}
