@@ -24,7 +24,7 @@ function parseDoc(doc) {
 function toFV(val) {
   if (typeof val === "string") return { stringValue: val };
   if (typeof val === "boolean") return { booleanValue: val };
-  if (typeof val === "number") return { integerValue: String(val) };
+  if (typeof val === "number") return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
   if (val === null || val === undefined) return { nullValue: null };
   if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
   if (typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k, v]) => [k, toFV(v)])) } };
@@ -117,7 +117,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
 
   const toFV = (val) => {
     if (typeof val === "string") return { stringValue: val };
-    if (typeof val === "number") return { integerValue: String(val) };
+    if (typeof val === "number") return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
     if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
     if (val && typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k,v]) => [k, toFV(v)])) } };
     return { stringValue: String(val) };
