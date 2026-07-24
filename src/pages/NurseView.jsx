@@ -77,11 +77,49 @@ async function fetchTodaySessions(token, center, date) {
   return data.filter(d => d.document).map(d => parseFirestoreDoc(d.document));
 }
 
+// Decodifica el payload del token de Firebase (JWT) para saber quién hizo el
+// cambio, sin tener que pasar esa información por separado en cada llamada.
+function decodeTokenClaims(token) {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return { uid: payload.user_id || payload.sub || null, email: payload.email || null };
+  } catch { return { uid: null, email: null }; }
+}
+
+// Registro de auditoría: deja constancia de quién cambió qué campo, en qué
+// documento y cuándo. No bloquea el guardado si falla (se intenta aparte).
+async function logAudit(token, collection, docId, changes) {
+  try {
+    const { uid, email } = decodeTokenClaims(token);
+    const toFV = (val) => {
+      if (typeof val === "string") return { stringValue:val };
+      if (typeof val === "boolean") return { booleanValue:val };
+      if (typeof val === "number") return Number.isInteger(val) ? { integerValue:String(val) } : { doubleValue:val };
+      if (val === null || val === undefined) return { nullValue:null };
+      if (Array.isArray(val)) return { arrayValue:{ values:val.map(toFV) } };
+      if (typeof val === "object") return { mapValue:{ fields:Object.fromEntries(Object.entries(val).map(([k,v]) => [k,toFV(v)])) } };
+      return { stringValue:String(val) };
+    };
+    const fields = {
+      collection:  { stringValue: collection },
+      docId:       { stringValue: docId },
+      userId:      uid ? { stringValue: uid } : { nullValue: null },
+      userEmail:   email ? { stringValue: email } : { nullValue: null },
+      changes:     toFV(changes),
+      timestamp:   { stringValue: new Date().toISOString() },
+    };
+    await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/audit_log`,
+      { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
+  } catch (e) {
+    console.error("No se pudo registrar la auditoría:", e);
+  }
+}
+
 async function patchSession(token, sessionId, updates) {
   const toFV = (val) => {
     if (typeof val === "string") return { stringValue:val };
     if (typeof val === "boolean") return { booleanValue:val };
-    if (typeof val === "number") return { integerValue:String(val) };
+    if (typeof val === "number") return Number.isInteger(val) ? { integerValue:String(val) } : { doubleValue:val };
     if (val === null) return { nullValue:null };
     if (Array.isArray(val)) return { arrayValue:{ values:val.map(toFV) } };
     if (typeof val === "object") return { mapValue:{ fields:Object.fromEntries(Object.entries(val).map(([k,v]) => [k,toFV(v)])) } };
@@ -116,6 +154,7 @@ async function patchSession(token, sessionId, updates) {
       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
     await checkOk(res);
   }
+  logAudit(token, "sessions", sessionId, updates); // no se espera (await) para no retrasar el guardado
 }
 
 async function updateSessionMeds(token, sessionId, meds, reAuth) {
