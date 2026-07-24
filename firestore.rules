@@ -25,5 +25,35 @@ service cloud.firestore {
       allow update: if isAuth(); // enfermera actualiza eventos, jefe autoriza
       allow delete: if false;
     }
+
+    // Registro de auditoría: cualquiera autenticado puede crear un registro
+    // (se genera automáticamente al guardar), pero nadie puede editarlo ni
+    // borrarlo -- y solo el jefe puede consultarlo.
+    match /audit_log/{entryId} {
+      allow read: if isAuth() && userRole() == "jefe";
+      allow create: if isAuth();
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // Agenda: esquemas de tratamiento, esquemas asignados a pacientes y citas
+    match /schemes/{id} {
+      allow read: if isAuth();
+      allow write: if isAuth() && userRole() == "jefe";
+    }
+    match /patientSchemes/{id} {
+      allow read: if isAuth();
+      allow write: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera");
+    }
+    match /appointments/{id} {
+      allow read: if isAuth();
+      allow write: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera");
+    }
+
+    // Configuración del catálogo de material (solo el jefe lo edita)
+    match /settings/{id} {
+      allow read: if isAuth();
+      allow write: if isAuth() && userRole() == "jefe";
+    }
   }
 }
