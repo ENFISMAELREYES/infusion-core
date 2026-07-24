@@ -76,7 +76,7 @@ const STATUS_META = {
   pendiente:  { label:"Pendiente",  color:"#ffb347" },
 };
 
-function SessionRow({ s, selected, onSelect, isJefe, canSign, token, onRefresh }) {
+function SessionRow({ s, selected, onSelect, isJefe, canSign, token, onRefresh, profile }) {
   const sm = STATUS_META[s.status] || STATUS_META.pendiente;
   const isSelected = selected?.id === s.id;
   const [editing, setEditing] = useState(false);
@@ -289,12 +289,21 @@ const saveEdit = async () => {
       style={{ padding:"14px 18px", borderRadius:12, cursor:"pointer", marginBottom:8,
         background: isSelected ? "rgba(0,212,170,0.08)" : "rgba(255,255,255,0.03)",
         border:`1px solid ${isSelected ? "rgba(0,212,170,0.3)" : "rgba(255,255,255,0.07)"}`,
-        transition:"all 0.15s" }}>
+        transition:"all 0.15s",
+        opacity: s.eliminado ? 0.5 : 1 }}>
 
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12 }}>
         <div style={{ flex:1 }}>
-          <div style={{ fontSize:14, color:"#f0f0f0", fontWeight:600, marginBottom:3 }}>{s.patientName}</div>
+          <div style={{ fontSize:14, color:"#f0f0f0", fontWeight:600, marginBottom:3 }}>
+            {s.eliminado && <span style={{ color:"#ff6b6b", marginRight:6 }}>🗑</span>}
+            {s.patientName}
+          </div>
           <div style={{ fontSize:12, color:"#666" }}>{s.diagnosis} · {s.cycle}</div>
+          {s.eliminado && (
+            <div style={{ fontSize:10, color:"#ff6b6b", marginTop:2 }}>
+              Eliminada {s.eliminadoAt ? new Date(s.eliminadoAt).toLocaleString("es-MX") : ""} {s.eliminadoPor ? `por ${s.eliminadoPor}` : ""}
+            </div>
+          )}
           {s.sessionType === "procedimiento" && s.procedureType && (
               <div style={{ fontSize:11, color:"#ffb347", marginTop:2 }}>🔧 {s.procedureType}</div>
             )}
@@ -443,35 +452,55 @@ const saveEdit = async () => {
 
          {!editing && (canSign || isJefe) && (
             <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap" }}>
-              {isJefe && (
+              {isJefe && !s.eliminado && (
                 <button onClick={e => { e.stopPropagation(); openEditor(); }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
                   ✏️ Editar sesión
                 </button>
               )}
-              {canSign && s.status === "completado" && !s.signatures && (
+              {canSign && s.status === "completado" && !s.signatures && !s.eliminado && (
                 <button onClick={e => { e.stopPropagation(); setShowSignModal(true); }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
                   ✍️ Registrar firmas
                 </button>
               )}
-              {isJefe && (
+              {isJefe && !s.eliminado && (
                 <button onClick={e => { e.stopPropagation(); openDupModal(); }} title="Duplicar como plantilla (temporal, captura retrospectiva)"
                   style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
                   📋 Duplicar
                 </button>
               )}
-              {isJefe && (
+              {isJefe && !s.eliminado && (
                 <button onClick={async e => {
                   e.stopPropagation();
-                  if (!confirm(`¿Eliminar sesión de ${s.patientName} del ${s.date}?`)) return;
+                  if (!confirm(`¿Eliminar sesión de ${s.patientName} del ${s.date}?\n\nNo se borra de la base de datos (se conserva por norma), solo se oculta del historial normal.`)) return;
                   try {
+                    const fields = {
+                      eliminado:    { booleanValue: true },
+                      eliminadoAt:  { stringValue: new Date().toISOString() },
+                      eliminadoPor: { stringValue: profile?.email || profile?.uid || "" },
+                    };
+                    const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${k}`).join("&");
                     await fetch(
-                      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}`,
-                      { method:"DELETE", headers:{ "Authorization":`Bearer ${token}` } }
+                      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}?${mask}`,
+                      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
                     );
                     onRefresh();
                   } catch(err) { alert("Error: " + err.message); }
                 }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
                   🗑 Eliminar
+                </button>
+              )}
+              {isJefe && s.eliminado && (
+                <button onClick={async e => {
+                  e.stopPropagation();
+                  try {
+                    await fetch(
+                      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}?updateMask.fieldPaths=eliminado`,
+                      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields: { eliminado: { booleanValue: false } } }) }
+                    );
+                    onRefresh();
+                  } catch(err) { alert("Error: " + err.message); }
+                }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.1)", border:"1px solid rgba(29,158,117,0.3)", color:"#1D9E75" }}>
+                  ↺ Restaurar
                 </button>
               )}
             </div>
@@ -649,6 +678,7 @@ const isJefe = profile?.role === "jefe";
   const [token, setToken] = useState("");
   const [filters, setFilters]   = useState({ date:"", center:"", search:"" });
   const [typeFilter, setTypeFilter] = useState(""); // "" = todos
+  const [showDeleted, setShowDeleted] = useState(false); // jefe: ver sesiones eliminadas (borrado lógico)
 
   const load = async () => {
     if (!user) return;
@@ -665,7 +695,8 @@ setToken(t);
 
   useEffect(() => { load(); }, [user]);
 
-  const searchFiltered = sessions.filter(s => {
+  const visibilityFiltered = sessions.filter(s => showDeleted ? true : !s.eliminado);
+  const searchFiltered = visibilityFiltered.filter(s => {
     if (!filters.search) return true;
     const q = filters.search.toLowerCase();
     return s.patientName?.toLowerCase().includes(q) ||
@@ -673,14 +704,25 @@ setToken(t);
            s.diagnosis?.toLowerCase().includes(q);
   });
   const filtered = typeFilter ? searchFiltered.filter(s => (s.sessionType || "iv") === typeFilter) : searchFiltered;
+  const deletedCount = sessions.filter(s => s.eliminado).length;
 
   const inputStyle = { background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"8px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
 
   return (
     <div style={{ padding:"24px 28px", maxWidth:900, margin:"0 auto" }}>
-      <div style={{ marginBottom:24 }}>
-        <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Historial</h1>
-        <p style={{ fontSize:13, color:"#555" }}>Consulta de sesiones pasadas</p>
+      <div style={{ marginBottom:24, display:"flex", justifyContent:"space-between", alignItems:"flex-end", flexWrap:"wrap", gap:10 }}>
+        <div>
+          <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Historial</h1>
+          <p style={{ fontSize:13, color:"#555" }}>Consulta de sesiones pasadas</p>
+        </div>
+        {isJefe && deletedCount > 0 && (
+          <button onClick={() => setShowDeleted(v => !v)} style={{ padding:"7px 14px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer",
+            background: showDeleted ? "rgba(255,107,107,0.12)" : "rgba(255,255,255,0.04)",
+            border: `1px solid ${showDeleted ? "rgba(255,107,107,0.3)" : "rgba(255,255,255,0.08)"}`,
+            color: showDeleted ? "#ff6b6b" : "#666" }}>
+            {showDeleted ? "🗑 Ocultar eliminadas" : `🗑 Ver eliminadas (${deletedCount})`}
+          </button>
+        )}
       </div>
 
       <div style={{ display:"flex", gap:10, marginBottom:20, flexWrap:"wrap" }}>
@@ -736,7 +778,7 @@ setToken(t);
               </div>
             );
           })()}
-          {filtered.map(s => <SessionRow key={s.id} s={s} onSelect={setSelected} selected={selected} isJefe={isJefe} canSign={canSign} token={token} onRefresh={load} />)}
+          {filtered.map(s => <SessionRow key={s.id} s={s} onSelect={setSelected} selected={selected} isJefe={isJefe} canSign={canSign} token={token} onRefresh={load} profile={profile} />)}
         </div>
       )}
     </div>
