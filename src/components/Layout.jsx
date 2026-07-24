@@ -13,6 +13,7 @@ const NAV = {
     { to:"/insumos", icon:"🧰", label:"Insumos" },
     { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
     { to:"/reportes", icon:"📊", label:"Reportes" },
+    { to:"/auditoria", icon:"🛡️", label:"Auditoría" },
   ],
   enfermera: [
     { to:"/pacientes", icon:"◎", label:"Pacientes"  },
@@ -43,7 +44,6 @@ export default function Layout() {
 
   return (
     <div style={{ display:"flex", minHeight:"100vh", background:"#080a0f", color:"#f0f0f0", fontFamily:"'Inter', sans-serif" }}>
-      {/* Sidebar — solo en desktop */}
       <aside style={{
         width:220, flexShrink:0, borderRight:"1px solid rgba(255,255,255,0.06)",
         display:"flex", flexDirection:"column", padding:"20px 12px",
@@ -80,9 +80,7 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Contenido principal */}
       <main style={{ flex:1, overflowY:"auto", paddingBottom:80 }} className="main-content">
-        {/* Header móvil */}
         <div className="mobile-only" style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", borderBottom:"1px solid rgba(255,255,255,0.06)", position:"sticky", top:0, background:"#080a0f", zIndex:50 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
             <img src="/icon-192-white.png" alt="InfusionCore" style={{ width:28, height:28, borderRadius:6, objectFit:"contain" }} />
@@ -98,7 +96,6 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {/* Navegación inferior — solo en móvil */}
       <nav className="mobile-only" style={{
         position:"fixed", bottom:0, left:0, right:0, zIndex:100,
         background:"rgba(8,10,15,0.95)", borderTop:"1px solid rgba(255,255,255,0.08)",
