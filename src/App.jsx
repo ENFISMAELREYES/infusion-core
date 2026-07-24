@@ -13,7 +13,7 @@ import Reportes from "./pages/Reportes";
 import Calculadoras from "./pages/Calculadoras";
 import Agenda from "./pages/Agenda";
 import Insumos from "./pages/Insumos";
-
+import Auditoria from "./pages/Auditoria";
 function PrivateRoute({ children, roles }) {
   const { user, profile, loading } = useAuth();
   if (loading) return (
@@ -29,16 +29,13 @@ if (profile?.role === "visualizador") return <Navigate to="/monitor" replace />;
   }
   return children;
 }
-
 function AppRoutes() {
   const { profile, loading } = useAuth();
-
   if (loading) return (
     <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#080a0f", color:"#555", fontSize:14 }}>
       Cargando...
     </div>
   );
-
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
@@ -61,11 +58,11 @@ function AppRoutes() {
         <Route path="calculadoras" element={<PrivateRoute roles={["jefe","enfermera"]}><Calculadoras /></PrivateRoute>} />
        <Route path="agenda" element={<PrivateRoute roles={["jefe","visualizador","enfermera"]}><Agenda /></PrivateRoute>} />
         <Route path="insumos" element={<PrivateRoute roles={["jefe","enfermera"]}><Insumos /></PrivateRoute>} />
+        <Route path="auditoria" element={<PrivateRoute roles={["jefe"]}><Auditoria /></PrivateRoute>} />
       </Route>
     </Routes>
   );
 }
-
 export default function App() {
   return (
     <BrowserRouter>
@@ -75,5 +72,3 @@ export default function App() {
     </BrowserRouter>
   );
 }
-
-
