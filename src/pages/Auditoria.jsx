@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
-const PROJECT_ID = "infusion-core";
+import { PROJECT_ID, DATABASE_ID } from "../config";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -36,7 +36,7 @@ async function fetchAuditLog(token, filters) {
   };
   if (where) query.where = where;
 
-  const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`, {
+  const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
     body: JSON.stringify({ structuredQuery: query }),
