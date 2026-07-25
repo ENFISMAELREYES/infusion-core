@@ -3,7 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { computeSessionMaterial, computeMedicationPieces, MASTER_CATALOG, MATERIAL_DEFAULTS, PUNCION_DEFAULTS } from "../data/materialCatalog";
 import MaterialModal from "../components/MaterialModal";
 
-const PROJECT_ID = "infusion-core";
+import { PROJECT_ID, DATABASE_ID } from "../config";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -33,7 +33,7 @@ function toFV(val) {
 
 async function fetchUpcomingSessions(token, fromDate) {
   const res = await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`,
     { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
       body: JSON.stringify({ structuredQuery: {
         from: [{ collectionId: "sessions" }],
@@ -51,7 +51,7 @@ async function fetchOverrides(token) {
   const empty = { extraCatalog: [], extraDefaults: {}, puncionOverrides: {}, patientDefaultMaterial: null };
   try {
     const res = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/settings/materialCatalog`,
+      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/settings/materialCatalog`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (res.status === 404) return empty;
@@ -72,7 +72,7 @@ async function saveOverrides(token, data) {
   const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toFV(v)]));
   const mask = Object.keys(data).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/settings/materialCatalog?${mask}`,
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/settings/materialCatalog?${mask}`,
     { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) }
   );
 }
@@ -126,7 +126,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   const markPedidoHecho = async () => {
     try {
       const nowIso = new Date().toISOString();
-      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${s.id}?updateMask.fieldPaths=pedidoGeneradoAt`,
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=pedidoGeneradoAt`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
           body: JSON.stringify({ fields: { pedidoGeneradoAt: { stringValue: nowIso } } }) });
       setSessions(prev => prev.map(x => x.id === s.id ? { ...x, pedidoGeneradoAt: nowIso } : x));
@@ -137,7 +137,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     e.stopPropagation();
     try {
       const newVal = !s.excludeFromOrder;
-      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${s.id}?updateMask.fieldPaths=excludeFromOrder`,
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=excludeFromOrder`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
           body: JSON.stringify({ fields: { excludeFromOrder: { booleanValue: newVal } } }) });
       setSessions(prev => prev.map(x => x.id === s.id ? { ...x, excludeFromOrder: newVal } : x));
@@ -168,7 +168,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       URL.revokeObjectURL(url);
 
       const newAnexos = [...anexos, { number: anexoNumber, items: anexoItems, note: anexoNote, generatedAt: new Date().toISOString() }];
-      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${s.id}?updateMask.fieldPaths=anexos`,
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=anexos`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
           body: JSON.stringify({ fields: { anexos: toFV(newAnexos) } }) });
       setSessions(prev => prev.map(x => x.id === s.id ? { ...x, anexos: newAnexos } : x));
