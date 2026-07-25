@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../hooks/useAuth";
 
-const PROJECT_ID = "infusion-core";
-const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
+import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 const CATEGORIES = ["premedicacion","inmunoterapia","quimioterapia","adicional","especialidad","hidratacion","domicilio"];
 const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", hidratacion:"Hidratación", domicilio:"Domicilio" };
 const emptyMed = (order) => ({ id: Date.now() + order, order, name: "", dose: "", diluent: "", time: "", category: "premedicacion", parallelType: "secuencial", startOffset: null });
@@ -29,7 +28,7 @@ function similarity(a, b) {
 }
 
 async function fetchCatalog(token, center) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -74,7 +73,7 @@ async function fetchCatalog(token, center) {
   const medications = [...new Set(filtered.flatMap(s => s.medNames || []))].map(m => ({ medication: m }));
 
   const schemesRes = await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`,
     { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
       body: JSON.stringify({ structuredQuery: { from:[{ collectionId:"schemes" }], limit:100 } }) }
   );
@@ -174,7 +173,7 @@ export default function NuevaSession() {
     try {
       const token = await user.getIdToken(true);
       const res = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
+        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`,
         { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
           body: JSON.stringify({ structuredQuery: {
             from:[{ collectionId:"patientSchemes" }],
@@ -202,7 +201,7 @@ export default function NuevaSession() {
     if (!form.patientName) return;
     try {
       const token = await user.getIdToken(true);
-      const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`, {
+      const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({
@@ -269,7 +268,7 @@ export default function NuevaSession() {
       };
       const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toFV(v)]));
       const res = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions?key=${API_KEY}`,
+        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions?key=${API_KEY}`,
         { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
       );
       if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "Error al guardar"); }
