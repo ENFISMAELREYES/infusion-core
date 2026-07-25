@@ -3,8 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 
-const PROJECT_ID = "infusion-core";
-const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
+import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -23,7 +22,7 @@ function parseDoc(doc) {
 }
 
 async function fetchSessions(token, filters) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
   const filtersList = [];
   if (filters.date)   filtersList.push({ fieldFilter: { field: { fieldPath: "date" },   op: "EQUAL", value: { stringValue: filters.date } } });
   if (filters.center) filtersList.push({ fieldFilter: { field: { fieldPath: "center" }, op: "EQUAL", value: { stringValue: filters.center } } });
@@ -142,7 +141,7 @@ const saveEdit = async () => {
       };
       const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
       await fetch(
-        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}?${mask}`,
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/sessions/${s.id}?${mask}`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
       );
       setEditing(false);
@@ -173,7 +172,7 @@ const saveEdit = async () => {
         }}}
       };
       await fetch(
-        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}?updateMask.fieldPaths=signatures`,
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=signatures`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
       );
       setShowSignModal(false);
@@ -208,7 +207,7 @@ const saveEdit = async () => {
     try {
       // Verificar que el número no esté ya usado en este centro
       const checkRes = await fetch(
-        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents:runQuery`,
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents:runQuery`,
         { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
           body: JSON.stringify({ structuredQuery: {
             from: [{ collectionId:"sessions" }],
@@ -247,7 +246,7 @@ const saveEdit = async () => {
       };
       const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toFV(v)]));
       const res = await fetch(
-        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions`,
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/sessions`,
         { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
       );
       if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "Error al guardar"); }
@@ -480,7 +479,7 @@ const saveEdit = async () => {
                     };
                     const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${k}`).join("&");
                     await fetch(
-                      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}?${mask}`,
+                      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/sessions/${s.id}?${mask}`,
                       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
                     );
                     onRefresh();
@@ -494,7 +493,7 @@ const saveEdit = async () => {
                   e.stopPropagation();
                   try {
                     await fetch(
-                      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${s.id}?updateMask.fieldPaths=eliminado`,
+                      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=eliminado`,
                       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields: { eliminado: { booleanValue: false } } }) }
                     );
                     onRefresh();
