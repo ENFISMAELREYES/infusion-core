@@ -14,6 +14,7 @@ import Calculadoras from "./pages/Calculadoras";
 import Agenda from "./pages/Agenda";
 import Insumos from "./pages/Insumos";
 import Auditoria from "./pages/Auditoria";
+import Inventario from "./pages/Inventario";
 function PrivateRoute({ children, roles }) {
   const { user, profile, loading } = useAuth();
   if (loading) return (
@@ -59,6 +60,7 @@ function AppRoutes() {
        <Route path="agenda" element={<PrivateRoute roles={["jefe","visualizador","enfermera"]}><Agenda /></PrivateRoute>} />
         <Route path="insumos" element={<PrivateRoute roles={["jefe","enfermera"]}><Insumos /></PrivateRoute>} />
         <Route path="auditoria" element={<PrivateRoute roles={["jefe"]}><Auditoria /></PrivateRoute>} />
+        <Route path="inventario" element={<PrivateRoute roles={["jefe","enfermera"]}><Inventario /></PrivateRoute>} />
       </Route>
     </Routes>
   );
