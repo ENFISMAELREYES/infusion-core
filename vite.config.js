@@ -17,6 +17,7 @@ export default defineConfig({
       // reciente desplegada mientras alguien la tiene abierta.
       name: 'write-version-file',
       closeBundle() {
+        fs.mkdirSync('dist', { recursive: true });
         fs.writeFileSync('dist/version.json', JSON.stringify({ version: BUILD_VERSION }));
       },
     },
