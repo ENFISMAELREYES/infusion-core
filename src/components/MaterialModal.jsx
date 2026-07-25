@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { computeSessionMaterial, computeMedicationPieces, getMedicationPresentations, MASTER_CATALOG } from "../data/materialCatalog";
 
-const PROJECT_ID = "infusion-core";
+import { PROJECT_ID, DATABASE_ID } from "../config";
 
 function parseFirestoreDoc(doc) {
   const parse = (v) => {
@@ -22,7 +22,7 @@ function parseFirestoreDoc(doc) {
 async function fetchCatalogOverrides(token) {
   try {
     const res = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/settings/materialCatalog`,
+      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/settings/materialCatalog`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (res.status === 404) return { extraCatalog: [], extraDefaults: {}, puncionOverrides: {}, patientDefaultMaterial: null };
@@ -66,7 +66,7 @@ async function logAudit(token, collection, docId, changes) {
       changes:     toFV(changes),
       timestamp:   { stringValue: new Date().toISOString() },
     };
-    await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/audit_log`,
+    await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/audit_log`,
       { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
   } catch (e) {
     console.error("No se pudo registrar la auditoría:", e);
@@ -98,7 +98,7 @@ async function patchSession(token, sessionId, updates) {
   if (Object.keys(simpleUpdates).length > 0) {
     const fields = Object.fromEntries(Object.entries(simpleUpdates).map(([k,v]) => [k,toFV(v)]));
     const mask   = Object.keys(simpleUpdates).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
-    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
+    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${sessionId}?${mask}`,
       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
     await checkOk(res);
   }
@@ -108,7 +108,7 @@ async function patchSession(token, sessionId, updates) {
     let fields  = {};
     if (parts.length === 2) fields[parts[0]] = { mapValue:{ fields:{ [parts[1]]:toFV(value) } } };
     else if (parts.length === 3) fields[parts[0]] = { mapValue:{ fields:{ [parts[1]]:{ mapValue:{ fields:{ [parts[2]]:toFV(value) } } } } } };
-    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
+    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${sessionId}?${mask}`,
       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
     await checkOk(res);
   }
