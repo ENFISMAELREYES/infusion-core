@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
-const PROJECT_ID = "infusion-core";
-const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
+import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
 function getToday() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
@@ -25,7 +24,7 @@ function parseDoc(doc) {
 }
 
 async function fetchPendingSessions(token) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -70,14 +69,14 @@ async function authorizeSession(token, sessionId, meds, globalNote, corrected, u
   };
   const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${sessionId}?${mask}`,
     { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) }
   );
 }
 
 async function deleteSession(token, sessionId) {
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}`,
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${sessionId}`,
     { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } }
   );
 }
@@ -322,7 +321,7 @@ useEffect(() => { loadUnfinished(); }, [user]);
       const token = await user.getIdToken(true);
       const fields = { date: { stringValue: newDate } };
       await fetch(
-        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?updateMask.fieldPaths=date`,
+        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${sessionId}?updateMask.fieldPaths=date`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
       );
       loadUnfinished();
@@ -333,7 +332,7 @@ useEffect(() => { loadUnfinished(); }, [user]);
     if (!user) return;
     try {
       const token = await user.getIdToken(true);
-      const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+      const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
       const res = await fetch(url, {
         method:"POST",
         headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
