@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
-const PROJECT_ID = "infusion-core";
+import { PROJECT_ID, DATABASE_ID } from "../config";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -20,7 +20,7 @@ function parseDoc(doc) {
 }
 
 async function fetchSessions(token, filters) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
   const filtersList = [];
   if (filters.from) filtersList.push({ fieldFilter: { field: { fieldPath: "date" }, op: "GREATER_THAN_OR_EQUAL", value: { stringValue: filters.from } } });
   if (filters.to)   filtersList.push({ fieldFilter: { field: { fieldPath: "date" }, op: "LESS_THAN_OR_EQUAL",    value: { stringValue: filters.to } } });
