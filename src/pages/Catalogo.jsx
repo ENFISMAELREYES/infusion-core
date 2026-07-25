@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
-const PROJECT_ID = "infusion-core";
-const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
+import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
 const PATIENT_STATUS = {
   activo:      { label:"Activo",      color:"#1D9E75" },
@@ -45,7 +44,7 @@ function similarity(a, b) {
 }
 
 async function fetchAllSessions(token) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -71,7 +70,7 @@ async function fetchAllSessions(token) {
 }
 
 async function fetchCollection(token, collection) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -83,7 +82,7 @@ async function fetchCollection(token, collection) {
 }
 
 async function fetchPatientCatalog(token) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -97,7 +96,7 @@ async function fetchPatientCatalog(token) {
 async function savePatientStatus(token, patientName, status) {
   const toFV = (val) => ({ stringValue: val });
   // Buscar si ya existe
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -116,14 +115,14 @@ async function savePatientStatus(token, patientName, status) {
     // Actualizar
     const docId = existing.document.name.split("/").pop();
     await fetch(
-      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/patients/${docId}?updateMask.fieldPaths=status`,
+      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/patients/${docId}?updateMask.fieldPaths=status`,
       { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ fields: { status: toFV(status) } }) }
     );
   } else {
     // Crear nuevo
     await fetch(
-      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/patients?key=${API_KEY}`,
+      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/patients?key=${API_KEY}`,
       { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ fields: { name: toFV(patientName), status: toFV(status) } }) }
     );
@@ -132,7 +131,7 @@ async function savePatientStatus(token, patientName, status) {
 
 async function updateSessionField(token, sessionId, field, value) {
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?updateMask.fieldPaths=${field}`,
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${sessionId}?updateMask.fieldPaths=${field}`,
     { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
       body: JSON.stringify({ fields: { [field]: { stringValue: value } } }) }
   );
@@ -172,14 +171,14 @@ async function updateAppointment(token, apptId, fields) {
   const body = Object.fromEntries(Object.entries(fields).map(([k,v]) => [k, toFV(v)]));
   const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/appointments/${apptId}?${mask}`,
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/appointments/${apptId}?${mask}`,
     { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields: body }) }
   );
 }
 
 async function deleteAppointment(token, apptId) {
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/appointments/${apptId}`,
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/appointments/${apptId}`,
     { method:"DELETE", headers:{ "Authorization":`Bearer ${token}` } }
   );
 }
@@ -224,7 +223,7 @@ function SchemeAppointmentsSection({ patientName, schemes, patientSchemes, appoi
     const scheme = schemes.find(s => s.id === appt.schemeId);
     if (scheme) {
       await fetch(
-        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${session.id}?updateMask.fieldPaths=schemeName&updateMask.fieldPaths=schemeId`,
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/sessions/${session.id}?updateMask.fieldPaths=schemeName&updateMask.fieldPaths=schemeId`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
           body: JSON.stringify({ fields: {
             schemeName: { stringValue: scheme.name },
@@ -264,7 +263,7 @@ const saveMeds = async (apptId, confirmAlso) => {
   const mask = "updateMask.fieldPaths=meds" + (confirmAlso ? "&updateMask.fieldPaths=status&updateMask.fieldPaths=confirmedAt" : "");
   if (confirmAlso) { fields.status = toFV("confirmed"); fields.confirmedAt = toFV(new Date().toISOString()); }
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/appointments/${apptId}?${mask}`,
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/appointments/${apptId}?${mask}`,
     { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
   );
   setEditingMeds(null);
@@ -289,7 +288,7 @@ const saveMeds = async (apptId, confirmAlso) => {
                     const today = new Date().toLocaleDateString("en-CA", { timeZone:"America/Mexico_City" });
                     // Actualizar schemeStatus
                     await fetch(
-                      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/patientSchemes/${ps.id}?updateMask.fieldPaths=schemeStatus`,
+                      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/patientSchemes/${ps.id}?updateMask.fieldPaths=schemeStatus`,
                       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
                         body: JSON.stringify({ fields: { schemeStatus: { stringValue: newStatus } } }) }
                     );
@@ -304,7 +303,7 @@ const saveMeds = async (apptId, confirmAlso) => {
                       const apptStatus = newStatus === "suspendido" ? "suspendida" : "cancelada";
                       for (const appt of futureAppts) {
                         await fetch(
-                          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
+                          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
                           { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
                             body: JSON.stringify({ fields: { status: { stringValue: apptStatus } } }) }
                         );
@@ -312,7 +311,7 @@ const saveMeds = async (apptId, confirmAlso) => {
                     } else if (newStatus === "activo") {
                       for (const appt of suspendedAppts) {
                         await fetch(
-                          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
+                          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
                           { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
                             body: JSON.stringify({ fields: { status: { stringValue: "scheduled" } } }) }
                         );
@@ -552,7 +551,7 @@ const handleDataEdit = async (patientName, draft) => {
     const scheme = schemes.find(s => s.id === schemeId);
     if (!scheme) return;
     await fetch(
-      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/sessions/${sessionId}?updateMask.fieldPaths=schemeName&updateMask.fieldPaths=schemeId`,
+      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/sessions/${sessionId}?updateMask.fieldPaths=schemeName&updateMask.fieldPaths=schemeId`,
       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
         body: JSON.stringify({ fields: {
           schemeName: { stringValue: scheme.name },
