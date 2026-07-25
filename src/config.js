@@ -11,7 +11,7 @@
 // pruebas sin que nadie tenga que acordarse de cambiar nada a mano.
 
 export const PROJECT_ID           = import.meta.env.VITE_FIREBASE_PROJECT_ID    || "infusion-core";
-export const DATABASE_ID          = import.meta.env.VITE_FIRESTORE_DATABASE_ID  || "(default)";
+export const DATABASE_ID          = import.meta.env.VITE_FIRESTORE_DATABASE_ID  || "default";
 export const API_KEY              = import.meta.env.VITE_FIREBASE_API_KEY      || "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
 export const AUTH_DOMAIN          = import.meta.env.VITE_FIREBASE_AUTH_DOMAIN   || `${PROJECT_ID}.firebaseapp.com`;
 export const STORAGE_BUCKET       = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || `${PROJECT_ID}.firebasestorage.app`;
@@ -33,4 +33,4 @@ export const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/
 // Aviso visible: si estás usando una base de datos que no es la real (por
 // nombre de base de datos, o por proyecto), se nota en la app para nunca
 // confundirte de entorno mientras capturas datos de prueba.
-export const IS_TEST_ENV = PROJECT_ID !== "infusion-core" || DATABASE_ID !== "(default)";
+export const IS_TEST_ENV = PROJECT_ID !== "infusion-core" || DATABASE_ID !== "default";
