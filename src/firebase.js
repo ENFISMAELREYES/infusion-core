@@ -1,15 +1,9 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getMessaging, getToken } from "firebase/messaging";
 import { getStorage, ref, uploadString, getDownloadURL } from "firebase/storage";
+import { FIREBASE_CONFIG, VAPID_KEY as VAPID_KEY_CFG, PROJECT_ID, DATABASE_ID } from "./config";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw",
-  authDomain: "infusion-core.firebaseapp.com",
-  projectId: "infusion-core",
-  storageBucket: "infusion-core.firebasestorage.app",
-  messagingSenderId: "372027565230",
-  appId: "1:372027565230:web:9c2055e465b9ed7a02b93f"
-};
+const firebaseConfig = FIREBASE_CONFIG;
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
@@ -22,7 +16,7 @@ try {
 
 export { messaging };
 export const storage = getStorage(app);
-export const VAPID_KEY = "BMLOo1m7MOcerY21MKP-LfhHiQ5BEsVXNJog9Gv_EIklKdC6evUdC7kZQcufIcjPm44R5Bbhx2tJcucSdPNqyqA";
+export const VAPID_KEY = VAPID_KEY_CFG;
 
 // Sube una firma (dataURL PNG del canvas) a Firebase Storage y devuelve su URL pública.
 // role: "paciente" | "enfermeria" | "medico"
@@ -45,7 +39,7 @@ export async function requestNotificationPermission(userId, token) {
     if (!fcmToken) return null;
 
     await fetch(
-      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/fcmTokens/${userId}?updateMask.fieldPaths=token&updateMask.fieldPaths=updatedAt`,
+      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/fcmTokens/${userId}?updateMask.fieldPaths=token&updateMask.fieldPaths=updatedAt`,
       { method: "PATCH",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ fields: {
