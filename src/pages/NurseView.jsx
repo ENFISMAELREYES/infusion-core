@@ -3,8 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 
-const PROJECT_ID = "infusion-core";
-const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
+import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
 const CAT_COLOR = {
   premedicacion: "#FAC775", inmunoterapia: "#5DCAA5",
@@ -39,7 +38,7 @@ function parseFirestoreDoc(doc) {
 }
 
 async function fetchSessionsByNurse(token, nurseId) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
   const res = await fetch(url, {
     method:"POST",
     headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
@@ -58,7 +57,7 @@ async function fetchSessionsByNurse(token, nurseId) {
 }
 
 async function fetchTodaySessions(token, center, date) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
   const res = await fetch(url, {
     method:"POST",
     headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
@@ -108,7 +107,7 @@ async function logAudit(token, collection, docId, changes) {
       changes:     toFV(changes),
       timestamp:   { stringValue: new Date().toISOString() },
     };
-    await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/audit_log`,
+    await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/audit_log`,
       { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
   } catch (e) {
     console.error("No se pudo registrar la auditoría:", e);
@@ -140,7 +139,7 @@ async function patchSession(token, sessionId, updates) {
   if (Object.keys(simpleUpdates).length > 0) {
     const fields = Object.fromEntries(Object.entries(simpleUpdates).map(([k,v]) => [k,toFV(v)]));
     const mask   = Object.keys(simpleUpdates).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
-    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
+    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${sessionId}?${mask}`,
       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
     await checkOk(res);
   }
@@ -150,7 +149,7 @@ async function patchSession(token, sessionId, updates) {
     let fields  = {};
     if (parts.length === 2) fields[parts[0]] = { mapValue:{ fields:{ [parts[1]]:toFV(value) } } };
     else if (parts.length === 3) fields[parts[0]] = { mapValue:{ fields:{ [parts[1]]:{ mapValue:{ fields:{ [parts[2]]:toFV(value) } } } } } };
-    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
+    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${sessionId}?${mask}`,
       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
     await checkOk(res);
   }
@@ -170,13 +169,13 @@ async function updateSessionMeds(token, sessionId, meds, reAuth) {
   const fields = { meds:toFV(meds) };
   if (reAuth) fields.authorized = { booleanValue:false };
   const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
-  await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}?${mask}`,
+  await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${sessionId}?${mask}`,
     { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
 }
 
 async function deleteSessionAPI(token, sessionId) {
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/sessions/${sessionId}`,
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${sessionId}`,
     { method:"DELETE", headers:{ "Authorization":`Bearer ${token}` } }
   );
 }
@@ -467,7 +466,7 @@ function SessionCard({ session, token, onRefresh, user }) {
         // Confirmar cita en agenda si existe
         try {
           const today = getToday();
-          const apptUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+          const apptUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
           const apptRes = await fetch(apptUrl, {
             method:"POST",
             headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
@@ -485,7 +484,7 @@ function SessionCard({ session, token, onRefresh, user }) {
           if (appt) {
             const apptId = appt.document.name.split("/").pop();
             await fetch(
-              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/appointments/${apptId}?updateMask.fieldPaths=status&updateMask.fieldPaths=confirmedAt`,
+              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/appointments/${apptId}?updateMask.fieldPaths=status&updateMask.fieldPaths=confirmedAt`,
               { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
                 body: JSON.stringify({ fields: { status:{ stringValue:"confirmed" }, confirmedAt:{ stringValue:new Date().toISOString() } }})
               }
@@ -504,14 +503,14 @@ function SessionCard({ session, token, onRefresh, user }) {
           ? `counter_${session.center}_procedimiento`
           : `counter_${session.center}`;
         const counterRes = await fetch(
-          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${counterId}`,
+          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${counterId}`,
           { headers: { "Authorization": `Bearer ${freshToken}` } }
         );
         const counterDoc = await counterRes.json();
         const lastNumber = counterDoc.fields?.lastNumber?.integerValue ? parseInt(counterDoc.fields.lastNumber.integerValue) : 0;
         const newNumber = lastNumber + 1;
         await fetch(
-          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${counterId}?updateMask.fieldPaths=lastNumber`,
+          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${counterId}?updateMask.fieldPaths=lastNumber`,
           { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
             body: JSON.stringify({ fields: { lastNumber: { integerValue: String(newNumber) } } }) }
         );
@@ -530,7 +529,7 @@ function SessionCard({ session, token, onRefresh, user }) {
         // Asignar número de expediente si es paciente nuevo
         try {
           const patientQuery = await fetch(
-            `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
+            `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`,
             { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
               body: JSON.stringify({ structuredQuery: {
                 from:[{ collectionId:"sessions" }],
@@ -547,14 +546,14 @@ function SessionCard({ session, token, onRefresh, user }) {
           if (!existingExpediente) {
             const expCounterId = `counter_${session.center}_expediente`;
             const expRes = await fetch(
-              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${expCounterId}`,
+              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${expCounterId}`,
               { headers:{ "Authorization":`Bearer ${freshToken}` } }
             );
             const expDoc = await expRes.json();
             const lastExp = expDoc.fields?.lastNumber?.integerValue ? parseInt(expDoc.fields.lastNumber.integerValue) : 0;
             const newExp = lastExp + 1;
             await fetch(
-              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/config/${expCounterId}?updateMask.fieldPaths=lastNumber`,
+              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${expCounterId}?updateMask.fieldPaths=lastNumber`,
               { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
                 body: JSON.stringify({ fields:{ lastNumber:{ integerValue: String(newExp) } } }) }
             );
