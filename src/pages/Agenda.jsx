@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
-const PROJECT_ID = "infusion-core";
-const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
+import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -21,7 +20,7 @@ function parseDoc(doc) {
 }
 
 async function fetchCollection(token, collection) {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`;
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -49,13 +48,13 @@ async function savePatientScheme(token, data, schemes) {
     const fields = Object.fromEntries(Object.entries(data).filter(([k]) => k !== "id").map(([k, v]) => [k, toFV(v)]));
     const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
     await fetch(
-      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/patientSchemes/${data.id}?${mask}`,
+      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/patientSchemes/${data.id}?${mask}`,
       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) }
     );
   } else {
     const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toFV(v)]));
     const res = await fetch(
-      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/patientSchemes?key=${API_KEY}`,
+      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/patientSchemes?key=${API_KEY}`,
       { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) }
     );
     const doc = await res.json();
@@ -83,7 +82,7 @@ async function savePatientScheme(token, data, schemes) {
             createdAt:       toFV(new Date().toISOString()),
           };
           await fetch(
-            `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments?key=${API_KEY}`,
+            `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/appointments?key=${API_KEY}`,
             { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields: apptFields }) }
           );
         }
@@ -93,7 +92,7 @@ async function savePatientScheme(token, data, schemes) {
 }
 
 async function fetchAppointments(token) {
-  const url = `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents:runQuery`;
+  const url = `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents:runQuery`;
   const res = await fetch(url, {
     method:"POST",
     headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
@@ -110,7 +109,7 @@ async function fetchAppointments(token) {
 
 async function rescheduleAppointment(token, apptId, newDate, existingOriginalDate) {
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${apptId}?updateMask.fieldPaths=date&updateMask.fieldPaths=rescheduled&updateMask.fieldPaths=originalDate`,
+    `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/appointments/${apptId}?updateMask.fieldPaths=date&updateMask.fieldPaths=rescheduled&updateMask.fieldPaths=originalDate`,
     { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
       body: JSON.stringify({ fields: {
         date:         { stringValue: newDate },
@@ -136,7 +135,7 @@ async function addMoreCycles(token, ps, scheme, additionalCycles) {
 
   // Ampliar el total de ciclos del esquema del paciente
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/patientSchemes/${ps.id}?updateMask.fieldPaths=totalCyclesOverride`,
+    `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/patientSchemes/${ps.id}?updateMask.fieldPaths=totalCyclesOverride`,
     { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
       body: JSON.stringify({ fields: { totalCyclesOverride: toFV(newTotal) } }) }
   );
@@ -159,7 +158,7 @@ async function addMoreCycles(token, ps, scheme, additionalCycles) {
       createdAt:       toFV(new Date().toISOString()),
     };
     await fetch(
-      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments?key=${API_KEY}`,
+      `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/appointments?key=${API_KEY}`,
       { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields: apptFields }) }
     );
   }
@@ -167,7 +166,7 @@ async function addMoreCycles(token, ps, scheme, additionalCycles) {
 
 async function deletePatientScheme(token, id) {
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/patientSchemes/${id}`,
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/patientSchemes/${id}`,
     { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } }
   );
 }
@@ -506,7 +505,7 @@ setAppointments(appts);
           const newStatus = data.schemeStatus === "suspendido" ? "suspendida" : "cancelada";
           for (const appt of futureAppts) {
             await fetch(
-              `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
+              `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
               { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${t}` },
                 body: JSON.stringify({ fields: { status: { stringValue: newStatus } } }) }
             );
@@ -520,7 +519,7 @@ setAppointments(appts);
           );
           for (const appt of suspendedAppts) {
             await fetch(
-              `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
+              `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/appointments/${appt.id}?updateMask.fieldPaths=status`,
               { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${t}` },
                 body: JSON.stringify({ fields: { status: { stringValue: "scheduled" } } }) }
             );
@@ -557,13 +556,13 @@ setAppointments(appts);
         const fields = Object.fromEntries(Object.entries(data).filter(([k]) => k !== "id").map(([k, v]) => [k, toFV(v)]));
         const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
         await fetch(
-          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/schemes/${data.id}?${mask}`,
+          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/schemes/${data.id}?${mask}`,
           { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${t}` }, body:JSON.stringify({ fields }) }
         );
       } else {
         const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toFV(v)]));
         await fetch(
-          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/schemes?key=${API_KEY}`,
+          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/schemes?key=${API_KEY}`,
           { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${t}` }, body:JSON.stringify({ fields }) }
         );
       }
@@ -578,7 +577,7 @@ const handleDeleteScheme = async (id) => {
     try {
       const t = await user.getIdToken(true);
       await fetch(
-        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/default/documents/schemes/${id}`,
+        `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/schemes/${id}`,
         { method:"DELETE", headers:{ "Authorization":`Bearer ${t}` } }
       );
       load();
