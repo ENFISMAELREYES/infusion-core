@@ -2286,6 +2286,32 @@ const PREMEDICACION_DRUGS = new Set([
     add(EQUIPO_OPTIONS[session.equipoChoice], 1);
   }
 
+  // Piezas del medicamento en sí (frascos/ampolletas según la dosis) --
+  // respeta los ajustes manuales guardados por medicamento (pieceOverrides,
+  // identificados por posición + nombre, ya que puede repetirse el mismo
+  // medicamento con distinta dosis en la misma sesión).
+  (session.meds || []).forEach((m, idx) => {
+    if (!m.name || !m.dose) return;
+    const medKey = `${idx}_${m.name}`;
+    const overridden = session.pieceOverrides?.[medKey];
+    if (overridden) {
+      overridden.forEach(({ item, count }) => { if (count > 0) add(item, count); });
+    } else {
+      const auto = computeMedicationPieces(m.name, m.dose, extraCatalog, extraDefaults);
+      if (auto) auto.pieces.forEach(({ item, count }) => { if (count > 0) add(item, count); });
+    }
+  });
+
+  // Aplicar los ajustes guardados desde el modal de solicitud: artículos
+  // excluidos, cantidades editadas a mano, y material extra anexado. Esto es
+  // lo último que se aplica, para que siempre gane lo que la persona ajustó
+  // manualmente sobre el cálculo automático.
+  (session.excludedMaterial || []).forEach(item => { delete combined[item]; });
+  Object.entries(session.qtyOverrides || {}).forEach(([item, qty]) => {
+    if (combined[item] !== undefined) combined[item] = qty;
+  });
+  (session.extraMaterial || []).forEach(({ item, qty }) => add(item, qty || 0));
+
   return {
     items: Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item)),
     unmatched,
