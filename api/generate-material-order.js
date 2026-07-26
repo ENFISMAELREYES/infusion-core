@@ -31,7 +31,7 @@ export const config = { api: { responseLimit: "10mb" } };
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { center, cipiVariant, patientName, cycle, date, groups, note, anexoNumber } = req.body;
+  const { center, cipiVariant, patientName, cycle, date, groups, note, anexoNumber, scope } = req.body;
 
   try {
     const centerKey = (center || "CITIO").toUpperCase();
@@ -75,7 +75,10 @@ export default async function handler(req, res) {
       y += 24;
     }
 
-    const title = anexoNumber ? `ANEXO ${anexoNumber} A SOLICITUD DE MATERIAL` : "SOLICITUD DE MATERIAL";
+    const title = anexoNumber ? `ANEXO ${anexoNumber} A SOLICITUD DE MATERIAL`
+      : scope === "medicamentos" ? "SOLICITUD DE MEDICAMENTOS"
+      : scope === "material" ? "SOLICITUD DE MATERIAL"
+      : "SOLICITUD DE MATERIAL";
     doc.fontSize(15).fillColor(NAVY).font("Helvetica-Bold").text(title, 45, y, { width: W, align: "center" });
     y += 28;
 
