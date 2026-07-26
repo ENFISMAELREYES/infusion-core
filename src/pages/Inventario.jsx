@@ -39,30 +39,37 @@ async function fetchCollection(token, collectionId, limit = 1000) {
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
 
-// El ID del documento de inventario combina centro + artículo, para llevar
-// existencias separadas por centro (son ubicaciones físicas distintas).
-function inventoryDocId(center, item) {
-  const clean = `${center}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
-  return clean;
+// El almacén ahora se identifica por centro real: CITIO, CIPI_PED, CIPI_PRO
+// (CIPI se dividió en dos almacenes separados por variante).
+const WAREHOUSES = [
+  { key: "CITIO", label: "CITIO" },
+  { key: "CIPI_PRO", label: "CIPI (Profesional)" },
+  { key: "CIPI_PED", label: "CIPI (Pediátrico)" },
+];
+
+function inventoryDocId(warehouse, item) {
+  return `${warehouse}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
 }
 
 export default function Inventario() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
   const [tab, setTab] = useState("existencias"); // "existencias" | "movimientos"
-  const [center, setCenter] = useState(profile?.center || "CITIO");
+  const [warehouse, setWarehouse] = useState("CITIO");
   const [token, setToken] = useState("");
   const [inventory, setInventory] = useState([]);
-  const [movements, setMovements] = useState([]);
+  const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [search, setSearch] = useState("");
+  const [expandedEvent, setExpandedEvent] = useState(null);
 
   const [showMoveModal, setShowMoveModal] = useState(null); // "entrada" | "salida" | null
-  const [moveItem, setMoveItem] = useState("");
+  const [moveList, setMoveList] = useState([]); // [{item, qty}] -- varios artículos por movimiento
   const [moveSearch, setMoveSearch] = useState("");
   const [moveQty, setMoveQty] = useState("1");
   const [moveReason, setMoveReason] = useState("");
+  const [invoiceFolio, setInvoiceFolio] = useState(""); // folio fiscal opcional, para relacionar con una factura
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -71,12 +78,12 @@ export default function Inventario() {
     try {
       const t = await user.getIdToken(true);
       setToken(t);
-      const [inv, mov] = await Promise.all([
+      const [inv, ev] = await Promise.all([
         fetchCollection(t, "inventory"),
-        fetchCollection(t, "inventory_movements"),
+        fetchCollection(t, "inventory_events"),
       ]);
       setInventory(inv);
-      setMovements(mov.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")));
+      setEvents(ev.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")));
     } catch (e) {
       console.error(e);
     } finally {
@@ -87,54 +94,70 @@ export default function Inventario() {
 
   useEffect(() => { load(); }, [user]);
 
-  const centerInventory = inventory.filter(i => i.center === center);
+  const warehouseInventory = inventory.filter(i => i.warehouse === warehouse);
   const filteredInventory = search.trim()
-    ? centerInventory.filter(i => i.item.toUpperCase().includes(search.toUpperCase()))
-    : centerInventory;
-  const lowStock = centerInventory.filter(i => i.currentStock <= (i.minStock ?? 0));
+    ? warehouseInventory.filter(i => i.item.toUpperCase().includes(search.toUpperCase()))
+    : warehouseInventory;
+  const lowStock = warehouseInventory.filter(i => i.currentStock <= (i.minStock ?? 0));
+
+  const addToMoveList = (item) => {
+    const qty = parseInt(moveQty) || 1;
+    setMoveList(prev => {
+      const existing = prev.find(x => x.item === item);
+      if (existing) return prev.map(x => x.item === item ? { ...x, qty: x.qty + qty } : x);
+      return [...prev, { item, qty }];
+    });
+    setMoveSearch(""); setMoveQty("1");
+  };
+  const removeFromMoveList = (item) => setMoveList(prev => prev.filter(x => x.item !== item));
+  const setMoveListQty = (item, qty) => setMoveList(prev => prev.map(x => x.item === item ? { ...x, qty: Math.max(0, qty) } : x));
 
   const registerMovement = async () => {
-    if (!moveItem || !moveQty || parseInt(moveQty) <= 0) { alert("Elige un artículo y una cantidad válida."); return; }
+    if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
     setSaving(true);
     try {
-      const qty = parseInt(moveQty);
       const type = showMoveModal; // "entrada" | "salida"
-      const docId = inventoryDocId(center, moveItem);
-      const existing = inventory.find(i => i.id === docId);
-      const currentStock = existing?.currentStock ?? 0;
-      const minStock = existing?.minStock ?? 0;
-      const newStock = type === "entrada" ? currentStock + qty : Math.max(0, currentStock - qty);
 
-      const catalogEntry = MASTER_CATALOG.find(c => c.item === moveItem);
-      const invFields = {
-        item: { stringValue: moveItem },
-        center: { stringValue: center },
-        category: { stringValue: catalogEntry?.category || existing?.category || "" },
-        unit: { stringValue: catalogEntry?.unit || existing?.unit || "PIEZA" },
-        currentStock: toFV(newStock),
-        minStock: toFV(minStock),
-        lastUpdated: { stringValue: new Date().toISOString() },
-      };
-      await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ fields: invFields }),
-      });
+      // Actualizar existencias de cada artículo -- ahora se PERMITE negativo,
+      // para reflejar que ya se usó algo que aún no se ha registrado como
+      // recibido (ej. hay un ingreso pendiente de factura).
+      for (const { item, qty } of moveList) {
+        const docId = inventoryDocId(warehouse, item);
+        const existing = inventory.find(i => i.id === docId);
+        const currentStock = existing?.currentStock ?? 0;
+        const minStock = existing?.minStock ?? 0;
+        const catalogEntry = MASTER_CATALOG.find(c => c.item === item);
+        const newStock = type === "entrada" ? currentStock + qty : currentStock - qty;
 
-      const movFields = {
-        item: { stringValue: moveItem },
-        center: { stringValue: center },
+        await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            item: { stringValue: item }, warehouse: { stringValue: warehouse },
+            category: { stringValue: catalogEntry?.category || existing?.category || "" },
+            unit: { stringValue: catalogEntry?.unit || existing?.unit || "PIEZA" },
+            currentStock: toFV(newStock), minStock: toFV(minStock),
+            lastUpdated: { stringValue: new Date().toISOString() },
+          }}),
+        });
+      }
+
+      // Un solo evento con todos los artículos juntos (no un renglón por
+      // artículo), para poder resumir por movimiento en vez de por producto.
+      const eventFields = {
         type: { stringValue: type },
-        qty: toFV(qty),
+        warehouse: { stringValue: warehouse },
+        items: toFV(moveList),
         reason: { stringValue: moveReason || "" },
+        invoiceFolio: { stringValue: invoiceFolio || "" },
         userEmail: { stringValue: profile?.email || user?.email || "" },
         createdAt: { stringValue: new Date().toISOString() },
       };
-      await fetch(`${FIRESTORE_BASE_URL}/inventory_movements`, {
+      await fetch(`${FIRESTORE_BASE_URL}/inventory_events`, {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ fields: movFields }),
+        body: JSON.stringify({ fields: eventFields }),
       });
 
-      setShowMoveModal(null); setMoveItem(""); setMoveSearch(""); setMoveQty("1"); setMoveReason("");
+      setShowMoveModal(null); setMoveList([]); setMoveReason(""); setInvoiceFolio("");
       load();
     } catch (e) {
       alert("Error al registrar el movimiento: " + e.message);
@@ -143,7 +166,7 @@ export default function Inventario() {
     }
   };
 
-  const setMinStock = async (docId, item, newMin) => {
+  const setMinStock = async (docId, newMin) => {
     try {
       await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}?updateMask.fieldPaths=minStock`, {
         method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -170,14 +193,14 @@ export default function Inventario() {
         <p style={{ fontSize:13, color:"#555" }}>Existencias y movimientos de entrada/salida de material</p>
       </div>
 
-      <div style={{ display:"flex", gap:8, marginBottom:16 }}>
-        {["CITIO","CIPI"].map(c => (
-          <button key={c} onClick={() => setCenter(c)} style={{
+      <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+        {WAREHOUSES.map(w => (
+          <button key={w.key} onClick={() => setWarehouse(w.key)} style={{
             padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
-            background: center===c ? "rgba(79,195,247,0.12)" : "rgba(255,255,255,0.04)",
-            border: `1px solid ${center===c ? "rgba(79,195,247,0.3)" : "rgba(255,255,255,0.08)"}`,
-            color: center===c ? "#4fc3f7" : "#666",
-          }}>{c}</button>
+            background: warehouse===w.key ? "rgba(79,195,247,0.12)" : "rgba(255,255,255,0.04)",
+            border: `1px solid ${warehouse===w.key ? "rgba(79,195,247,0.3)" : "rgba(255,255,255,0.08)"}`,
+            color: warehouse===w.key ? "#4fc3f7" : "#666",
+          }}>{w.label}</button>
         ))}
       </div>
 
@@ -195,10 +218,10 @@ export default function Inventario() {
         <div>
           <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
             <input placeholder="Buscar artículo..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, flex:1, minWidth:200 }} />
-            <button onClick={() => setShowMoveModal("entrada")} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+            <button onClick={() => { setShowMoveModal("entrada"); setMoveList([]); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
               ↓ Registrar entrada
             </button>
-            <button onClick={() => setShowMoveModal("salida")} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
+            <button onClick={() => { setShowMoveModal("salida"); setMoveList([]); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
               ↑ Registrar salida
             </button>
           </div>
@@ -212,20 +235,27 @@ export default function Inventario() {
 
           {filteredInventory.length === 0 ? (
             <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
-              Sin existencias registradas todavía en {center}. Usa "Registrar entrada" para empezar a cargar inventario.
+              Sin existencias registradas todavía en este almacén. Usa "Registrar entrada" para empezar a cargar inventario.
             </div>
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               {filteredInventory.sort((a,b) => a.item.localeCompare(b.item)).map(i => {
                 const low = i.currentStock <= (i.minStock ?? 0);
+                const negative = i.currentStock < 0;
                 return (
-                  <div key={i.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.03)", border:`1px solid ${low ? "rgba(255,107,107,0.3)" : "rgba(255,255,255,0.07)"}` }}>
+                  <div key={i.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10, background: negative ? "rgba(255,107,107,0.06)" : "rgba(255,255,255,0.03)", border:`1px solid ${negative ? "rgba(255,107,107,0.4)" : low ? "rgba(255,107,107,0.3)" : "rgba(255,255,255,0.07)"}` }}>
                     <span style={{ flex:1, fontSize:13, color:"#f0f0f0" }}>{i.item}</span>
                     <span style={{ fontSize:10, color:"#555" }}>{i.category}</span>
-                    <span style={{ fontSize:14, fontWeight:700, color: low ? "#ff6b6b" : "#00d4aa", fontFamily:"'IBM Plex Mono', monospace", minWidth:60, textAlign:"right" }}>{i.currentStock} {i.unit}</span>
+                    {negative && (
+                      <span title="Existencia negativa: ya se usó más de lo registrado como recibido -- probablemente hay un ingreso pendiente de capturar"
+                        style={{ fontSize:10, color:"#ff6b6b", background:"rgba(255,107,107,0.12)", padding:"2px 8px", borderRadius:99, fontWeight:600 }}>
+                        ⚠ ingreso pendiente
+                      </span>
+                    )}
+                    <span style={{ fontSize:14, fontWeight:700, color: negative ? "#ff6b6b" : low ? "#ffb347" : "#00d4aa", fontFamily:"'IBM Plex Mono', monospace", minWidth:60, textAlign:"right" }}>{i.currentStock} {i.unit}</span>
                     {isJefe && (
-                      <input type="number" min="0" defaultValue={i.minStock ?? 0} title="Mínimo antes de avisar"
-                        onBlur={e => setMinStock(i.id, i.item, e.target.value)}
+                      <input type="number" defaultValue={i.minStock ?? 0} title="Mínimo antes de avisar"
+                        onBlur={e => setMinStock(i.id, e.target.value)}
                         style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#888", fontSize:11, outline:"none", textAlign:"center" }} />
                     )}
                   </div>
@@ -238,69 +268,99 @@ export default function Inventario() {
 
       {tab === "movimientos" && (
         <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-          {movements.filter(m => m.center === center).length === 0 ? (
+          {events.filter(e => e.warehouse === warehouse).length === 0 ? (
             <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
-              Sin movimientos registrados todavía en {center}.
+              Sin movimientos registrados todavía en este almacén.
             </div>
-          ) : movements.filter(m => m.center === center).map(m => (
-            <div key={m.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
-              <span style={{ fontSize:11, padding:"3px 10px", borderRadius:99, background: m.type==="entrada" ? "rgba(0,212,170,0.12)" : "rgba(255,107,107,0.1)", color: m.type==="entrada" ? "#00d4aa" : "#ff6b6b" }}>
-                {m.type==="entrada" ? "↓ Entrada" : "↑ Salida"}
-              </span>
-              <span style={{ flex:1, fontSize:13, color:"#f0f0f0" }}>{m.item}</span>
-              <span style={{ fontSize:13, fontWeight:700, color:"#ccc", fontFamily:"'IBM Plex Mono', monospace" }}>{m.qty}</span>
-              <span style={{ fontSize:11, color:"#666" }}>{m.userEmail}</span>
-              <span style={{ fontSize:11, color:"#555" }}>{m.createdAt ? new Date(m.createdAt).toLocaleString("es-MX") : ""}</span>
-            </div>
-          ))}
+          ) : events.filter(e => e.warehouse === warehouse).map(ev => {
+            const isOpen = expandedEvent === ev.id;
+            const itemCount = (ev.items || []).length;
+            return (
+              <div key={ev.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
+                <div onClick={() => setExpandedEvent(isOpen ? null : ev.id)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+                  <span style={{ fontSize:11, padding:"3px 10px", borderRadius:99, background: ev.type==="entrada" ? "rgba(0,212,170,0.12)" : "rgba(255,107,107,0.1)", color: ev.type==="entrada" ? "#00d4aa" : "#ff6b6b" }}>
+                    {ev.type==="entrada" ? "↓ Entrada" : "↑ Salida"}
+                  </span>
+                  <span style={{ fontSize:13, color:"#f0f0f0" }}>{itemCount} artículo{itemCount!==1?"s":""}</span>
+                  {ev.sessionPatientName && <span style={{ fontSize:12, color:"#4fc3f7" }}>👤 {ev.sessionPatientName}</span>}
+                  {ev.invoiceFolio && <span style={{ fontSize:11, color:"#AFA9EC" }}>📄 {ev.invoiceFolio}</span>}
+                  {ev.reason && <span style={{ fontSize:11, color:"#888" }}>{ev.reason}</span>}
+                  <span style={{ marginLeft:"auto", fontSize:11, color:"#555" }}>{ev.createdAt ? new Date(ev.createdAt).toLocaleString("es-MX") : ""}</span>
+                  <span style={{ color:"#555" }}>{isOpen ? "▲" : "▼"}</span>
+                </div>
+                {isOpen && (
+                  <div style={{ padding:"0 16px 14px", display:"flex", flexDirection:"column", gap:4 }}>
+                    {(ev.items || []).map((it, i) => (
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"#ccc", padding:"3px 0" }}>
+                        <span>{it.item}</span><span style={{ color: ev.type==="entrada" ? "#00d4aa" : "#ff6b6b" }}>{it.qty}</span>
+                      </div>
+                    ))}
+                    {/* Quién lo hizo: solo visible para el jefe */}
+                    {isJefe && (
+                      <div style={{ marginTop:8, paddingTop:8, borderTop:"1px solid rgba(255,255,255,0.06)", fontSize:11, color:"#666" }}>
+                        Registrado por: {ev.userEmail || "—"}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
       {showMoveModal && (
         <div onClick={() => !saving && setShowMoveModal(null)}
           style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:420, display:"flex", flexDirection:"column", gap:12 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:460, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
             <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>
-              {showMoveModal === "entrada" ? "↓ Registrar entrada" : "↑ Registrar salida"} — {center}
+              {showMoveModal === "entrada" ? "↓ Registrar entrada" : "↑ Registrar salida"} — {WAREHOUSES.find(w=>w.key===warehouse)?.label}
             </div>
 
-            {!moveItem ? (
-              <div>
-                <input placeholder="Buscar artículo del catálogo..." value={moveSearch} onChange={e => setMoveSearch(e.target.value)} style={inputStyle} autoFocus />
-                {moveSearch.trim().length >= 2 && (
-                  <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:3, maxHeight:200, overflowY:"auto" }}>
-                    {MASTER_CATALOG.filter(c => c.item.toUpperCase().includes(moveSearch.toUpperCase())).slice(0, 10).map((c, i) => (
-                      <button key={i} onClick={() => { setMoveItem(c.item); setMoveSearch(""); }}
-                        style={{ textAlign:"left", padding:"7px 10px", borderRadius:6, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", color:"#ccc" }}>
-                        {c.item}
-                      </button>
-                    ))}
+            <div>
+              <input placeholder="Buscar artículo del catálogo..." value={moveSearch} onChange={e => setMoveSearch(e.target.value)} style={inputStyle} autoFocus />
+              {moveSearch.trim().length >= 2 && (
+                <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:3, maxHeight:160, overflowY:"auto" }}>
+                  {MASTER_CATALOG.filter(c => c.item.toUpperCase().includes(moveSearch.toUpperCase())).slice(0, 10).map((c, i) => (
+                    <button key={i} onClick={() => addToMoveList(c.item)}
+                      style={{ textAlign:"left", padding:"7px 10px", borderRadius:6, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", color:"#ccc" }}>
+                      + {c.item}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Lista de artículos ya agregados a este movimiento -- pueden ser varios */}
+            {moveList.length > 0 && (
+              <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:200, overflowY:"auto" }}>
+                {moveList.map((it, i) => (
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 8px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
+                    <span style={{ flex:1, fontSize:12, color:"#f0f0f0" }}>{it.item}</span>
+                    <input type="number" min="0" value={it.qty} onChange={e => setMoveListQty(it.item, parseInt(e.target.value) || 0)}
+                      style={{ width:56, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:12, outline:"none", textAlign:"center" }} />
+                    <button onClick={() => removeFromMoveList(it.item)} style={{ padding:"3px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
                   </div>
-                )}
-              </div>
-            ) : (
-              <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", borderRadius:8, background:"rgba(0,212,170,0.06)", border:"1px solid rgba(0,212,170,0.2)" }}>
-                <span style={{ flex:1, fontSize:13, color:"#f0f0f0" }}>{moveItem}</span>
-                <button onClick={() => setMoveItem("")} style={{ background:"none", border:"none", color:"#666", cursor:"pointer", fontSize:12 }}>✕</button>
+                ))}
               </div>
             )}
 
             <div>
-              <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Cantidad</label>
-              <input type="number" min="1" value={moveQty} onChange={e => setMoveQty(e.target.value)} style={inputStyle} />
+              <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Folio de factura (opcional)</label>
+              <input placeholder="Ej. folio fiscal / UUID del CFDI" value={invoiceFolio} onChange={e => setInvoiceFolio(e.target.value)} style={inputStyle} />
             </div>
             <div>
               <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Motivo (opcional)</label>
-              <input placeholder={showMoveModal === "entrada" ? "Ej. compra a proveedor" : "Ej. consumo en sesión, merma"} value={moveReason} onChange={e => setMoveReason(e.target.value)} style={inputStyle} />
+              <input placeholder={showMoveModal === "entrada" ? "Ej. compra a proveedor" : "Ej. consumo, merma"} value={moveReason} onChange={e => setMoveReason(e.target.value)} style={inputStyle} />
             </div>
 
             <div style={{ display:"flex", gap:8 }}>
               <button onClick={() => setShowMoveModal(null)} disabled={saving} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, cursor: saving ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                 Cancelar
               </button>
-              <button onClick={registerMovement} disabled={saving || !moveItem} style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (saving || !moveItem) ? "not-allowed" : "pointer",
-                background: showMoveModal === "entrada" ? "linear-gradient(135deg,#00d4aa,#0F6E56)" : "linear-gradient(135deg,#ff6b6b,#c94848)", border:"none", color:"#fff", opacity: (saving || !moveItem) ? 0.5 : 1 }}>
-                {saving ? "Guardando…" : "✓ Guardar"}
+              <button onClick={registerMovement} disabled={saving || moveList.length===0} style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (saving || moveList.length===0) ? "not-allowed" : "pointer",
+                background: showMoveModal === "entrada" ? "linear-gradient(135deg,#00d4aa,#0F6E56)" : "linear-gradient(135deg,#ff6b6b,#c94848)", border:"none", color:"#fff", opacity: (saving || moveList.length===0) ? 0.5 : 1 }}>
+                {saving ? "Guardando…" : `✓ Guardar (${moveList.length} artículo${moveList.length!==1?"s":""})`}
               </button>
             </div>
           </div>
