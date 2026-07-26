@@ -401,6 +401,19 @@ export default function Inventario() {
 
             {xmlReview && (
               <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                <div style={{ padding:"10px 12px", borderRadius:9, background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.35)" }}>
+                  <div style={{ fontSize:11, color:"#ffb347", fontWeight:600, marginBottom:6 }}>⚠️ Confirma el almacén destino antes de continuar:</div>
+                  <div style={{ display:"flex", gap:6 }}>
+                    {WAREHOUSES.map(w => (
+                      <button key={w.key} onClick={() => setWarehouse(w.key)} style={{
+                        flex:1, padding:"7px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer",
+                        background: warehouse===w.key ? "rgba(255,179,71,0.25)" : "rgba(255,255,255,0.04)",
+                        border: `2px solid ${warehouse===w.key ? "#ffb347" : "rgba(255,255,255,0.08)"}`,
+                        color: warehouse===w.key ? "#ffb347" : "#666",
+                      }}>{w.label}</button>
+                    ))}
+                  </div>
+                </div>
                 <div style={{ fontSize:12, color:"#AFA9EC", fontWeight:600 }}>Revisa el emparejamiento antes de agregar ({xmlReview.length} conceptos)</div>
                 <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:280, overflowY:"auto" }}>
                   {xmlReview.map((r, i) => (
@@ -419,7 +432,7 @@ export default function Inventario() {
                     Cancelar
                   </button>
                   <button onClick={confirmXmlReview} style={{ flex:2, padding:"9px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.15)", border:"1px solid rgba(175,169,236,0.4)", color:"#AFA9EC" }}>
-                    ✓ Agregar {xmlReview.filter(r=>r.matchedItem).length} artículo{xmlReview.filter(r=>r.matchedItem).length!==1?"s":""} a la lista
+                    ✓ Agregar {xmlReview.filter(r=>r.matchedItem).length} artículo{xmlReview.filter(r=>r.matchedItem).length!==1?"s":""} a {WAREHOUSES.find(w=>w.key===warehouse)?.label}
                   </button>
                 </div>
               </div>
