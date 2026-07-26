@@ -104,7 +104,8 @@ function CatalogSuggestions({ query, catalog, onSelect }) {
 // para agregar material extra si hubo cambios el día de la sesión o después
 // (hasta 3 anexos por sesión).
 function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user, onRefresh, setSessions, downloadPharmacyOrder, showAnexo }) {
-  const pedidoHecho = !!s.pedidoGeneradoAt;
+  const medsHecho = !!s.medsPedidoGeneradoAt;
+  const materialHecho = !!s.materialPedidoGeneradoAt;
   const anexos = s.anexos || [];
   const isCipi = s.center === "CIPI";
   const [cipiVariant, setCipiVariant] = useState(s.cipiVariant || "PRO");
@@ -123,13 +124,13 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     return { stringValue: String(val) };
   };
 
-  const markPedidoHecho = async () => {
+  const markPedidoHecho = async (field) => {
     try {
       const nowIso = new Date().toISOString();
-      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=pedidoGeneradoAt`,
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=${field}`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-          body: JSON.stringify({ fields: { pedidoGeneradoAt: { stringValue: nowIso } } }) });
-      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, pedidoGeneradoAt: nowIso } : x));
+          body: JSON.stringify({ fields: { [field]: { stringValue: nowIso } } }) });
+      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, [field]: nowIso } : x));
     } catch (err) { /* si falla el marcado, no bloquea la descarga */ }
   };
 
@@ -216,13 +217,22 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           <MaterialModal session={s} token={token} user={user} onRefresh={onRefresh} compact />
         </div>
 
-        <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant); await markPedidoHecho(); }}
-          title={pedidoHecho ? `Pedido generado ${new Date(s.pedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Descargar pedido para farmacia"}
+        <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant, "medicamentos"); await markPedidoHecho("medsPedidoGeneradoAt"); }}
+          title={medsHecho ? `Medicamentos solicitados ${new Date(s.medsPedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Solicitar medicamentos (con anticipación)"}
           style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
-            background: pedidoHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
-            border: `1px solid ${pedidoHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
-            color: pedidoHecho ? "#666" : "#00d4aa" }}>
-          {pedidoHecho ? "✓ Pedido hecho" : "📄 Pedido"}
+            background: medsHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
+            border: `1px solid ${medsHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
+            color: medsHecho ? "#666" : "#00d4aa" }}>
+          {medsHecho ? "✓ Medicamentos" : "💊 Medicamentos"}
+        </button>
+
+        <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant, "material"); await markPedidoHecho("materialPedidoGeneradoAt"); }}
+          title={materialHecho ? `Material solicitado ${new Date(s.materialPedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Solicitar material (días antes o el mismo día)"}
+          style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
+            background: materialHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
+            border: `1px solid ${materialHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
+            color: materialHecho ? "#666" : "#00d4aa" }}>
+          {materialHecho ? "✓ Material" : "🧰 Material"}
         </button>
 
         {showAnexo && anexos.length < 3 && (
@@ -372,7 +382,7 @@ export default function Insumos() {
   };
 
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.pedidoGeneradoAt)
+  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.medsPedidoGeneradoAt || !!s.materialPedidoGeneradoAt)
     : dateFilter === "hoy" ? sessions.filter(s => s.date === today)
     : sessions.filter(s => s.date >= rangeFrom && s.date <= rangeTo); // "rango"
   const filtered = centerFilter === "Todos" ? dateFiltered : dateFiltered.filter(s => s.center === centerFilter);
@@ -412,7 +422,7 @@ export default function Insumos() {
   });
   const grandTotalList = Object.entries(grandTotal).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
 
-  const downloadPharmacyOrder = async (s, material, note, cipiVariant) => {
+  const downloadPharmacyOrder = async (s, material, note, cipiVariant, scope = "todo") => {
     // Clasifica cada artículo en Medicamentos / Soluciones / Insumos según el catálogo maestro
     const catalogByName = {};
     MASTER_CATALOG.forEach(c => { catalogByName[c.item.toUpperCase()] = c.category; });
@@ -431,13 +441,19 @@ export default function Insumos() {
     const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
     material.items.forEach(t => groups[categoryFor(t.item)].push(t));
 
+    // Paso 1 (medicamentos, con anticipación) vs paso 2 (material: soluciones +
+    // insumos, días antes o el mismo día) vs "todo" (compatibilidad / anexos)
+    const sendGroups = scope === "medicamentos" ? { MEDICAMENTOS: groups.MEDICAMENTOS, SOLUCIONES: [], INSUMOS: [] }
+      : scope === "material" ? { MEDICAMENTOS: [], SOLUCIONES: groups.SOLUCIONES, INSUMOS: groups.INSUMOS }
+      : groups;
+
     try {
       const res = await fetch("/api/generate-material-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           center: s.center, cipiVariant, patientName: s.patientName, cycle: s.cycle, date: s.date,
-          groups, note,
+          groups: sendGroups, note, scope,
         }),
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
@@ -445,7 +461,8 @@ export default function Insumos() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `SOLICITUD_${s.center || ""}_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`;
+      const scopeLabel = scope === "medicamentos" ? "MEDICAMENTOS" : scope === "material" ? "MATERIAL" : "";
+      a.download = `SOLICITUD${scopeLabel ? "_"+scopeLabel : ""}_${s.center || ""}_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
