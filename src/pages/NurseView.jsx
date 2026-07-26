@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
+import { computeSessionMaterial } from "../data/materialCatalog";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -451,6 +452,9 @@ function SessionCard({ session, token, onRefresh, user }) {
   const [sigPaciente, setSigPaciente]     = useState(null);
   const [sigEnfermeria, setSigEnfermeria] = useState(null);
   const [signing, setSigning]             = useState(false);
+  const [showInventoryModal, setShowInventoryModal] = useState(false);
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [savingInventory, setSavingInventory] = useState(false);
   const events     = session.events    || {};
   const medEvents  = session.medEvents || {};
   const washEvents = session.washEvents || {};
@@ -575,6 +579,87 @@ function SessionCard({ session, token, onRefresh, user }) {
 
   // Sube las dos firmas capturadas a Firebase Storage, las vincula a la sesión
   // y solo entonces completa el evento de retiro (igual que recordEvent("retiro")).
+  // Antes de poder pasar a las firmas de retiro: revisa que se hayan
+  // solicitado medicamentos y material (si falta alguno, avisa pero no
+  // bloquea), y luego abre la confirmación de baja de inventario con el
+  // material combinado, editable, antes de dar de baja nada.
+  const startRetiroFlow = () => {
+    const faltantes = [];
+    if (!session.medsPedidoGeneradoAt) faltantes.push("Medicamentos");
+    if (!session.materialPedidoGeneradoAt) faltantes.push("Material");
+    if (faltantes.length > 0) {
+      const seguir = confirm(`⚠️ Falta solicitar: ${faltantes.join(" y ")}.\n\n¿Deseas continuar de todas formas?`);
+      if (!seguir) return;
+    }
+    const computed = computeSessionMaterial(session, {});
+    setInventoryItems(computed.items.map(it => ({ ...it })));
+    setShowInventoryModal(true);
+  };
+
+  const setInventoryQty = (idx, qty) => {
+    setInventoryItems(prev => prev.map((it, i) => i === idx ? { ...it, qty: Math.max(0, qty) } : it));
+  };
+
+  // Da de baja del inventario los artículos confirmados (una salida por
+  // artículo, trazable a esta sesión) y solo entonces abre el modal de firmas
+  // para completar el retiro.
+  const confirmInventoryAndProceed = async () => {
+    setSavingInventory(true);
+    try {
+      const freshToken = await user.getIdToken(true);
+      const center = session.center || "";
+      const toFV = (val) => {
+        if (typeof val === "string") return { stringValue: val };
+        if (typeof val === "number") return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+        return { stringValue: String(val) };
+      };
+      const inventoryDocId = (c, item) => `${c}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
+
+      for (const it of inventoryItems.filter(x => x.qty > 0)) {
+        const docId = inventoryDocId(center, it.item);
+        let currentStock = 0, minStock = 0, category = "", unit = "PIEZA";
+        try {
+          const getRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`,
+            { headers: { "Authorization": `Bearer ${freshToken}` } });
+          if (getRes.ok) {
+            const doc = await getRes.json();
+            currentStock = parseInt(doc.fields?.currentStock?.integerValue || doc.fields?.currentStock?.doubleValue || 0);
+            minStock = parseInt(doc.fields?.minStock?.integerValue || 0);
+            category = doc.fields?.category?.stringValue || "";
+            unit = doc.fields?.unit?.stringValue || "PIEZA";
+          }
+        } catch {}
+        const newStock = Math.max(0, currentStock - it.qty);
+
+        await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`,
+          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
+            body: JSON.stringify({ fields: {
+              item: { stringValue: it.item }, center: { stringValue: center },
+              category: { stringValue: category }, unit: { stringValue: unit },
+              currentStock: toFV(newStock), minStock: toFV(minStock),
+              lastUpdated: { stringValue: new Date().toISOString() },
+            }})
+          });
+
+        await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory_movements`,
+          { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
+            body: JSON.stringify({ fields: {
+              item: { stringValue: it.item }, center: { stringValue: center }, type: { stringValue: "salida" },
+              qty: toFV(it.qty), reason: { stringValue: `Sesión ${session.patientName || ""} (${session.date || ""})` },
+              sessionId: { stringValue: session.id }, userEmail: { stringValue: user?.email || "" },
+              createdAt: { stringValue: new Date().toISOString() },
+            }})
+          });
+      }
+      setShowInventoryModal(false);
+      setShowSignModal(true);
+    } catch (e) {
+      alert("Error al dar de baja el inventario: " + e.message);
+    } finally {
+      setSavingInventory(false);
+    }
+  };
+
   const confirmSignaturesAndRetiro = async () => {
     setSigning(true);
     try {
@@ -805,7 +890,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
 
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
             <TimeBtn label="Ingreso del paciente" time={events.ingreso} onRecord={() => recordEvent("ingreso")} disabled={!session.authorized} />
-          <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={() => setShowSignModal(true)} disabled={
+          <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={startRetiroFlow} disabled={
                 session.sessionType === "procedimiento"
                   ? !events.ingreso || !medEvents["proc_inicio"]?.fin || !session.procedureNote
                   : !events.ingreso || completedMeds < totalTimed || !allWashDone
@@ -947,6 +1032,39 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
               📋 Nota del Jefe: {session.globalNote}
             </div>
           )}
+        </div>
+      )}
+
+      {showInventoryModal && (
+        <div onClick={() => !savingInventory && setShowInventoryModal(false)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:460, maxHeight:"90vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:14 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>📦 Confirmar baja de inventario</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{session.patientName} — revisa y ajusta antes de dar de baja (se descuenta del inventario de {session.center})</div>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:"50vh", overflowY:"auto" }}>
+              {inventoryItems.map((it, i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 8px", borderRadius:8, background:"rgba(255,255,255,0.02)" }}>
+                  <span style={{ flex:1, fontSize:12, color:"#ccc" }}>{it.item}</span>
+                  <input type="number" min="0" value={it.qty} onChange={e => setInventoryQty(i, parseInt(e.target.value) || 0)}
+                    style={{ width:56, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:12, outline:"none", textAlign:"center" }} />
+                </div>
+              ))}
+              {inventoryItems.length === 0 && <div style={{ fontSize:12, color:"#555", textAlign:"center", padding:12 }}>Sin material calculado para esta sesión.</div>}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setShowInventoryModal(false)} disabled={savingInventory}
+                style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingInventory ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                Cancelar
+              </button>
+              <button onClick={confirmInventoryAndProceed} disabled={savingInventory}
+                style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingInventory ? "wait" : "pointer", background:"linear-gradient(135deg,#00d4aa,#0F6E56)", border:"none", color:"#fff", opacity: savingInventory ? 0.6 : 1 }}>
+                {savingInventory ? "Dando de baja…" : "✓ Confirmar y continuar a firmas"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
