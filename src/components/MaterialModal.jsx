@@ -195,9 +195,18 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
             return { medKey, name: m.name, dose: m.dose, calc: overridden ? { ...auto, pieces: overridden } : auto, isOverridden: !!overridden, autoPieces: auto.pieces };
           })
           .filter(Boolean);
-        // Combinar defaults + extras, respetando lo excluido y las cantidades editadas, en una sola lista consolidada
+        // Combinar defaults + extras, respetando lo excluido y las cantidades editadas, en una sola lista consolidada.
+        // Las piezas de medicamento se excluyen de preview.items aquí porque
+        // ya se agregan aparte desde medPieces (que refleja la edición en
+        // vivo, no solo lo último guardado) -- evita contarlas dos veces.
+        const medPieceItemNames = new Set();
+        medPieces.forEach(p => {
+          getMedicationPresentations(p.name, catalogOverrides.extraCatalog, catalogOverrides.extraDefaults)
+            .forEach(pr => medPieceItemNames.add(pr.item));
+        });
         const combined = {};
         preview.items.forEach(({ item, qty }) => {
+          if (medPieceItemNames.has(item)) return;
           if (excludedItems.includes(item)) return;
           const finalQty = qtyOverrides[item] !== undefined ? qtyOverrides[item] : qty;
           combined[item] = (combined[item]||0) + finalQty;
