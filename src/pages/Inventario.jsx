@@ -71,6 +71,7 @@ export default function Inventario() {
   const [moveReason, setMoveReason] = useState("");
   const [invoiceFolio, setInvoiceFolio] = useState(""); // folio fiscal opcional, para relacionar con una factura
   const [saving, setSaving] = useState(false);
+  const [xmlReview, setXmlReview] = useState(null); // [{descripcion, cantidad, matchedItem}] mientras se revisa antes de agregar
 
   const load = async () => {
     if (!user) return;
@@ -111,6 +112,68 @@ export default function Inventario() {
   };
   const removeFromMoveList = (item) => setMoveList(prev => prev.filter(x => x.item !== item));
   const setMoveListQty = (item, qty) => setMoveList(prev => prev.map(x => x.item === item ? { ...x, qty: Math.max(0, qty) } : x));
+
+  // Busca en el catálogo el artículo que mejor coincida con la descripción
+  // que trae la factura (nunca son idénticas letra por letra).
+  const suggestCatalogMatch = (descripcion) => {
+    const up = (descripcion || "").toUpperCase().trim();
+    if (!up) return "";
+    const exact = MASTER_CATALOG.find(c => c.item.toUpperCase() === up);
+    if (exact) return exact.item;
+    const contains = MASTER_CATALOG.find(c => up.includes(c.item.toUpperCase()) || c.item.toUpperCase().includes(up));
+    if (contains) return contains.item;
+    // Coincidencia por palabras compartidas (al menos 2 palabras en común)
+    const upWords = new Set(up.split(/\s+/).filter(w => w.length > 2));
+    let best = null, bestScore = 0;
+    MASTER_CATALOG.forEach(c => {
+      const cWords = c.item.toUpperCase().split(/\s+/);
+      const score = cWords.filter(w => upWords.has(w)).length;
+      if (score > bestScore) { bestScore = score; best = c.item; }
+    });
+    return bestScore >= 2 ? best : "";
+  };
+
+  const handleXmlFile = async (file) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(text, "text/xml");
+      if (xmlDoc.querySelector("parsererror")) throw new Error("El archivo no es un XML válido.");
+
+      let conceptos = xmlDoc.getElementsByTagName("cfdi:Concepto");
+      if (conceptos.length === 0) conceptos = xmlDoc.getElementsByTagName("Concepto");
+      if (conceptos.length === 0) throw new Error("No se encontraron conceptos en la factura -- ¿es un CFDI válido?");
+
+      const review = Array.from(conceptos).map(c => {
+        const descripcion = c.getAttribute("Descripcion") || "";
+        const cantidad = Math.round(parseFloat(c.getAttribute("Cantidad")) || 1);
+        return { descripcion, cantidad, matchedItem: suggestCatalogMatch(descripcion) };
+      });
+      setXmlReview(review);
+
+      let uuidNode = xmlDoc.getElementsByTagName("tfd:TimbreFiscalDigital")[0] || xmlDoc.getElementsByTagName("TimbreFiscalDigital")[0];
+      const uuid = uuidNode?.getAttribute("UUID") || "";
+      if (uuid) setInvoiceFolio(uuid);
+    } catch (e) {
+      alert("Error al leer la factura: " + e.message);
+    }
+  };
+
+  const confirmXmlReview = () => {
+    const unmatched = xmlReview.filter(r => !r.matchedItem);
+    if (unmatched.length > 0) {
+      if (!confirm(`${unmatched.length} artículo(s) de la factura no tienen un emparejamiento elegido y NO se agregarán. ¿Continuar de todas formas?`)) return;
+    }
+    setMoveList(prev => {
+      const map = new Map(prev.map(x => [x.item, x.qty]));
+      xmlReview.filter(r => r.matchedItem).forEach(r => {
+        map.set(r.matchedItem, (map.get(r.matchedItem) || 0) + r.cantidad);
+      });
+      return Array.from(map, ([item, qty]) => ({ item, qty }));
+    });
+    setXmlReview(null);
+  };
 
   const registerMovement = async () => {
     if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
@@ -218,10 +281,10 @@ export default function Inventario() {
         <div>
           <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
             <input placeholder="Buscar artículo..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, flex:1, minWidth:200 }} />
-            <button onClick={() => { setShowMoveModal("entrada"); setMoveList([]); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+            <button onClick={() => { setShowMoveModal("entrada"); setMoveList([]); setXmlReview(null); setInvoiceFolio(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
               ↓ Registrar entrada
             </button>
-            <button onClick={() => { setShowMoveModal("salida"); setMoveList([]); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
+            <button onClick={() => { setShowMoveModal("salida"); setMoveList([]); setXmlReview(null); setInvoiceFolio(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
               ↑ Registrar salida
             </button>
           </div>
@@ -310,13 +373,47 @@ export default function Inventario() {
       )}
 
       {showMoveModal && (
-        <div onClick={() => !saving && setShowMoveModal(null)}
+        <div onClick={() => !saving && (setShowMoveModal(null), setXmlReview(null))}
           style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:460, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
             <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>
               {showMoveModal === "entrada" ? "↓ Registrar entrada" : "↑ Registrar salida"} — {WAREHOUSES.find(w=>w.key===warehouse)?.label}
             </div>
 
+            {showMoveModal === "entrada" && !xmlReview && (
+              <label style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px dashed rgba(175,169,236,0.35)", color:"#AFA9EC" }}>
+                📄 Cargar factura (XML)
+                <input type="file" accept=".xml" style={{ display:"none" }} onChange={e => handleXmlFile(e.target.files?.[0])} />
+              </label>
+            )}
+
+            {xmlReview && (
+              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                <div style={{ fontSize:12, color:"#AFA9EC", fontWeight:600 }}>Revisa el emparejamiento antes de agregar ({xmlReview.length} conceptos)</div>
+                <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:280, overflowY:"auto" }}>
+                  {xmlReview.map((r, i) => (
+                    <div key={i} style={{ padding:"8px 10px", borderRadius:8, background: r.matchedItem ? "rgba(255,255,255,0.03)" : "rgba(255,107,107,0.06)", border:`1px solid ${r.matchedItem ? "rgba(255,255,255,0.07)" : "rgba(255,107,107,0.25)"}` }}>
+                      <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>Factura: "{r.descripcion}" · cant. {r.cantidad}</div>
+                      <select value={r.matchedItem} onChange={e => setXmlReview(prev => prev.map((x,xi) => xi===i ? { ...x, matchedItem: e.target.value } : x))}
+                        style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"6px 8px", color: r.matchedItem ? "#f0f0f0" : "#ff6b6b", fontSize:12, outline:"none", cursor:"pointer" }}>
+                        <option value="">— Sin emparejar (no se agregará) —</option>
+                        {MASTER_CATALOG.map((c,ci) => <option key={ci} value={c.item}>{c.item}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={() => setXmlReview(null)} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                    Cancelar
+                  </button>
+                  <button onClick={confirmXmlReview} style={{ flex:2, padding:"9px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.15)", border:"1px solid rgba(175,169,236,0.4)", color:"#AFA9EC" }}>
+                    ✓ Agregar {xmlReview.filter(r=>r.matchedItem).length} artículo{xmlReview.filter(r=>r.matchedItem).length!==1?"s":""} a la lista
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!xmlReview && (
             <div>
               <input placeholder="Buscar artículo del catálogo..." value={moveSearch} onChange={e => setMoveSearch(e.target.value)} style={inputStyle} autoFocus />
               {moveSearch.trim().length >= 2 && (
@@ -330,6 +427,7 @@ export default function Inventario() {
                 </div>
               )}
             </div>
+            )}
 
             {/* Lista de artículos ya agregados a este movimiento -- pueden ser varios */}
             {moveList.length > 0 && (
