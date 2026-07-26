@@ -428,23 +428,7 @@ export default function Insumos() {
       return { session: s, material: { items: [], unmatched: [] }, note: s.materialNote || "" };
     }
     const preview = computeSessionMaterial(s, calcOverrides);
-    const excluded = s.excludedMaterial || [];
-    const qtyOv = s.qtyOverrides || {};
-    const pieceOv = s.pieceOverrides || {};
-    const combined = {};
-    preview.items.forEach(({ item, qty }) => {
-      if (excluded.includes(item)) return;
-      combined[item] = (combined[item] || 0) + (qtyOv[item] !== undefined ? qtyOv[item] : qty);
-    });
-    (s.meds || []).forEach(m => {
-      const auto = computeMedicationPieces(m.name, m.dose, overrides.extraCatalog, overrides.extraDefaults);
-      if (!auto) return;
-      const finalPieces = pieceOv[m.name] || auto.pieces;
-      finalPieces.forEach(({ item, count }) => { combined[item] = (combined[item] || 0) + count; });
-    });
-    (s.extraMaterial || []).forEach(({ item, qty }) => { combined[item] = (combined[item] || 0) + (qty || 0); });
-    const items = Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
-    return { session: s, material: { items, unmatched: preview.unmatched }, note: s.materialNote || "" };
+    return { session: s, material: { items: preview.items, unmatched: preview.unmatched }, note: s.materialNote || "" };
   });
 
   const grandTotal = {};
