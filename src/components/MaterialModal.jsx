@@ -117,7 +117,7 @@ async function patchSession(token, sessionId, updates) {
 
 // Botón + modal de "Solicitar material", como unidad reutilizable. Se le pasa
 // la sesión, el token/usuario y un onRefresh (para recargar tras guardar).
-export default function MaterialModal({ session, token, user, onRefresh, compact }) {
+export default function MaterialModal({ session, token, user, onRefresh, compact, label }) {
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [catalogOverrides, setCatalogOverrides] = useState(null);
   const [excludePatientDefault, setExcludePatientDefault] = useState(!!session.excludePatientDefault);
@@ -152,6 +152,8 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
         pieceOverrides: newPieceOverrides,
         materialNote: newNote || "",
         equipoChoice: newEquipoChoice || null,
+        materialSolicitudGuardada: true,
+        materialSolicitudGuardadaAt: new Date().toISOString(),
       });
       onRefresh();
     } catch(e) {
@@ -165,7 +167,7 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
     <>
       <button onClick={e => { e.stopPropagation(); setShowMaterialModal(true); }}
         title="Solicitar material" style={{ padding: compact ? "4px 10px" : "5px 9px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC", flexShrink:0 }}>
-        🧰 Solicitar material
+        {label || "🧰 Solicitar material"}
       </button>
 
       {showMaterialModal && (() => {
