@@ -416,9 +416,10 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
                   style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingMaterial ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                   Cancelar
                 </button>
-                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault, qtyOverrides, pieceOverrides, materialNote, equipoChoice); setShowMaterialModal(false); }} disabled={savingMaterial}
-                  style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingMaterial ? "wait" : "pointer", background:"linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color:"#fff", opacity: savingMaterial ? 0.6 : 1 }}>
-                  {savingMaterial ? "Guardando…" : "✓ Guardar solicitud"}
+                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault, qtyOverrides, pieceOverrides, materialNote, equipoChoice); setShowMaterialModal(false); }} disabled={savingMaterial || session.inventorySalidaDone}
+                  title={session.inventorySalidaDone ? "Ya se dio de baja el inventario de esta sesión -- si necesitas agregar algo, usa Anexar en Insumos" : undefined}
+                  style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (savingMaterial || session.inventorySalidaDone) ? "not-allowed" : "pointer", background: session.inventorySalidaDone ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color: session.inventorySalidaDone ? "#666" : "#fff", opacity: savingMaterial ? 0.6 : 1 }}>
+                  {savingMaterial ? "Guardando…" : session.inventorySalidaDone ? "🔒 Ya se dio de baja el inventario" : "✓ Guardar solicitud"}
                 </button>
               </div>
             </div>
