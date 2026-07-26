@@ -164,16 +164,55 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       if (!res.ok) throw new Error(`Error ${res.status} al generar el anexo`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `ANEXO${anexoNumber}_${s.center}_${(s.patientName||"paciente").replace(/\s+/g,"_")}.pdf`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
 
       const newAnexos = [...anexos, { number: anexoNumber, items: anexoItems, note: anexoNote, generatedAt: new Date().toISOString() }];
       await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=anexos`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
           body: JSON.stringify({ fields: { anexos: toFV(newAnexos) } }) });
       setSessions(prev => prev.map(x => x.id === s.id ? { ...x, anexos: newAnexos } : x));
+
+      // Si el inventario de esta sesión ya se dio de baja (retiro ya
+      // completado), este anexo se captura DESPUÉS del cierre -- se descuenta
+      // del inventario aparte, automáticamente, ligado a la misma sesión.
+      if (s.inventorySalidaDone) {
+        const warehouse = s.center === "CIPI" ? `CIPI_${(cipiVariant || "PRO").toUpperCase()}` : (s.center || "");
+        const inventoryDocId = (w, item) => `${w}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
+        for (const it of anexoItems) {
+          const docId = inventoryDocId(warehouse, it.item);
+          let currentStock = 0, minStock = 0, category = "", unit = "PIEZA";
+          try {
+            const getRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`, { headers:{ "Authorization":`Bearer ${token}` } });
+            if (getRes.ok) {
+              const doc = await getRes.json();
+              currentStock = parseInt(doc.fields?.currentStock?.integerValue || doc.fields?.currentStock?.doubleValue || 0);
+              minStock = parseInt(doc.fields?.minStock?.integerValue || 0);
+              category = doc.fields?.category?.stringValue || "";
+              unit = doc.fields?.unit?.stringValue || "PIEZA";
+            }
+          } catch {}
+          await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`,
+            { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+              body: JSON.stringify({ fields: {
+                item: { stringValue: it.item }, warehouse: { stringValue: warehouse },
+                category: { stringValue: category }, unit: { stringValue: unit },
+                currentStock: toFV(currentStock - it.qty), minStock: toFV(minStock),
+                lastUpdated: { stringValue: new Date().toISOString() },
+              }}) });
+        }
+        await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory_events`,
+          { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+            body: JSON.stringify({ fields: {
+              type: { stringValue: "salida" }, warehouse: { stringValue: warehouse },
+              items: toFV(anexoItems),
+              sessionId: { stringValue: s.id }, sessionPatientName: { stringValue: s.patientName || "" },
+              reason: { stringValue: `Anexo ${anexoNumber} (posterior al retiro)` },
+              userEmail: { stringValue: user?.email || "" },
+              createdAt: { stringValue: new Date().toISOString() },
+            }}) });
+      }
+
       setShowAnexoModal(false); setAnexoItems([]); setAnexoNote("");
     } catch (e) {
       alert("Error al generar el anexo: " + e.message);
@@ -208,7 +247,15 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         {isCipi && (
           <div onClick={e => e.stopPropagation()} style={{ display:"flex", gap:2 }}>
             {["PRO","PED"].map(v => (
-              <button key={v} onClick={() => setCipiVariant(v)}
+              <button key={v} onClick={async () => {
+                  setCipiVariant(v);
+                  try {
+                    await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=cipiVariant`,
+                      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+                        body: JSON.stringify({ fields: { cipiVariant: { stringValue: v } } }) });
+                    setSessions(prev => prev.map(x => x.id === s.id ? { ...x, cipiVariant: v } : x));
+                  } catch (err) { /* si falla, la app sigue funcionando con el valor local */ }
+                }}
                 title={v === "PRO" ? "Centro de Infusión Profesional Integral" : "Centro de Infusión Pediátrica Integral"}
                 style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:600, cursor:"pointer",
                   background: cipiVariant===v ? "rgba(175,169,236,0.15)" : "rgba(255,255,255,0.04)",
@@ -474,12 +521,8 @@ export default function Insumos() {
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const scopeLabel = scope === "medicamentos" ? "MEDICAMENTOS" : scope === "material" ? "MATERIAL" : "";
-      a.download = `SOLICITUD${scopeLabel ? "_"+scopeLabel : ""}_${s.center || ""}_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {
       alert("Error al generar el pedido: " + e.message);
     }
