@@ -155,7 +155,7 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
         materialSolicitudGuardada: true,
         materialSolicitudGuardadaAt: new Date().toISOString(),
       });
-      onRefresh();
+      await onRefresh();
     } catch(e) {
       alert("Error al guardar el material: " + e.message);
     } finally {
