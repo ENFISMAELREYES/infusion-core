@@ -607,16 +607,21 @@ function SessionCard({ session, token, onRefresh, user }) {
     setSavingInventory(true);
     try {
       const freshToken = await user.getIdToken(true);
-      const center = session.center || "";
+      // Almacén real: CIPI se divide en dos (Profesional / Pediátrico) --
+      // usa la variante grabada en la sesión al elegirla en Insumos.
+      const warehouse = session.center === "CIPI"
+        ? `CIPI_${(session.cipiVariant || "PRO").toUpperCase()}`
+        : (session.center || "");
       const toFV = (val) => {
         if (typeof val === "string") return { stringValue: val };
         if (typeof val === "number") return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
         return { stringValue: String(val) };
       };
-      const inventoryDocId = (c, item) => `${c}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
+      const inventoryDocId = (w, item) => `${w}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
 
-      for (const it of inventoryItems.filter(x => x.qty > 0)) {
-        const docId = inventoryDocId(center, it.item);
+      const itemsToDeduct = inventoryItems.filter(x => x.qty > 0);
+      for (const it of itemsToDeduct) {
+        const docId = inventoryDocId(warehouse, it.item);
         let currentStock = 0, minStock = 0, category = "", unit = "PIEZA";
         try {
           const getRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`,
@@ -629,30 +634,50 @@ function SessionCard({ session, token, onRefresh, user }) {
             unit = doc.fields?.unit?.stringValue || "PIEZA";
           }
         } catch {}
-        const newStock = Math.max(0, currentStock - it.qty);
+        // Se permite que quede negativo -- indica que ya se usó más de lo
+        // registrado como recibido (probablemente hay un ingreso pendiente).
+        const newStock = currentStock - it.qty;
 
         await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`,
           { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
             body: JSON.stringify({ fields: {
-              item: { stringValue: it.item }, center: { stringValue: center },
+              item: { stringValue: it.item }, warehouse: { stringValue: warehouse },
               category: { stringValue: category }, unit: { stringValue: unit },
               currentStock: toFV(newStock), minStock: toFV(minStock),
               lastUpdated: { stringValue: new Date().toISOString() },
             }})
           });
+      }
 
-        await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory_movements`,
+      // Un solo evento con todos los artículos de esta sesión juntos.
+      if (itemsToDeduct.length > 0) {
+        await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory_events`,
           { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
             body: JSON.stringify({ fields: {
-              item: { stringValue: it.item }, center: { stringValue: center }, type: { stringValue: "salida" },
-              qty: toFV(it.qty), reason: { stringValue: `Sesión ${session.patientName || ""} (${session.date || ""})` },
-              sessionId: { stringValue: session.id }, userEmail: { stringValue: user?.email || "" },
+              type: { stringValue: "salida" }, warehouse: { stringValue: warehouse },
+              items: toFV(itemsToDeduct),
+              sessionId: { stringValue: session.id }, sessionPatientName: { stringValue: session.patientName || "" },
+              reason: { stringValue: "Retiro de sesión" },
+              userEmail: { stringValue: user?.email || "" },
               createdAt: { stringValue: new Date().toISOString() },
             }})
           });
       }
+
+      // Cierra la edición de "solicitar material" para esta sesión -- si hace
+      // falta agregar algo después, se hace vía Anexo (que da de baja aparte,
+      // ligado a este mismo evento de salida).
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${session.id}?updateMask.fieldPaths=inventorySalidaDone&updateMask.fieldPaths=inventorySalidaAt`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
+          body: JSON.stringify({ fields: {
+            inventorySalidaDone: { booleanValue: true },
+            inventorySalidaAt: { stringValue: new Date().toISOString() },
+          }})
+        });
+
       setShowInventoryModal(false);
       setShowSignModal(true);
+      onRefresh();
     } catch (e) {
       alert("Error al dar de baja el inventario: " + e.message);
     } finally {
