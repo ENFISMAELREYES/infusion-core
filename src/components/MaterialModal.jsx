@@ -224,7 +224,11 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
             const currentPieces = prev[medKey] || medPieces.find(p => p.medKey === medKey)?.autoPieces || [];
             const map = new Map(currentPieces.map(p => [p.item, p.count]));
             map.set(item, Math.max(0, newCount));
-            const next = allPresentations.map(pr => ({ item: pr.item, mg: pr.mg, count: map.get(pr.item) || 0 })).filter(p => p.count > 0);
+            // No se filtran los ceros: si la persona puso todo en 0 a propósito
+            // (ej. "no hay en existencia, no incluir nada"), eso debe quedar
+            // guardado explícito -- de lo contrario no hay forma de distinguir
+            // "nunca se tocó" de "se puso en cero a propósito".
+            const next = allPresentations.map(pr => ({ item: pr.item, mg: pr.mg, count: map.get(pr.item) || 0 }));
             return { ...prev, [medKey]: next };
           });
         };
