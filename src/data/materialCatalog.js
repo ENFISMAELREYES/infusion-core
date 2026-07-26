@@ -2286,34 +2286,39 @@ const PREMEDICACION_DRUGS = new Set([
     add(EQUIPO_OPTIONS[session.equipoChoice], 1);
   }
 
-  // Piezas del medicamento en sí (frascos/ampolletas según la dosis) --
-  // respeta los ajustes manuales guardados por medicamento (pieceOverrides,
-  // identificados por posición + nombre, ya que puede repetirse el mismo
-  // medicamento con distinta dosis en la misma sesión).
-  (session.meds || []).forEach((m, idx) => {
-    if (!m.name || !m.dose) return;
-    const medKey = `${idx}_${m.name}`;
-    const overridden = session.pieceOverrides?.[medKey];
-    if (overridden) {
-      overridden.forEach(({ item, count }) => { if (count > 0) add(item, count); });
-    } else {
-      const auto = computeMedicationPieces(m.name, m.dose, extraCatalog, extraDefaults);
-      if (auto) auto.pieces.forEach(({ item, count }) => { if (count > 0) add(item, count); });
-    }
-  });
-
-  // Aplicar los ajustes guardados desde el modal de solicitud: artículos
-  // excluidos, cantidades editadas a mano, y material extra anexado. Esto es
-  // lo último que se aplica, para que siempre gane lo que la persona ajustó
-  // manualmente sobre el cálculo automático.
+  // Aplicar los ajustes guardados desde el modal de solicitud (solo afecta
+  // insumos/soluciones, nunca al medicamento en sí -- eso se agrega después,
+  // ver nota abajo): artículos excluidos, cantidades editadas a mano, y
+  // material extra anexado.
   (session.excludedMaterial || []).forEach(item => { delete combined[item]; });
   Object.entries(session.qtyOverrides || {}).forEach(([item, qty]) => {
     if (combined[item] !== undefined) combined[item] = qty;
   });
   (session.extraMaterial || []).forEach(({ item, qty }) => add(item, qty || 0));
 
+  // Piezas del medicamento en sí (frascos/ampolletas según la dosis) -- se
+  // agrega AL FINAL a propósito: su cantidad correcta solo la define
+  // pieceOverrides (o el cálculo automático), nunca qtyOverrides -- si el
+  // nombre de la presentación coincidiera por casualidad con algo ya en la
+  // lista de insumos, esto asegura que el medicamento tenga la última
+  // palabra y no quede pisado por un ajuste de insumos.
+  (session.meds || []).forEach((m, idx) => {
+    if (!m.name || !m.dose) return;
+    const medKey = `${idx}_${m.name}`;
+    const overridden = session.pieceOverrides?.[medKey];
+    if (overridden) {
+      overridden.forEach(({ item, count }) => {
+        if (count > 0) combined[item] = count;
+        else delete combined[item];
+      });
+    } else {
+      const auto = computeMedicationPieces(m.name, m.dose, extraCatalog, extraDefaults);
+      if (auto) auto.pieces.forEach(({ item, count }) => { if (count > 0) combined[item] = count; });
+    }
+  });
+
   return {
-    items: Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item)),
+    items: Object.entries(combined).filter(([, qty]) => qty !== undefined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item)),
     unmatched,
     unmatchedSolutions,
     pendingAlternatives,
