@@ -103,12 +103,13 @@ function CatalogSuggestions({ query, catalog, onSelect }) {
 // Pedido, y — cuando se está viendo "todas las cargadas" — el botón de Anexar
 // para agregar material extra si hubo cambios el día de la sesión o después
 // (hasta 3 anexos por sesión).
-function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user, onRefresh, setSessions, downloadPharmacyOrder, showAnexo }) {
+function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user, onRefresh, setSessions, downloadPharmacyOrder, showAnexo, mode }) {
   const medsHecho = !!s.medsPedidoGeneradoAt;
   const materialHecho = !!s.materialPedidoGeneradoAt;
   const anexos = s.anexos || [];
   const isCipi = s.center === "CIPI";
   const [cipiVariant, setCipiVariant] = useState(s.cipiVariant || "PRO");
+  const [docsRevealed, setDocsRevealed] = useState(medsHecho || materialHecho || anexos.length > 0);
   const [showAnexoModal, setShowAnexoModal] = useState(false);
   const [anexoItems, setAnexoItems] = useState([]);
   const [anexoSearch, setAnexoSearch] = useState("");
@@ -181,6 +182,12 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     }
   };
 
+  const downloadAllTogether = async () => {
+    const anexoItemsFlat = anexos.flatMap(a => a.items || []);
+    const combinedMaterial = { items: [...material.items, ...anexoItemsFlat] };
+    await downloadPharmacyOrder(s, combinedMaterial, note, cipiVariant, "todo");
+  };
+
   return (
     <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
       <div onClick={onToggle} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
@@ -213,34 +220,58 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           </div>
         )}
 
-        <div onClick={e => e.stopPropagation()}>
-          <MaterialModal session={s} token={token} user={user} onRefresh={onRefresh} compact />
-        </div>
+        {mode === "captura" ? (
+          <div onClick={e => e.stopPropagation()}>
+            <MaterialModal session={s} token={token} user={user} onRefresh={onRefresh} compact
+              label={s.materialSolicitudGuardada ? "✓ Solicitud guardada" : "🧰 Solicitar material"} />
+          </div>
+        ) : (
+          <>
+            <div onClick={e => e.stopPropagation()}>
+              <MaterialModal session={s} token={token} user={user} onRefresh={onRefresh} compact label="✏️ Editar solicitud" />
+            </div>
 
-        <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant, "medicamentos"); await markPedidoHecho("medsPedidoGeneradoAt"); }}
-          title={medsHecho ? `Medicamentos solicitados ${new Date(s.medsPedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Solicitar medicamentos (con anticipación)"}
-          style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
-            background: medsHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
-            border: `1px solid ${medsHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
-            color: medsHecho ? "#666" : "#00d4aa" }}>
-          {medsHecho ? "✓ Medicamentos" : "💊 Medicamentos"}
-        </button>
+            {!docsRevealed ? (
+              <button onClick={e => { e.stopPropagation(); setDocsRevealed(true); }}
+                style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
+                📄 Generar documento
+              </button>
+            ) : (
+              <>
+                <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant, "medicamentos"); await markPedidoHecho("medsPedidoGeneradoAt"); }}
+                  title={medsHecho ? `Medicamentos solicitados ${new Date(s.medsPedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Solicitar medicamentos (con anticipación)"}
+                  style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
+                    background: medsHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
+                    border: `1px solid ${medsHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
+                    color: medsHecho ? "#666" : "#00d4aa" }}>
+                  {medsHecho ? "✓ Medicamentos" : "💊 Medicamentos"}
+                </button>
 
-        <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant, "material"); await markPedidoHecho("materialPedidoGeneradoAt"); }}
-          title={materialHecho ? `Material solicitado ${new Date(s.materialPedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Solicitar material (días antes o el mismo día)"}
-          style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
-            background: materialHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
-            border: `1px solid ${materialHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
-            color: materialHecho ? "#666" : "#00d4aa" }}>
-          {materialHecho ? "✓ Material" : "🧰 Material"}
-        </button>
+                <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant, "material"); await markPedidoHecho("materialPedidoGeneradoAt"); }}
+                  title={materialHecho ? `Material solicitado ${new Date(s.materialPedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Solicitar material (días antes o el mismo día)"}
+                  style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
+                    background: materialHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
+                    border: `1px solid ${materialHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
+                    color: materialHecho ? "#666" : "#00d4aa" }}>
+                  {materialHecho ? "✓ Material" : "🧰 Material"}
+                </button>
 
-        {showAnexo && anexos.length < 3 && (
-          <button onClick={e => { e.stopPropagation(); setShowAnexoModal(true); }}
-            title="Anexar material adicional (cambios el día de la sesión o después)"
-            style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
-            ➕ Anexar
-          </button>
+                {showAnexo && anexos.length < 3 && (
+                  <button onClick={e => { e.stopPropagation(); setShowAnexoModal(true); }}
+                    title="Anexar material adicional (cambios el día de la sesión o después)"
+                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+                    ➕ Anexar
+                  </button>
+                )}
+
+                <button onClick={async e => { e.stopPropagation(); await downloadAllTogether(); }}
+                  title="Descargar un solo PDF con medicamentos + material + anexos juntos"
+                  style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                  📎 Todo junto
+                </button>
+              </>
+            )}
+          </>
         )}
 
         <button onClick={toggleExcludeFromOrder}
@@ -382,9 +413,9 @@ export default function Insumos() {
   };
 
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.medsPedidoGeneradoAt || !!s.materialPedidoGeneradoAt)
+  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.materialSolicitudGuardada)
     : dateFilter === "hoy" ? sessions.filter(s => s.date === today)
-    : sessions.filter(s => s.date >= rangeFrom && s.date <= rangeTo); // "rango"
+    : sessions.filter(s => s.date >= rangeFrom && s.date <= rangeTo && !s.materialSolicitudGuardada); // "rango"
   const filtered = centerFilter === "Todos" ? dateFiltered : dateFiltered.filter(s => s.center === centerFilter);
   const calcOverrides = {
     extraDefaults: overrides.extraDefaults,
@@ -658,7 +689,8 @@ export default function Insumos() {
               <PatientMaterialRow key={s.id} s={s} material={material} note={note}
                 expanded={expandedPatient===i} onToggle={() => setExpandedPatient(p => p===i ? null : i)}
                 token={token} user={user} onRefresh={load} setSessions={setSessions}
-                downloadPharmacyOrder={downloadPharmacyOrder} showAnexo={dateFilter==="todas"} />
+                downloadPharmacyOrder={downloadPharmacyOrder} showAnexo={dateFilter==="todas"}
+                mode={dateFilter==="todas" ? "solicitud" : "captura"} />
             ))}
           </div>
         </div>
