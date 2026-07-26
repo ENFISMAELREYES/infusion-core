@@ -354,7 +354,7 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
               <div>
                 <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Material por defecto (desmarca lo que no aplique, o ajusta la cantidad)</label>
                 <div style={{ maxHeight:160, overflowY:"auto", display:"flex", flexDirection:"column", gap:3 }}>
-                  {preview.items.map((t,i) => {
+                  {preview.items.filter(t => !medPieceItemNames.has(t.item)).map((t,i) => {
                     const excluded = excludedItems.includes(t.item);
                     const currentQty = qtyOverrides[t.item] !== undefined ? qtyOverrides[t.item] : t.qty;
                     return (
