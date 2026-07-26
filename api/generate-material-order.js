@@ -131,7 +131,7 @@ export default async function handler(req, res) {
     const pdfBuffer = Buffer.concat(chunks);
     res.setHeader("Content-Type", "application/pdf");
     const fnamePrefix = anexoNumber ? `ANEXO${anexoNumber}` : "SOLICITUD";
-    res.setHeader("Content-Disposition", `attachment; filename="${fnamePrefix}_${centerKey}_${(patientName || "paciente").replace(/\s+/g, "_")}.pdf"`);
+    res.setHeader("Content-Disposition", `inline; filename="${fnamePrefix}_${centerKey}_${(patientName || "paciente").replace(/\s+/g, "_")}.pdf"`);
     res.send(pdfBuffer);
 
   } catch (e) {
