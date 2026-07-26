@@ -2094,22 +2094,22 @@ function solutionItemFor(vol, type, catalog) {
 }
 
 function parsePresentationMg(itemName) {
-  const gr = itemName.match(/(\d+(?:\.\d+)?)\s*GR\.?/i);
+  const gr = itemName.match(/(\d+\.\d+|\.\d+|\d+)\s*GR\.?/i);
   if (gr) return parseFloat(gr[1]) * 1000;
-  const mg = itemName.match(/(\d+(?:\.\d+)?)\s*MG/i);
+  const mg = itemName.match(/(\d+\.\d+|\.\d+|\d+)\s*MG/i);
   if (mg) return parseFloat(mg[1]);
-  const mcg = itemName.match(/(\d+(?:\.\d+)?)\s*MCG/i);
+  const mcg = itemName.match(/(\d+\.\d+|\.\d+|\d+)\s*MCG/i);
   if (mcg) return parseFloat(mcg[1]) / 1000;
   return null;
 }
 
 function parseDoseMg(doseStr) {
   if (!doseStr) return null;
-  const gr = doseStr.match(/(\d+(?:\.\d+)?)\s*GR/i);
+  const gr = doseStr.match(/(\d+\.\d+|\.\d+|\d+)\s*GR/i);
   if (gr) return parseFloat(gr[1]) * 1000;
-  const mcg = doseStr.match(/(\d+(?:\.\d+)?)\s*(MCG|UG|MICROGR)/i);
+  const mcg = doseStr.match(/(\d+\.\d+|\.\d+|\d+)\s*(MCG|UG|MICROGR)/i);
   if (mcg) return parseFloat(mcg[1]) / 1000;
-  const mg = doseStr.match(/(\d+(?:\.\d+)?)/);
+  const mg = doseStr.match(/(\d+\.\d+|\.\d+|\d+)/);
   return mg ? parseFloat(mg[1]) : null;
 }
 
@@ -2193,6 +2193,12 @@ export function computeMedicationPieces(medName, doseStr, extraCatalog = [], ext
   }
 
   const totalMg = pieces.reduce((acc, p) => acc + p.mg * p.count, 0);
+  // Salvaguarda: si por algún error de captura de dosis el cálculo da un
+  // número de piezas irreal (ej. 100 frascos), mejor no calcular nada -- que
+  // se marque como pendiente de revisar a mano, en vez de dar un resultado
+  // silenciosamente absurdo.
+  if (pieces.some(p => p.count > 30)) return null;
+
   return { doseMg, pieces, totalMg, waste: totalMg - doseMg };
 }
 
