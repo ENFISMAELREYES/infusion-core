@@ -35,7 +35,10 @@ async function fetchCollection(token, collectionId, limit = 1000) {
     body: JSON.stringify({ structuredQuery: { from: [{ collectionId }], limit } }),
   });
   const data = await res.json();
-  if (!Array.isArray(data)) return [];
+  if (!Array.isArray(data)) {
+    console.error(`Error al leer "${collectionId}":`, data);
+    return [];
+  }
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
 
@@ -180,6 +183,13 @@ export default function Inventario() {
     setSaving(true);
     try {
       const type = showMoveModal; // "entrada" | "salida"
+      const checkOk = async (res, label) => {
+        if (!res.ok) {
+          let msg = `Error ${res.status}`;
+          try { const body = await res.json(); msg = body?.error?.message || msg; } catch {}
+          throw new Error(`${label}: ${msg}`);
+        }
+      };
 
       // Actualizar existencias de cada artículo -- ahora se PERMITE negativo,
       // para reflejar que ya se usó algo que aún no se ha registrado como
@@ -192,7 +202,7 @@ export default function Inventario() {
         const catalogEntry = MASTER_CATALOG.find(c => c.item === item);
         const newStock = type === "entrada" ? currentStock + qty : currentStock - qty;
 
-        await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`, {
+        const invRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`, {
           method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
           body: JSON.stringify({ fields: {
             item: { stringValue: item }, warehouse: { stringValue: warehouse },
@@ -202,6 +212,7 @@ export default function Inventario() {
             lastUpdated: { stringValue: new Date().toISOString() },
           }}),
         });
+        await checkOk(invRes, `Existencias de "${item}"`);
       }
 
       // Un solo evento con todos los artículos juntos (no un renglón por
@@ -215,10 +226,11 @@ export default function Inventario() {
         userEmail: { stringValue: profile?.email || user?.email || "" },
         createdAt: { stringValue: new Date().toISOString() },
       };
-      await fetch(`${FIRESTORE_BASE_URL}/inventory_events`, {
+      const evRes = await fetch(`${FIRESTORE_BASE_URL}/inventory_events`, {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ fields: eventFields }),
       });
+      await checkOk(evRes, "Registro del evento de movimiento");
 
       setShowMoveModal(null); setMoveList([]); setMoveReason(""); setInvoiceFolio("");
       load();
