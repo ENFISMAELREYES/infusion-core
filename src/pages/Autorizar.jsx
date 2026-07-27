@@ -117,7 +117,7 @@ function calcWash(med, draft) {
   let wash2 = null;
   if (draft.extraWash) {
     const wash2Time = draft.wash2Time !== undefined ? draft.wash2Time : 15;
-    const wash2Vol  = draft.wash2Vol !== undefined ? draft.wash2Vol : 100;
+    const wash2Vol  = draft.wash2Vol !== undefined ? draft.wash2Vol : 50;
     // Si se marcó "misma velocidad que el medicamento" para el segundo
     // lavado, se usa esa velocidad fija en vez de calcularla de vol2/tiempo2.
     const wash2Speed = draft.wash2SameSpeed && wash.washSpeed
@@ -307,7 +307,7 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
                               {speed ? `${Math.round((speed * (draft.wash2Time !== undefined ? draft.wash2Time : 15)) / 60)} (auto)` : "—"}
                             </div>
                           ) : (
-                            <input type="number" min="1" value={draft.wash2Vol !== undefined ? draft.wash2Vol : 100} onChange={e => setDraft(d => ({ ...d, wash2Vol: parseInt(e.target.value) }))}
+                            <input type="number" min="1" value={draft.wash2Vol !== undefined ? draft.wash2Vol : 50} onChange={e => setDraft(d => ({ ...d, wash2Vol: parseInt(e.target.value) }))}
                               style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 8, padding: "8px 10px", color: "#f0f0f0", fontSize: 12, outline: "none" }} />
                           )}
                         </div>
@@ -321,7 +321,7 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
                           <div style={{ padding: "8px 10px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, fontSize: 12, color: "#4fc3f7", fontFamily: "'IBM Plex Mono', monospace" }}>
                             {(() => {
                               if (draft.wash2SameSpeed) return speed ? `${speed} ml/hr (igual)` : "—";
-                              const v = draft.wash2Vol !== undefined ? draft.wash2Vol : 100;
+                              const v = draft.wash2Vol !== undefined ? draft.wash2Vol : 50;
                               const t = draft.wash2Time !== undefined ? draft.wash2Time : 15;
                               return (v && t) ? `${Math.round((v / t) * 60)} ml/hr` : "—";
                             })()}
