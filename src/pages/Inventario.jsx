@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { PROJECT_ID, FIRESTORE_BASE_URL, IS_TEST_ENV } from "../config";
 import { MASTER_CATALOG } from "../data/materialCatalog";
@@ -46,8 +46,8 @@ async function fetchCollection(token, collectionId, limit = 1000) {
 // (CIPI se dividió en dos almacenes separados por variante).
 const WAREHOUSES = [
   { key: "CITIO", label: "CITIO" },
-  { key: "CIPI_PRO", label: "CIPI (Profesional)" },
-  { key: "CIPI_PED", label: "CIPI (Pediátrico)" },
+  { key: "CIPI_PRO", label: "CIPI PRO" },
+  { key: "CIPI_PED", label: "CIPI PED" },
 ];
 
 function inventoryDocId(warehouse, item) {
@@ -153,7 +153,18 @@ export default function Inventario() {
         const descripcion = c.getAttribute("Descripcion") || "";
         const cantidad = Math.round(parseFloat(c.getAttribute("Cantidad")) || 1);
         const valorUnitario = parseFloat(c.getAttribute("ValorUnitario")) || 0;
-        return { descripcion, cantidad, valorUnitario, matchedItem: suggestCatalogMatch(descripcion) };
+        const subtotal = parseFloat(c.getAttribute("Importe")) || (valorUnitario * cantidad);
+
+        // Sumar los impuestos trasladados (IVA, etc.) de ESTE concepto en
+        // particular, para que el costo capturado sea el real (con impuesto
+        // incluido), no solo el valor unitario antes de impuestos.
+        let traslados = c.getElementsByTagName("cfdi:Traslado");
+        if (traslados.length === 0) traslados = c.getElementsByTagName("Traslado");
+        const impuesto = Array.from(traslados).reduce((acc, t) => acc + (parseFloat(t.getAttribute("Importe")) || 0), 0);
+        const totalConImpuesto = subtotal + impuesto;
+        const valorUnitarioConImpuesto = cantidad > 0 ? totalConImpuesto / cantidad : valorUnitario;
+
+        return { descripcion, cantidad, valorUnitario: valorUnitarioConImpuesto, matchedItem: suggestCatalogMatch(descripcion) };
       });
       setXmlReview(review);
 
@@ -162,7 +173,13 @@ export default function Inventario() {
 
       let uuidNode = xmlDoc.getElementsByTagName("tfd:TimbreFiscalDigital")[0] || xmlDoc.getElementsByTagName("TimbreFiscalDigital")[0];
       const uuid = uuidNode?.getAttribute("UUID") || "";
-      if (uuid) setInvoiceFolio(uuid);
+      if (uuid) {
+        setInvoiceFolio(uuid);
+        const yaCargada = events.some(ev => ev.invoiceFolio && ev.invoiceFolio.toUpperCase() === uuid.toUpperCase());
+        if (yaCargada) {
+          alert(`⚠️ Esta factura (folio ${uuid}) ya se había cargado antes. Revisa en "Movimientos" antes de continuar para no duplicarla.`);
+        }
+      }
     } catch (e) {
       alert("Error al leer la factura: " + e.message);
     }
@@ -182,6 +199,62 @@ export default function Inventario() {
       return Array.from(map, ([item, v]) => ({ item, qty: v.qty, cost: v.cost }));
     });
     setXmlReview(null);
+  };
+
+  // Anula un movimiento: nunca se borra el registro original (por trazabilidad),
+  // en vez de eso se crea un movimiento contrario que revierte exactamente la
+  // misma cantidad de cada artículo, y se ajustan las existencias reales.
+  // Pide el motivo de la anulación, obligatorio.
+  const voidEvent = async (ev) => {
+    const reason = prompt(`Motivo de la eliminación de este movimiento (${ev.type === "entrada" ? "entrada" : "salida"} de ${(ev.items||[]).length} artículo(s)):`);
+    if (reason === null) return; // canceló
+    if (!reason.trim()) { alert("El motivo es obligatorio."); return; }
+    setSaving(true);
+    try {
+      const checkOk = async (res, label) => {
+        if (!res.ok) { let msg=`Error ${res.status}`; try{const b=await res.json(); msg=b?.error?.message||msg;}catch{} throw new Error(`${label}: ${msg}`); }
+      };
+      const reversedType = ev.type === "entrada" ? "salida" : "entrada";
+      const evItems = Array.isArray(ev.items) ? ev.items : [];
+
+      for (const { item, qty } of evItems) {
+        const docId = inventoryDocId(ev.warehouse, item);
+        const existing = inventory.find(i => i.id === docId);
+        const currentStock = existing?.currentStock ?? 0;
+        // Revertir: si el movimiento original fue entrada, se resta; si fue salida, se suma de vuelta.
+        const newStock = ev.type === "entrada" ? currentStock - qty : currentStock + qty;
+        const invRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            item: { stringValue: item }, warehouse: { stringValue: ev.warehouse },
+            category: { stringValue: existing?.category || "" }, unit: { stringValue: existing?.unit || "PIEZA" },
+            currentStock: toFV(newStock), minStock: toFV(existing?.minStock ?? 0),
+            lastCost: toFV(existing?.lastCost ?? 0), avgCost: toFV(existing?.avgCost ?? 0), totalReceived: toFV(existing?.totalReceived ?? 0),
+            lastUpdated: { stringValue: new Date().toISOString() },
+          }}),
+        });
+        await checkOk(invRes, `Existencias de "${item}"`);
+      }
+
+      const evRes = await fetch(`${FIRESTORE_BASE_URL}/inventory_events`, {
+        method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ fields: {
+          type: { stringValue: reversedType }, warehouse: { stringValue: ev.warehouse },
+          items: toFV(evItems),
+          reversalOf: { stringValue: ev.id },
+          reason: { stringValue: `Anulación: ${reason.trim()}` },
+          userEmail: { stringValue: profile?.email || user?.email || "" },
+          createdAt: { stringValue: new Date().toISOString() },
+        }}),
+      });
+      await checkOk(evRes, "Registro de la anulación");
+
+      load();
+    } catch (e) {
+      alert("Error al anular el movimiento: " + e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const registerMovement = async () => {
@@ -375,13 +448,17 @@ export default function Inventario() {
             const isOpen = expandedEvent === ev.id;
             const evItems = Array.isArray(ev.items) ? ev.items : [];
             const itemCount = evItems.length;
+            const isReversal = !!ev.reversalOf;
+            const wasVoided = events.some(other => other.reversalOf === ev.id);
             return (
-              <div key={ev.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
+              <div key={ev.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden", opacity: wasVoided ? 0.5 : 1 }}>
                 <div onClick={() => setExpandedEvent(isOpen ? null : ev.id)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
                   <span style={{ fontSize:11, padding:"3px 10px", borderRadius:99, background: ev.type==="entrada" ? "rgba(0,212,170,0.12)" : "rgba(255,107,107,0.1)", color: ev.type==="entrada" ? "#00d4aa" : "#ff6b6b" }}>
                     {ev.type==="entrada" ? "↓ Entrada" : "↑ Salida"}
                   </span>
-                  <span style={{ fontSize:13, color:"#f0f0f0" }}>{itemCount} artículo{itemCount!==1?"s":""}</span>
+                  <span style={{ fontSize:13, color:"#f0f0f0", textDecoration: wasVoided ? "line-through" : "none" }}>{itemCount} artículo{itemCount!==1?"s":""}</span>
+                  {wasVoided && <span style={{ fontSize:10, color:"#ff6b6b", background:"rgba(255,107,107,0.1)", padding:"2px 8px", borderRadius:99, fontWeight:600 }}>ANULADO</span>}
+                  {isReversal && <span style={{ fontSize:10, color:"#ffb347", background:"rgba(255,179,71,0.1)", padding:"2px 8px", borderRadius:99 }}>corrección</span>}
                   {ev.sessionPatientName && <span style={{ fontSize:12, color:"#4fc3f7" }}>👤 {ev.sessionPatientName}</span>}
                   {ev.invoiceFolio && <span style={{ fontSize:11, color:"#AFA9EC" }}>📄 {ev.invoiceFolio}</span>}
                   {ev.reason && <span style={{ fontSize:11, color:"#888" }}>{ev.reason}</span>}
@@ -400,6 +477,12 @@ export default function Inventario() {
                       <div style={{ marginTop:8, paddingTop:8, borderTop:"1px solid rgba(255,255,255,0.06)", fontSize:11, color:"#666" }}>
                         Registrado por: {ev.userEmail || "—"}
                       </div>
+                    )}
+                    {!wasVoided && !isReversal && (
+                      <button onClick={e => { e.stopPropagation(); voidEvent(ev); }} disabled={saving}
+                        style={{ marginTop:8, alignSelf:"flex-start", padding:"5px 12px", borderRadius:7, fontSize:11, fontWeight:600, cursor: saving ? "wait" : "pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
+                        🗑 Eliminar (revertir existencias)
+                      </button>
                     )}
                   </div>
                 )}
@@ -440,7 +523,7 @@ export default function Inventario() {
                 <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:280, overflowY:"auto" }}>
                   {xmlReview.map((r, i) => (
                     <div key={i} style={{ padding:"8px 10px", borderRadius:8, background: r.matchedItem ? "rgba(255,255,255,0.03)" : "rgba(255,107,107,0.06)", border:`1px solid ${r.matchedItem ? "rgba(255,255,255,0.07)" : "rgba(255,107,107,0.25)"}` }}>
-                      <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>Factura: "{r.descripcion}" · cant. {r.cantidad}{r.valorUnitario ? ` · $${r.valorUnitario.toFixed(2)} c/u` : ""}</div>
+                      <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>Factura: "{r.descripcion}" · cant. {r.cantidad}{r.valorUnitario ? ` · $${r.valorUnitario.toFixed(2)} c/u (con IVA)` : ""}</div>
                       <select value={r.matchedItem} onChange={e => setXmlReview(prev => prev.map((x,xi) => xi===i ? { ...x, matchedItem: e.target.value } : x))}
                         style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"6px 8px", color: r.matchedItem ? "#f0f0f0" : "#ff6b6b", fontSize:12, outline:"none", cursor:"pointer" }}>
                         <option value="">— Sin emparejar (no se agregará) —</option>
