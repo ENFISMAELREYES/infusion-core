@@ -766,7 +766,7 @@ const handleDataEdit = async (patientName, draft) => {
                           <div key={j} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
                             <span style={{ fontSize:12, color: v === g.canonical ? "#f0f0f0" : "#888", fontWeight: v === g.canonical ? 600 : 400, fontFamily:"'IBM Plex Mono', monospace" }}>{v}</span>
                             {v === g.canonical && <span style={{ fontSize:9, color:"#00d4aa", background:"rgba(0,212,170,0.1)", padding:"1px 6px", borderRadius:99 }}>en uso</span>}
-                            {canEdit && v !== g.canonical && (
+                            {canEdit && (
                             <button onClick={() => handleMergeInto(g, v)} style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
                               ✓ Usar este nombre
                             </button>
@@ -1006,9 +1006,7 @@ function CatalogSection({ title, icon, groups, field, sessions, token, onRefresh
                         <div key={j} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
                           <span style={{ fontSize:12, color: v === g.canonical ? "#f0f0f0" : "#888", fontWeight: v === g.canonical ? 600 : 400, fontFamily:"'IBM Plex Mono', monospace" }}>{v}</span>
                           {v === g.canonical && <span style={{ fontSize:9, color:"#00d4aa", background:"rgba(0,212,170,0.1)", padding:"1px 6px", borderRadius:99 }}>en uso</span>}
-                          {v !== g.canonical && (
-                            <button onClick={() => handleMergeInto(g, v)} style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✓ Usar este nombre</button>
-                          )}
+                          <button onClick={() => handleMergeInto(g, v)} style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✓ Usar este nombre</button>
                         </div>
                       ))}
                     </div>
