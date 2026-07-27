@@ -26,6 +26,29 @@ export default async function handler(req, res) {
 
   const { patientName, sessionIds, headerOnly, center, token } = req.body;
 
+  // Verificar que quien llama esté realmente autenticado antes de generar
+  // nada. Sin esto, cualquiera con la URL y un nombre de paciente podía
+  // generar la hoja de tratamiento completa sin haber iniciado sesión.
+  const authHeader = req.headers.authorization || "";
+  const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : token;
+  if (!bearerToken) {
+    return res.status(401).json({ error: "No autenticado: falta el token de sesión." });
+  }
+  try {
+    const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
+    const verifyRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${API_KEY}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: bearerToken }),
+    });
+    if (!verifyRes.ok) return res.status(401).json({ error: "Token inválido o expirado." });
+    const verifyData = await verifyRes.json();
+    if (!verifyData.users || verifyData.users.length === 0) {
+      return res.status(401).json({ error: "Token inválido." });
+    }
+  } catch (e) {
+    return res.status(401).json({ error: "No se pudo verificar la sesión." });
+  }
+
   try {
     const PROJECT_ID = "infusion-core";
 
