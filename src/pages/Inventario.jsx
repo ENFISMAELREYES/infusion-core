@@ -105,12 +105,12 @@ export default function Inventario() {
     : warehouseInventory;
   const lowStock = warehouseInventory.filter(i => i.currentStock <= (i.minStock ?? 0));
 
-  const addToMoveList = (item) => {
+  const addToMoveList = (item, cost) => {
     const qty = parseInt(moveQty) || 1;
     setMoveList(prev => {
       const existing = prev.find(x => x.item === item);
       if (existing) return prev.map(x => x.item === item ? { ...x, qty: x.qty + qty } : x);
-      return [...prev, { item, qty }];
+      return [...prev, { item, qty, cost: cost || undefined }];
     });
     setMoveSearch(""); setMoveQty("1");
   };
@@ -152,7 +152,8 @@ export default function Inventario() {
       const review = Array.from(conceptos).map(c => {
         const descripcion = c.getAttribute("Descripcion") || "";
         const cantidad = Math.round(parseFloat(c.getAttribute("Cantidad")) || 1);
-        return { descripcion, cantidad, matchedItem: suggestCatalogMatch(descripcion) };
+        const valorUnitario = parseFloat(c.getAttribute("ValorUnitario")) || 0;
+        return { descripcion, cantidad, valorUnitario, matchedItem: suggestCatalogMatch(descripcion) };
       });
       setXmlReview(review);
 
@@ -173,11 +174,12 @@ export default function Inventario() {
       if (!confirm(`${unmatched.length} artículo(s) de la factura no tienen un emparejamiento elegido y NO se agregarán. ¿Continuar de todas formas?`)) return;
     }
     setMoveList(prev => {
-      const map = new Map(prev.map(x => [x.item, x.qty]));
+      const map = new Map(prev.map(x => [x.item, { qty: x.qty, cost: x.cost }]));
       xmlReview.filter(r => r.matchedItem).forEach(r => {
-        map.set(r.matchedItem, (map.get(r.matchedItem) || 0) + r.cantidad);
+        const existing = map.get(r.matchedItem);
+        map.set(r.matchedItem, { qty: (existing?.qty || 0) + r.cantidad, cost: r.valorUnitario || existing?.cost });
       });
-      return Array.from(map, ([item, qty]) => ({ item, qty }));
+      return Array.from(map, ([item, v]) => ({ item, qty: v.qty, cost: v.cost }));
     });
     setXmlReview(null);
   };
@@ -198,13 +200,25 @@ export default function Inventario() {
       // Actualizar existencias de cada artículo -- ahora se PERMITE negativo,
       // para reflejar que ya se usó algo que aún no se ha registrado como
       // recibido (ej. hay un ingreso pendiente de factura).
-      for (const { item, qty } of moveList) {
+      for (const { item, qty, cost } of moveList) {
         const docId = inventoryDocId(warehouse, item);
         const existing = inventory.find(i => i.id === docId);
         const currentStock = existing?.currentStock ?? 0;
         const minStock = existing?.minStock ?? 0;
         const catalogEntry = MASTER_CATALOG.find(c => c.item === item);
         const newStock = type === "entrada" ? currentStock + qty : currentStock - qty;
+
+        // Costo: solo se actualiza en entradas y solo si se capturó un costo.
+        // El promedio es ponderado por cantidad recibida a lo largo del tiempo.
+        let lastCost = existing?.lastCost ?? 0;
+        let avgCost = existing?.avgCost ?? 0;
+        let totalReceived = existing?.totalReceived ?? 0;
+        if (type === "entrada" && cost > 0) {
+          const newTotalReceived = totalReceived + qty;
+          avgCost = newTotalReceived > 0 ? ((avgCost * totalReceived) + (cost * qty)) / newTotalReceived : cost;
+          totalReceived = newTotalReceived;
+          lastCost = cost;
+        }
 
         const invRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`, {
           method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
@@ -213,6 +227,7 @@ export default function Inventario() {
             category: { stringValue: catalogEntry?.category || existing?.category || "" },
             unit: { stringValue: catalogEntry?.unit || existing?.unit || "PIEZA" },
             currentStock: toFV(newStock), minStock: toFV(minStock),
+            lastCost: toFV(lastCost), avgCost: toFV(avgCost), totalReceived: toFV(totalReceived),
             lastUpdated: { stringValue: new Date().toISOString() },
           }}),
         });
@@ -332,6 +347,11 @@ export default function Inventario() {
                       </span>
                     )}
                     <span style={{ fontSize:14, fontWeight:700, color: negative ? "#ff6b6b" : low ? "#ffb347" : "#00d4aa", fontFamily:"'IBM Plex Mono', monospace", minWidth:60, textAlign:"right" }}>{i.currentStock} {i.unit}</span>
+                    {(i.lastCost > 0 || i.avgCost > 0) && (
+                      <span style={{ fontSize:10, color:"#888", fontFamily:"'IBM Plex Mono', monospace", whiteSpace:"nowrap" }} title="Último costo / Costo promedio">
+                        últ. ${(i.lastCost||0).toFixed(2)} · prom. ${(i.avgCost||0).toFixed(2)}
+                      </span>
+                    )}
                     {isJefe && (
                       <input type="number" defaultValue={i.minStock ?? 0} title="Mínimo antes de avisar"
                         onBlur={e => setMinStock(i.id, e.target.value)}
@@ -420,7 +440,7 @@ export default function Inventario() {
                 <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:280, overflowY:"auto" }}>
                   {xmlReview.map((r, i) => (
                     <div key={i} style={{ padding:"8px 10px", borderRadius:8, background: r.matchedItem ? "rgba(255,255,255,0.03)" : "rgba(255,107,107,0.06)", border:`1px solid ${r.matchedItem ? "rgba(255,255,255,0.07)" : "rgba(255,107,107,0.25)"}` }}>
-                      <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>Factura: "{r.descripcion}" · cant. {r.cantidad}</div>
+                      <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>Factura: "{r.descripcion}" · cant. {r.cantidad}{r.valorUnitario ? ` · $${r.valorUnitario.toFixed(2)} c/u` : ""}</div>
                       <select value={r.matchedItem} onChange={e => setXmlReview(prev => prev.map((x,xi) => xi===i ? { ...x, matchedItem: e.target.value } : x))}
                         style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"6px 8px", color: r.matchedItem ? "#f0f0f0" : "#ff6b6b", fontSize:12, outline:"none", cursor:"pointer" }}>
                         <option value="">— Sin emparejar (no se agregará) —</option>
@@ -463,7 +483,14 @@ export default function Inventario() {
                   <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 8px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
                     <span style={{ flex:1, fontSize:12, color:"#f0f0f0" }}>{it.item}</span>
                     <input type="number" min="0" value={it.qty} onChange={e => setMoveListQty(it.item, parseInt(e.target.value) || 0)}
+                      title="Cantidad"
                       style={{ width:56, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:12, outline:"none", textAlign:"center" }} />
+                    {showMoveModal === "entrada" && (
+                      <input type="number" min="0" step="0.01" placeholder="$ costo c/u" value={it.cost ?? ""}
+                        onChange={e => setMoveList(prev => prev.map(x => x.item===it.item ? { ...x, cost: e.target.value === "" ? undefined : parseFloat(e.target.value) } : x))}
+                        title="Costo unitario (opcional)"
+                        style={{ width:76, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#00d4aa", fontSize:12, outline:"none", textAlign:"center" }} />
+                    )}
                     <button onClick={() => removeFromMoveList(it.item)} style={{ padding:"3px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
                   </div>
                 ))}
