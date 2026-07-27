@@ -95,8 +95,6 @@ const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia
 
 function calcWash(med, draft) {
   const wash = draft.washNA ? { washNA: true } : (() => {
-    const washTime     = draft.washTime !== undefined ? draft.washTime : (med.category === "premedicacion" ? 5 : 15);
-    const washSolution = draft.washSolution || (med.diluent?.includes("SG") ? "SG" : "SF");
     let speed;
     if (med.category === "premedicacion") {
       speed = 60;
@@ -105,19 +103,33 @@ function calcWash(med, draft) {
       const vol      = volMatch ? parseInt(volMatch[1]) : null;
       speed          = (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
     }
-    return { washTime, washSolution, washSpeed: speed };
+    // Si se especifica volumen para el primer lavado (ej. "50 ml a la
+    // velocidad del medicamento"), el tiempo se calcula a partir de ese
+    // volumen y la velocidad -- en vez de usar un tiempo fijo.
+    const washVol  = draft.washVol !== undefined ? draft.washVol : null;
+    const washTime = washVol && speed
+      ? Math.round((washVol / speed) * 60)
+      : (draft.washTime !== undefined ? draft.washTime : (med.category === "premedicacion" ? 5 : 15));
+    const washSolution = draft.washSolution || (med.diluent?.includes("SG") ? "SG" : "SF");
+    return { washTime, washSolution, washVol, washSpeed: speed };
   })();
 
   let wash2 = null;
   if (draft.extraWash) {
     const wash2Time = draft.wash2Time !== undefined ? draft.wash2Time : 15;
     const wash2Vol  = draft.wash2Vol !== undefined ? draft.wash2Vol : 100;
+    // Si se marcó "misma velocidad que el medicamento" para el segundo
+    // lavado, se usa esa velocidad fija en vez de calcularla de vol2/tiempo2.
+    const wash2Speed = draft.wash2SameSpeed && wash.washSpeed
+      ? wash.washSpeed
+      : ((wash2Vol && wash2Time) ? Math.round((wash2Vol / wash2Time) * 60) : null);
     wash2 = {
       extraWash: true,
       washTime2:     wash2Time,
       washSolution2: draft.wash2Solution || "SF",
       washVol2:      wash2Vol,
-      washSpeed2:    (wash2Vol && wash2Time) ? Math.round((wash2Vol / wash2Time) * 60) : null,
+      washSpeed2:    wash2Speed,
+      wash2SameSpeed: !!draft.wash2SameSpeed,
     };
   }
   return { ...wash, ...wash2 };
@@ -126,11 +138,16 @@ function calcWash(med, draft) {
 function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggestion }) {
   const [open, setOpen]   = useState(isNew || false);
   const [draft, setDraft] = useState({
-    diluent: "", time: "", order: "", general: "", washSolution: "", washTime: undefined, washNA: false,
+    diluent: "", time: "", order: "", general: "",
+    washSolution: suggestion?.washSolution || "",
+    washTime: suggestion?.washTime,
+    washVol: suggestion?.washVol,
+    washNA: false,
     extraWash: !!suggestion?.extraWash,
     wash2Solution: suggestion?.wash2Solution || "",
-    wash2Time: undefined,
-    wash2Vol: undefined,
+    wash2Time: suggestion?.wash2Time,
+    wash2Vol: suggestion?.wash2Vol,
+    wash2SameSpeed: !!suggestion?.wash2SameSpeed,
   });
   const hasCorrection     = ["diluent", "time", "order", "general"].some(k => draft[k]?.trim());
   const cs                = CAT_COLOR[med.category] || CAT_COLOR.adicional;
@@ -221,7 +238,7 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
                     Sin lavado (N/A)
                   </label>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, opacity: draft.washNA ? 0.35 : 1, pointerEvents: draft.washNA ? "none" : "auto" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, opacity: draft.washNA ? 0.35 : 1, pointerEvents: draft.washNA ? "none" : "auto" }}>
                   <div>
                     <label style={{ fontSize: 10, color: "#666", letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Solución</label>
                     <select value={draft.washSolution || defaultWashSolution} onChange={e => setDraft(d => ({ ...d, washSolution: e.target.value }))}
@@ -232,9 +249,21 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
                     </select>
                   </div>
                   <div>
-                    <label style={{ fontSize: 10, color: "#666", letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Tiempo (min)</label>
-                    <input type="number" min="1" value={draft.washTime !== undefined ? draft.washTime : defaultWashTime} onChange={e => setDraft(d => ({ ...d, washTime: parseInt(e.target.value) }))}
+                    <label style={{ fontSize: 10, color: "#666", letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Mililitros (opcional)</label>
+                    <input type="number" min="0" placeholder="—" value={draft.washVol ?? ""} onChange={e => setDraft(d => ({ ...d, washVol: e.target.value === "" ? undefined : parseInt(e.target.value) }))}
+                      title="Si se especifica, el tiempo se calcula solo (volumen ÷ velocidad)"
                       style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 8, padding: "8px 10px", color: "#f0f0f0", fontSize: 12, outline: "none" }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 10, color: "#666", letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Tiempo (min)</label>
+                    {draft.washVol ? (
+                      <div style={{ padding: "8px 10px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, fontSize: 12, color: "#4fc3f7", fontFamily: "'IBM Plex Mono', monospace" }}>
+                        {speed ? `${Math.round((draft.washVol / speed) * 60)} (auto)` : "—"}
+                      </div>
+                    ) : (
+                      <input type="number" min="1" value={draft.washTime !== undefined ? draft.washTime : defaultWashTime} onChange={e => setDraft(d => ({ ...d, washTime: parseInt(e.target.value) }))}
+                        style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 8, padding: "8px 10px", color: "#f0f0f0", fontSize: 12, outline: "none" }} />
+                    )}
                   </div>
                   <div>
                     <label style={{ fontSize: 10, color: "#666", letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Velocidad</label>
@@ -252,10 +281,15 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
                     </label>
                     {suggestion?.extraWash && (
                       <div style={{ fontSize: 10, color: "#ffb347", marginTop: -6, marginBottom: 8 }}>
-                        💡 Sugerido automáticamente: cambia de solución hacia el siguiente medicamento. Desmárcalo si no aplica.
+                        💡 Sugerido automáticamente ({suggestion.washSolution === "SF" ? "SF→SG" : suggestion.washSolution === "SG" ? "SG→SF" : "cambio de solución"}): revisa ambas fases antes de aprobar. Desmárcalo si no aplica.
                       </div>
                     )}
                     {draft.extraWash && (
+                      <>
+                      <label style={{ display:"flex", alignItems:"center", gap:6, fontSize: 10, color: "#888", cursor:"pointer", marginBottom: 8 }}>
+                        <input type="checkbox" checked={!!draft.wash2SameSpeed} onChange={e => setDraft(d => ({ ...d, wash2SameSpeed: e.target.checked }))} />
+                        Misma velocidad que el medicamento (en vez de calcularla de mililitros ÷ tiempo)
+                      </label>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
                         <div>
                           <label style={{ fontSize: 10, color: "#666", letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Solución 2</label>
@@ -268,8 +302,14 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
                         </div>
                         <div>
                           <label style={{ fontSize: 10, color: "#666", letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Mililitros</label>
-                          <input type="number" min="1" value={draft.wash2Vol !== undefined ? draft.wash2Vol : 100} onChange={e => setDraft(d => ({ ...d, wash2Vol: parseInt(e.target.value) }))}
-                            style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 8, padding: "8px 10px", color: "#f0f0f0", fontSize: 12, outline: "none" }} />
+                          {draft.wash2SameSpeed ? (
+                            <div style={{ padding: "8px 10px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, fontSize: 12, color: "#4fc3f7", fontFamily: "'IBM Plex Mono', monospace" }}>
+                              {speed ? `${Math.round((speed * (draft.wash2Time !== undefined ? draft.wash2Time : 15)) / 60)} (auto)` : "—"}
+                            </div>
+                          ) : (
+                            <input type="number" min="1" value={draft.wash2Vol !== undefined ? draft.wash2Vol : 100} onChange={e => setDraft(d => ({ ...d, wash2Vol: parseInt(e.target.value) }))}
+                              style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 8, padding: "8px 10px", color: "#f0f0f0", fontSize: 12, outline: "none" }} />
+                          )}
                         </div>
                         <div>
                           <label style={{ fontSize: 10, color: "#666", letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Tiempo 2 (min)</label>
@@ -280,6 +320,7 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
                           <label style={{ fontSize: 10, color: "#666", letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Velocidad</label>
                           <div style={{ padding: "8px 10px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, fontSize: 12, color: "#4fc3f7", fontFamily: "'IBM Plex Mono', monospace" }}>
                             {(() => {
+                              if (draft.wash2SameSpeed) return speed ? `${speed} ml/hr (igual)` : "—";
                               const v = draft.wash2Vol !== undefined ? draft.wash2Vol : 100;
                               const t = draft.wash2Time !== undefined ? draft.wash2Time : 15;
                               return (v && t) ? `${Math.round((v / t) * 60)} ml/hr` : "—";
@@ -287,6 +328,7 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
                           </div>
                         </div>
                       </div>
+                      </>
                     )}
                   </div>
                 )}
@@ -376,8 +418,8 @@ useEffect(() => { loadUnfinished(); }, [user]);
     } catch(e) { console.error(e); }
   };
 
-  const approveMed = (id, washData) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus: "approved", washTime: undefined, washSolution: undefined, washSpeed: undefined, washNA: false, washTime2: undefined, washSolution2: undefined, washVol2: undefined, washSpeed2: undefined, extraWash: false, ...washData } }));
-  const correctMed = (id, corr)     => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus: "corrected", correction: corr, washTime: corr.washTime, washSolution: corr.washSolution, washSpeed: corr.washSpeed, washNA: !!corr.washNA, washTime2: corr.washTime2, washSolution2: corr.washSolution2, washVol2: corr.washVol2, washSpeed2: corr.washSpeed2, extraWash: !!corr.extraWash } }));
+  const approveMed = (id, washData) => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus: "approved", washTime: undefined, washSolution: undefined, washVol: undefined, washSpeed: undefined, washNA: false, washTime2: undefined, washSolution2: undefined, washVol2: undefined, washSpeed2: undefined, wash2SameSpeed: undefined, extraWash: false, ...washData } }));
+  const correctMed = (id, corr)     => setMedStates(p => ({ ...p, [id]: { ...p[id], reviewStatus: "corrected", correction: corr, washTime: corr.washTime, washSolution: corr.washSolution, washVol: corr.washVol, washSpeed: corr.washSpeed, washNA: !!corr.washNA, washTime2: corr.washTime2, washSolution2: corr.washSolution2, washVol2: corr.washVol2, washSpeed2: corr.washSpeed2, wash2SameSpeed: corr.wash2SameSpeed, extraWash: !!corr.extraWash } }));
   const deleteMed  = (id)           => setMedStates(p => { const n = { ...p }; delete n[id]; return n; });
   const updateMed  = (id, key, val) => setMedStates(p => ({ ...p, [id]: { ...p[id], [key]: val } }));
 
@@ -420,6 +462,7 @@ useEffect(() => { loadUnfinished(); }, [user]);
         wash: m.washNA ? null : {
           time:     m.washTime     ?? (m.category === "premedicacion" ? 5 : 15),
           solution: m.washSolution ?? (m.diluent?.includes("SG") ? "SG" : "SF"),
+          vol:      m.washVol      ?? null,
           speed:    m.washSpeed    ?? null,
         },
         wash2: m.extraWash ? {
@@ -427,6 +470,7 @@ useEffect(() => { loadUnfinished(); }, [user]);
           solution: m.washSolution2 ?? "SF",
           vol:      m.washVol2      ?? null,
           speed:    m.washSpeed2    ?? null,
+          sameSpeed: !!m.wash2SameSpeed,
         } : null,
       }));
       const updatedMeds = [...correctedMeds]
@@ -545,6 +589,20 @@ useEffect(() => { loadUnfinished(); }, [user]);
                   const nextType = solutionTypeOf(next.diluent);
                   if (next.category === "domicilio" && !next.diluent) {
                     suggestion = { extraWash: true, wash2Solution: thisType || "SF" };
+                  } else if (thisType === "SF" && nextType === "SG") {
+                    // SF → SG: 5 min fijos de SF (la que termina) a su propia
+                    // velocidad, luego 50 ml de SG en 10 min fijos.
+                    suggestion = {
+                      washTime: 5, washSolution: "SF",
+                      extraWash: true, wash2Solution: "SG", wash2Vol: 50, wash2Time: 10,
+                    };
+                  } else if (thisType === "SG" && nextType === "SF") {
+                    // SG → SF: 50 ml de SG (la que termina) a su propia
+                    // velocidad, luego 5 min de SF a esa MISMA velocidad.
+                    suggestion = {
+                      washVol: 50, washSolution: "SG",
+                      extraWash: true, wash2Solution: "SF", wash2Time: 5, wash2SameSpeed: true,
+                    };
                   } else if (thisType && nextType && thisType !== nextType) {
                     suggestion = { extraWash: true, wash2Solution: nextType };
                   }
