@@ -52,7 +52,13 @@ const WAREHOUSES = [
 // Inventario general de la farmacia (QualMedical) -- todo el medicamento
 // pertenece a esta farmacia antes de asignarse a un centro. Solo el jefe lo
 // ve; para enfermería el flujo se ve exactamente igual que hasta ahora.
-const QUAL_WAREHOUSE = { key: "QUAL", label: "Inventario Qual (farmacia)" };
+const QUAL_WAREHOUSES = [
+  { key: "QUAL_CITIO", label: "Qual · CITIO" },
+  { key: "QUAL_CIPI", label: "Qual · CIPI" },
+];
+// A qué almacén de Qual corresponde cada almacén de centro (CIPI PRO y PED
+// comparten el mismo fondo de Qual, aunque en el centro estén separados).
+const QUAL_FOR_WAREHOUSE = { CITIO: "QUAL_CITIO", CIPI_PRO: "QUAL_CIPI", CIPI_PED: "QUAL_CIPI" };
 // Categorías de MASTER_CATALOG que se consideran "medicamento" para efectos
 // del descuento automático de Inventario Qual (insumos/soluciones no aplican).
 const MED_CATEGORIES = ["Medicamentos", "Oncológicos", "Inmunoterapia"];
@@ -62,7 +68,7 @@ function inventoryDocId(warehouse, item) {
 }
 
 function warehouseLabel(key) {
-  return [...WAREHOUSES, QUAL_WAREHOUSE].find(w => w.key === key)?.label || key;
+  return [...WAREHOUSES, ...QUAL_WAREHOUSES].find(w => w.key === key)?.label || key;
 }
 
 export default function Inventario() {
@@ -84,6 +90,7 @@ export default function Inventario() {
   const [moveQty, setMoveQty] = useState("1");
   const [moveReason, setMoveReason] = useState("");
   const [invoiceFolio, setInvoiceFolio] = useState(""); // folio fiscal opcional, para relacionar con una factura
+  const [transferTo, setTransferTo] = useState(""); // almacén destino, solo para transferencias
   const [saving, setSaving] = useState(false);
   const [xmlReview, setXmlReview] = useState(null); // [{descripcion, cantidad, matchedItem}] mientras se revisa antes de agregar
   const [xmlReceptor, setXmlReceptor] = useState(""); // nombre del receptor en la factura, para confirmar que corresponde al almacén
@@ -109,7 +116,7 @@ export default function Inventario() {
   };
 
   useEffect(() => { load(); }, [user]);
-  useEffect(() => { if (!isJefe && warehouse === "QUAL") setWarehouse("CITIO"); }, [isJefe, warehouse]);
+  useEffect(() => { if (!isJefe && warehouse.startsWith("QUAL")) setWarehouse("CITIO"); }, [isJefe, warehouse]);
 
   const warehouseInventory = inventory.filter(i => i.warehouse === warehouse);
   const filteredInventory = search.trim()
@@ -269,6 +276,97 @@ export default function Inventario() {
     }
   };
 
+  // Mueve artículos de un almacén a otro -- resta del origen, suma al
+  // destino (llevándose también su costo), y deja un registro cruzado (una
+  // salida en el origen, una entrada en el destino) para que se vea en las
+  // dos pestañas de Movimientos correspondientes.
+  const registerTransfer = async () => {
+    if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
+    if (!transferTo) { alert("Elige el almacén destino."); return; }
+    if (transferTo === warehouse) { alert("El destino debe ser distinto al almacén actual."); return; }
+    setSaving(true);
+    try {
+      const checkOk = async (res, label) => {
+        if (!res.ok) { let msg=`Error ${res.status}`; try{const b=await res.json(); msg=b?.error?.message||msg;}catch{} throw new Error(`${label}: ${msg}`); }
+      };
+
+      for (const { item, qty } of moveList) {
+        const catalogEntry = MASTER_CATALOG.find(c => c.item === item);
+
+        // Restar del almacén origen
+        const fromDocId = inventoryDocId(warehouse, item);
+        const fromExisting = inventory.find(i => i.id === fromDocId);
+        const fromStock = fromExisting?.currentStock ?? 0;
+        const fromRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${fromDocId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            item: { stringValue: item }, warehouse: { stringValue: warehouse },
+            category: { stringValue: catalogEntry?.category || fromExisting?.category || "" },
+            unit: { stringValue: catalogEntry?.unit || fromExisting?.unit || "PIEZA" },
+            currentStock: toFV(fromStock - qty), minStock: toFV(fromExisting?.minStock ?? 0),
+            lastCost: toFV(fromExisting?.lastCost ?? 0), avgCost: toFV(fromExisting?.avgCost ?? 0), totalReceived: toFV(fromExisting?.totalReceived ?? 0),
+            lastUpdated: { stringValue: new Date().toISOString() },
+          }}),
+        });
+        await checkOk(fromRes, `Salida de "${item}" en ${warehouseLabel(warehouse)}`);
+
+        // Sumar al almacén destino, llevándose el costo consigo (se pondera
+        // igual que una entrada normal, usando el costo del origen).
+        const toDocId = inventoryDocId(transferTo, item);
+        const toExisting = inventory.find(i => i.id === toDocId);
+        const toStock = toExisting?.currentStock ?? 0;
+        const sourceCost = fromExisting?.lastCost || fromExisting?.avgCost || 0;
+        const toTotalReceived = toExisting?.totalReceived ?? 0;
+        const toAvgCost = toExisting?.avgCost ?? 0;
+        const newTotalReceived = toTotalReceived + qty;
+        const newAvgCost = sourceCost > 0
+          ? ((toAvgCost * toTotalReceived) + (sourceCost * qty)) / (newTotalReceived || 1)
+          : toAvgCost;
+        const toRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${toDocId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            item: { stringValue: item }, warehouse: { stringValue: transferTo },
+            category: { stringValue: catalogEntry?.category || toExisting?.category || "" },
+            unit: { stringValue: catalogEntry?.unit || toExisting?.unit || "PIEZA" },
+            currentStock: toFV(toStock + qty), minStock: toFV(toExisting?.minStock ?? 0),
+            lastCost: toFV(sourceCost || toExisting?.lastCost || 0), avgCost: toFV(newAvgCost), totalReceived: toFV(newTotalReceived),
+            lastUpdated: { stringValue: new Date().toISOString() },
+          }}),
+        });
+        await checkOk(toRes, `Entrada de "${item}" en ${warehouseLabel(transferTo)}`);
+      }
+
+      const salidaRes = await fetch(`${FIRESTORE_BASE_URL}/inventory_events`, {
+        method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ fields: {
+          type: { stringValue: "salida" }, warehouse: { stringValue: warehouse },
+          items: toFV(moveList), reason: { stringValue: `Transferencia a ${warehouseLabel(transferTo)}` },
+          userEmail: { stringValue: profile?.email || user?.email || "" },
+          createdAt: { stringValue: new Date().toISOString() },
+        }}),
+      });
+      await checkOk(salidaRes, "Registro de la salida por transferencia");
+
+      const entradaRes = await fetch(`${FIRESTORE_BASE_URL}/inventory_events`, {
+        method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ fields: {
+          type: { stringValue: "entrada" }, warehouse: { stringValue: transferTo },
+          items: toFV(moveList), reason: { stringValue: `Transferencia desde ${warehouseLabel(warehouse)}` },
+          userEmail: { stringValue: profile?.email || user?.email || "" },
+          createdAt: { stringValue: new Date().toISOString() },
+        }}),
+      });
+      await checkOk(entradaRes, "Registro de la entrada por transferencia");
+
+      setShowMoveModal(null); setMoveList([]); setTransferTo("");
+      load();
+    } catch (e) {
+      alert("Error al transferir: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const registerMovement = async () => {
     if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
     setSaving(true);
@@ -338,23 +436,25 @@ export default function Inventario() {
 
       // Si es una entrada de MEDICAMENTO a un almacén de centro (no a Qual
       // mismo), es en realidad un traslado desde la farmacia -- se descuenta
-      // solo de Inventario Qual, sin que enfermería tenga que hacer nada
-      // aparte. Insumos/soluciones generales no vienen de Qual, no aplica.
-      if (type === "entrada" && warehouse !== "QUAL") {
+      // solo del Qual correspondiente (CITIO o CIPI, este último combinado
+      // entre PRO y PED), sin que enfermería tenga que hacer nada aparte.
+      // Insumos/soluciones generales no vienen de Qual, no aplica.
+      const qualWarehouse = QUAL_FOR_WAREHOUSE[warehouse];
+      if (type === "entrada" && qualWarehouse) {
         const medItems = moveList.filter(({ item }) => {
           const cat = MASTER_CATALOG.find(c => c.item === item)?.category;
           return MED_CATEGORIES.includes(cat);
         });
         if (medItems.length > 0) {
           for (const { item, qty } of medItems) {
-            const qualDocId = inventoryDocId("QUAL", item);
+            const qualDocId = inventoryDocId(qualWarehouse, item);
             const qualExisting = inventory.find(i => i.id === qualDocId);
             const qualCurrentStock = qualExisting?.currentStock ?? 0;
             const catalogEntry = MASTER_CATALOG.find(c => c.item === item);
             const qualRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${qualDocId}`, {
               method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
               body: JSON.stringify({ fields: {
-                item: { stringValue: item }, warehouse: { stringValue: "QUAL" },
+                item: { stringValue: item }, warehouse: { stringValue: qualWarehouse },
                 category: { stringValue: catalogEntry?.category || qualExisting?.category || "" },
                 unit: { stringValue: catalogEntry?.unit || qualExisting?.unit || "PIEZA" },
                 currentStock: toFV(qualCurrentStock - qty), minStock: toFV(qualExisting?.minStock ?? 0),
@@ -362,12 +462,12 @@ export default function Inventario() {
                 lastUpdated: { stringValue: new Date().toISOString() },
               }}),
             });
-            await checkOk(qualRes, `Traslado desde Qual de "${item}"`);
+            await checkOk(qualRes, `Traslado desde ${warehouseLabel(qualWarehouse)} de "${item}"`);
           }
           await fetch(`${FIRESTORE_BASE_URL}/inventory_events`, {
             method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
             body: JSON.stringify({ fields: {
-              type: { stringValue: "salida" }, warehouse: { stringValue: "QUAL" },
+              type: { stringValue: "salida" }, warehouse: { stringValue: qualWarehouse },
               items: toFV(medItems),
               reason: { stringValue: `Traslado automático a ${warehouseLabel(warehouse)}` },
               userEmail: { stringValue: profile?.email || user?.email || "" },
@@ -411,20 +511,20 @@ export default function Inventario() {
       <div style={{ marginBottom:24 }}>
         <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Inventario</h1>
         <p style={{ fontSize:13, color:"#555" }}>Existencias y movimientos de entrada/salida de material</p>
-        {warehouse === "QUAL" && (
+        {warehouse.startsWith("QUAL") && (
           <p style={{ fontSize:12, color:"#ffb347", marginTop:6 }}>
-            📦 Stock general recibido de la farmacia QualMedical, antes de asignarse a un centro. Se descuenta solo cuando enfermería registra la entrada del medicamento en CITIO/CIPI PRO/CIPI PED — no requiere ninguna acción aparte de ellas.
+            📦 Stock general recibido de la farmacia QualMedical para {warehouse === "QUAL_CITIO" ? "CITIO" : "CIPI (PRO y PED juntos)"}, antes de asignarse al centro. Se descuenta solo cuando enfermería registra la entrada del medicamento en el centro correspondiente — no requiere ninguna acción aparte de ellas.
           </p>
         )}
       </div>
 
       <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
-        {[...WAREHOUSES, ...(isJefe ? [QUAL_WAREHOUSE] : [])].map(w => (
+        {[...WAREHOUSES, ...(isJefe ? QUAL_WAREHOUSES : [])].map(w => (
           <button key={w.key} onClick={() => setWarehouse(w.key)} style={{
             padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
-            background: warehouse===w.key ? (w.key==="QUAL" ? "rgba(255,179,71,0.12)" : "rgba(79,195,247,0.12)") : "rgba(255,255,255,0.04)",
-            border: `1px solid ${warehouse===w.key ? (w.key==="QUAL" ? "rgba(255,179,71,0.3)" : "rgba(79,195,247,0.3)") : "rgba(255,255,255,0.08)"}`,
-            color: warehouse===w.key ? (w.key==="QUAL" ? "#ffb347" : "#4fc3f7") : "#666",
+            background: warehouse===w.key ? (w.key.startsWith("QUAL") ? "rgba(255,179,71,0.12)" : "rgba(79,195,247,0.12)") : "rgba(255,255,255,0.04)",
+            border: `1px solid ${warehouse===w.key ? (w.key.startsWith("QUAL") ? "rgba(255,179,71,0.3)" : "rgba(79,195,247,0.3)") : "rgba(255,255,255,0.08)"}`,
+            color: warehouse===w.key ? (w.key.startsWith("QUAL") ? "#ffb347" : "#4fc3f7") : "#666",
           }}>{w.label}</button>
         ))}
       </div>
@@ -449,6 +549,11 @@ export default function Inventario() {
             <button onClick={() => { setShowMoveModal("salida"); setMoveList([]); setXmlReview(null); setXmlReceptor(""); setInvoiceFolio(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
               ↑ Registrar salida
             </button>
+            {warehouse.startsWith("QUAL") && (
+              <button onClick={() => { setShowMoveModal("transferencia"); setMoveList([]); setTransferTo(warehouse === "QUAL_CITIO" ? "QUAL_CIPI" : "QUAL_CITIO"); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                🔄 Transferir a {warehouse === "QUAL_CITIO" ? "Qual CIPI" : "Qual CITIO"}
+              </button>
+            )}
           </div>
 
           {lowStock.length > 0 && (
@@ -555,8 +660,14 @@ export default function Inventario() {
           style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:460, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
             <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>
-              {showMoveModal === "entrada" ? "↓ Registrar entrada" : "↑ Registrar salida"} — {warehouseLabel(warehouse)}
+              {showMoveModal === "entrada" ? "↓ Registrar entrada" : showMoveModal === "salida" ? "↑ Registrar salida" : "🔄 Transferir"} — {warehouseLabel(warehouse)}
             </div>
+
+            {showMoveModal === "transferencia" && (
+              <div style={{ padding:"8px 12px", borderRadius:9, background:"rgba(175,169,236,0.08)", border:"1px solid rgba(175,169,236,0.25)", fontSize:12, color:"#AFA9EC" }}>
+                Destino: <strong>{warehouseLabel(transferTo)}</strong>
+              </div>
+            )}
 
             {showMoveModal === "entrada" && !xmlReview && (
               <label style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px dashed rgba(175,169,236,0.35)", color:"#AFA9EC" }}>
@@ -651,9 +762,11 @@ export default function Inventario() {
               <button onClick={() => setShowMoveModal(null)} disabled={saving} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, cursor: saving ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                 Cancelar
               </button>
-              <button onClick={registerMovement} disabled={saving || moveList.length===0} style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (saving || moveList.length===0) ? "not-allowed" : "pointer",
-                background: showMoveModal === "entrada" ? "linear-gradient(135deg,#00d4aa,#0F6E56)" : "linear-gradient(135deg,#ff6b6b,#c94848)", border:"none", color:"#fff", opacity: (saving || moveList.length===0) ? 0.5 : 1 }}>
-                {saving ? "Guardando…" : `✓ Guardar (${moveList.length} artículo${moveList.length!==1?"s":""})`}
+              <button onClick={showMoveModal === "transferencia" ? registerTransfer : registerMovement}
+                disabled={saving || moveList.length===0 || (showMoveModal === "transferencia" && !transferTo)}
+                style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (saving || moveList.length===0) ? "not-allowed" : "pointer",
+                background: showMoveModal === "entrada" ? "linear-gradient(135deg,#00d4aa,#0F6E56)" : showMoveModal === "transferencia" ? "linear-gradient(135deg,#AFA9EC,#8B7FD8)" : "linear-gradient(135deg,#ff6b6b,#c94848)", border:"none", color:"#fff", opacity: (saving || moveList.length===0) ? 0.5 : 1 }}>
+                {saving ? "Guardando…" : `✓ ${showMoveModal === "transferencia" ? "Transferir" : "Guardar"} (${moveList.length} artículo${moveList.length!==1?"s":""})`}
               </button>
             </div>
           </div>
