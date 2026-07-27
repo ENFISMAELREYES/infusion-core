@@ -41,7 +41,14 @@ async function fetchCatalog(token, center) {
           { fieldPath: "insurance" }, { fieldPath: "center" },
           { fieldPath: "meds" }, { fieldPath: "allergies" },
         ]},
-        limit: 200,
+        // Filtrar por centro AQUÍ (no después en el navegador), para que el
+        // límite no se desperdicie en sesiones del otro centro.
+        ...(center ? { where: { fieldFilter: { field: { fieldPath: "center" }, op: "EQUAL", value: { stringValue: center } } } } : {}),
+        // Antes eran 200 -- con más de un año de operación ya se supera esa
+        // cifra, y cualquier paciente cuyas sesiones cayeran fuera de esas
+        // 200 (sin orden garantizado) desaparecía del buscador. Solo se
+        // seleccionan campos ligeros, así que un límite alto es barato.
+        limit: 3000,
       }
     })
   });
@@ -66,7 +73,7 @@ async function fetchCatalog(token, center) {
     return unique;
   };
 
-  const filtered   = center ? sessions.filter(s => s.center === center) : sessions;
+  const filtered   = sessions; // el filtro de centro ya se aplicó en la consulta
   const patients   = dedupe(filtered, "patientName");
   const physicians = [...new Set(filtered.map(s => s.physician).filter(Boolean))].map(p => ({ physician: p }));
   const diagnoses  = [...new Set(filtered.map(s => s.diagnosis).filter(Boolean))].map(d => ({ diagnosis: d }));
