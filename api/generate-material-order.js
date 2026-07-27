@@ -31,7 +31,7 @@ export const config = { api: { responseLimit: "10mb" } };
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { center, cipiVariant, patientName, cycle, date, groups, note, anexoNumber, scope } = req.body;
+  const { center, cipiVariant, patientName, cycle, date, groups, note, anexoNumber, scope, concepto } = req.body;
 
   try {
     const centerKey = (center || "CITIO").toUpperCase();
@@ -76,6 +76,7 @@ export default async function handler(req, res) {
     }
 
     const title = anexoNumber ? `ANEXO ${anexoNumber} A SOLICITUD DE MATERIAL`
+      : concepto ? "SOLICITUD DE COMPRA"
       : scope === "medicamentos" ? "SOLICITUD DE MEDICAMENTOS"
       : scope === "material" ? "SOLICITUD DE MATERIAL"
       : "SOLICITUD DE MATERIAL";
@@ -94,10 +95,14 @@ export default async function handler(req, res) {
     doc.font("Helvetica-Bold").text("EMPRESA:", 45, y, { continued: true, width: 200 }).font("Helvetica").text(`  ${centerKey}${centerKey === "CIPI" ? ` (${(cipiVariant||"PRO").toUpperCase()})` : ""}`);
     doc.font("Helvetica-Bold").text("FECHA DE SOLICITUD:", 300, y, { continued: true }).font("Helvetica").text(`  ${todayStr}`);
     y += 16;
-    doc.font("Helvetica-Bold").text("CONCEPTO:", 45, y, { continued: true }).font("Helvetica").text(`  ${(patientName || "").toUpperCase()} ${cycle || ""}`.trim());
+    doc.font("Helvetica-Bold").text("CONCEPTO:", 45, y, { continued: true }).font("Helvetica").text(`  ${concepto ? concepto.toUpperCase() : `${(patientName || "").toUpperCase()} ${cycle || ""}`.trim()}`);
     y += 16;
-    doc.font("Helvetica-Bold").text("FECHA DE ENTREGA:", 45, y, { continued: true }).font("Helvetica").text(`  ${fmtDate(date)}`);
-    y += 20;
+    if (date) {
+      doc.font("Helvetica-Bold").text("FECHA DE ENTREGA:", 45, y, { continued: true }).font("Helvetica").text(`  ${fmtDate(date)}`);
+      y += 20;
+    } else {
+      y += 4;
+    }
     doc.moveTo(45, y).lineTo(45 + W, y).lineWidth(1).strokeColor(LINE).stroke();
     y += 14;
 
@@ -123,15 +128,28 @@ export default async function handler(req, res) {
     if (note) {
       sectionTitle("NOTA");
       doc.fontSize(9.5).fillColor("#000").font("Helvetica").text(note, 45, y, { width: W });
+      y = doc.y + 10;
     }
+
+    // Firmas de solicita/autoriza al final -- en todos los documentos que
+    // genera este endpoint (pedidos de sesión, anexos, y solicitudes de compra).
+    const sigBoxY = Math.max(y + 20, doc.page.height - 130);
+    if (sigBoxY + 60 > doc.page.height - 45) { doc.addPage(); drawWatermark(); }
+    const finalSigY = (sigBoxY + 60 > doc.page.height - 45) ? 60 : sigBoxY;
+    const sigW = (W - 30) / 2;
+    [["SOLICITA", 45], ["AUTORIZA", 45 + sigW + 30]].forEach(([label, x]) => {
+      doc.moveTo(x, finalSigY + 40).lineTo(x + sigW, finalSigY + 40).lineWidth(0.75).strokeColor(LINE).stroke();
+      doc.fontSize(9).fillColor(GRAY).font("Helvetica-Bold").text(label, x, finalSigY + 44, { width: sigW, align: "center" });
+      doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("Nombre y firma", x, finalSigY + 58, { width: sigW, align: "center" });
+    });
 
     doc.end();
     await new Promise((resolve, reject) => { doc.on("end", resolve); doc.on("error", reject); });
 
     const pdfBuffer = Buffer.concat(chunks);
     res.setHeader("Content-Type", "application/pdf");
-    const fnamePrefix = anexoNumber ? `ANEXO${anexoNumber}` : "SOLICITUD";
-    res.setHeader("Content-Disposition", `inline; filename="${fnamePrefix}_${centerKey}_${(patientName || "paciente").replace(/\s+/g, "_")}.pdf"`);
+    const fnamePrefix = anexoNumber ? `ANEXO${anexoNumber}` : concepto ? "SOLICITUD_COMPRA" : "SOLICITUD";
+    res.setHeader("Content-Disposition", `inline; filename="${fnamePrefix}_${centerKey}_${(patientName || concepto || "solicitud").toString().replace(/\s+/g, "_").slice(0, 40)}.pdf"`);
     res.send(pdfBuffer);
 
   } catch (e) {
