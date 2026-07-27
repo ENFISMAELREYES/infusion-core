@@ -75,6 +75,7 @@ export default function Inventario() {
   const [invoiceFolio, setInvoiceFolio] = useState(""); // folio fiscal opcional, para relacionar con una factura
   const [saving, setSaving] = useState(false);
   const [xmlReview, setXmlReview] = useState(null); // [{descripcion, cantidad, matchedItem}] mientras se revisa antes de agregar
+  const [xmlReceptor, setXmlReceptor] = useState(""); // nombre del receptor en la factura, para confirmar que corresponde al almacén
 
   const load = async () => {
     if (!user) return;
@@ -154,6 +155,9 @@ export default function Inventario() {
         return { descripcion, cantidad, matchedItem: suggestCatalogMatch(descripcion) };
       });
       setXmlReview(review);
+
+      let receptorNode = xmlDoc.getElementsByTagName("cfdi:Receptor")[0] || xmlDoc.getElementsByTagName("Receptor")[0];
+      setXmlReceptor(receptorNode?.getAttribute("Nombre") || "");
 
       let uuidNode = xmlDoc.getElementsByTagName("tfd:TimbreFiscalDigital")[0] || xmlDoc.getElementsByTagName("TimbreFiscalDigital")[0];
       const uuid = uuidNode?.getAttribute("UUID") || "";
@@ -293,10 +297,10 @@ export default function Inventario() {
         <div>
           <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
             <input placeholder="Buscar artículo..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, flex:1, minWidth:200 }} />
-            <button onClick={() => { setShowMoveModal("entrada"); setMoveList([]); setXmlReview(null); setInvoiceFolio(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+            <button onClick={() => { setShowMoveModal("entrada"); setMoveList([]); setXmlReview(null); setXmlReceptor(""); setInvoiceFolio(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
               ↓ Registrar entrada
             </button>
-            <button onClick={() => { setShowMoveModal("salida"); setMoveList([]); setXmlReview(null); setInvoiceFolio(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
+            <button onClick={() => { setShowMoveModal("salida"); setMoveList([]); setXmlReview(null); setXmlReceptor(""); setInvoiceFolio(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
               ↑ Registrar salida
             </button>
           </div>
@@ -349,7 +353,8 @@ export default function Inventario() {
             </div>
           ) : events.filter(e => e.warehouse === warehouse).map(ev => {
             const isOpen = expandedEvent === ev.id;
-            const itemCount = (ev.items || []).length;
+            const evItems = Array.isArray(ev.items) ? ev.items : [];
+            const itemCount = evItems.length;
             return (
               <div key={ev.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
                 <div onClick={() => setExpandedEvent(isOpen ? null : ev.id)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
@@ -365,7 +370,7 @@ export default function Inventario() {
                 </div>
                 {isOpen && (
                   <div style={{ padding:"0 16px 14px", display:"flex", flexDirection:"column", gap:4 }}>
-                    {(ev.items || []).map((it, i) => (
+                    {evItems.map((it, i) => (
                       <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"#ccc", padding:"3px 0" }}>
                         <span>{it.item}</span><span style={{ color: ev.type==="entrada" ? "#00d4aa" : "#ff6b6b" }}>{it.qty}</span>
                       </div>
@@ -385,7 +390,7 @@ export default function Inventario() {
       )}
 
       {showMoveModal && (
-        <div onClick={() => !saving && (setShowMoveModal(null), setXmlReview(null))}
+        <div onClick={() => !saving && (setShowMoveModal(null), setXmlReview(null), setXmlReceptor(""))}
           style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:460, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
             <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>
@@ -402,17 +407,14 @@ export default function Inventario() {
             {xmlReview && (
               <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                 <div style={{ padding:"10px 12px", borderRadius:9, background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.35)" }}>
-                  <div style={{ fontSize:11, color:"#ffb347", fontWeight:600, marginBottom:6 }}>⚠️ Confirma el almacén destino antes de continuar:</div>
-                  <div style={{ display:"flex", gap:6 }}>
-                    {WAREHOUSES.map(w => (
-                      <button key={w.key} onClick={() => setWarehouse(w.key)} style={{
-                        flex:1, padding:"7px", borderRadius:7, fontSize:11, fontWeight:700, cursor:"pointer",
-                        background: warehouse===w.key ? "rgba(255,179,71,0.25)" : "rgba(255,255,255,0.04)",
-                        border: `2px solid ${warehouse===w.key ? "#ffb347" : "rgba(255,255,255,0.08)"}`,
-                        color: warehouse===w.key ? "#ffb347" : "#666",
-                      }}>{w.label}</button>
-                    ))}
+                  <div style={{ fontSize:11, color:"#ffb347", fontWeight:600, marginBottom:2 }}>⚠️ Confirma que coincide antes de continuar:</div>
+                  <div style={{ fontSize:12, color:"#ccc" }}>
+                    Receptor en la factura: <strong style={{ color:"#fff" }}>{xmlReceptor || "(no se encontró el nombre)"}</strong>
                   </div>
+                  <div style={{ fontSize:12, color:"#ccc", marginTop:2 }}>
+                    Almacén seleccionado: <strong style={{ color:"#ffb347" }}>{WAREHOUSES.find(w=>w.key===warehouse)?.label}</strong>
+                  </div>
+                  <div style={{ fontSize:10, color:"#888", marginTop:4 }}>Si no corresponde, cierra este cuadro y cambia de pestaña de almacén arriba antes de volver a intentar.</div>
                 </div>
                 <div style={{ fontSize:12, color:"#AFA9EC", fontWeight:600 }}>Revisa el emparejamiento antes de agregar ({xmlReview.length} conceptos)</div>
                 <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:280, overflowY:"auto" }}>
