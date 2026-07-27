@@ -91,6 +91,7 @@ export default function Inventario() {
   const [moveReason, setMoveReason] = useState("");
   const [invoiceFolio, setInvoiceFolio] = useState(""); // folio fiscal opcional, para relacionar con una factura
   const [transferTo, setTransferTo] = useState(""); // almacén destino, solo para transferencias
+  const [purchaseConcept, setPurchaseConcept] = useState(""); // concepto manual para solicitud de compra
   const [saving, setSaving] = useState(false);
   const [xmlReview, setXmlReview] = useState(null); // [{descripcion, cantidad, matchedItem}] mientras se revisa antes de agregar
   const [xmlReceptor, setXmlReceptor] = useState(""); // nombre del receptor en la factura, para confirmar que corresponde al almacén
@@ -367,6 +368,40 @@ export default function Inventario() {
     }
   };
 
+  // Genera el PDF de solicitud de compra (no registra ningún movimiento de
+  // inventario -- solo el documento para pedir a QualMedical; la entrada real
+  // se registra aparte cuando llega la mercancía, igual que siempre).
+  const generatePurchaseOrder = async () => {
+    if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
+    if (!purchaseConcept.trim()) { alert("Escribe el concepto de la solicitud."); return; }
+    setSaving(true);
+    try {
+      const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
+      moveList.forEach(({ item, qty }) => {
+        const cat = MASTER_CATALOG.find(c => c.item === item)?.category;
+        if (MED_CATEGORIES.includes(cat)) groups.MEDICAMENTOS.push({ item, qty });
+        else if (/CLORURO DE SODIO|GLUCOSA|HARTMANN/i.test(item)) groups.SOLUCIONES.push({ item, qty });
+        else groups.INSUMOS.push({ item, qty });
+      });
+      const centerForPdf = warehouse.includes("CIPI") ? "CIPI" : "CITIO";
+      const cipiVariantForPdf = warehouse === "QUAL_CIPI" || warehouse === "CIPI_PED" ? "PED" : "PRO";
+      const res = await fetch("/api/generate-material-order", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ center: centerForPdf, cipiVariant: cipiVariantForPdf, concepto: purchaseConcept, groups }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setShowMoveModal(null); setMoveList([]); setPurchaseConcept("");
+    } catch (e) {
+      alert("Error al generar la solicitud de compra: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const registerMovement = async () => {
     if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
     setSaving(true);
@@ -554,6 +589,9 @@ export default function Inventario() {
                 🔄 Transferir a {warehouse === "QUAL_CITIO" ? "Qual CIPI" : "Qual CITIO"}
               </button>
             )}
+            <button onClick={() => { setShowMoveModal("compra"); setMoveList([]); setPurchaseConcept(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.3)", color:"#ffb347" }}>
+              🧾 Solicitud de compra
+            </button>
           </div>
 
           {lowStock.length > 0 && (
@@ -660,8 +698,16 @@ export default function Inventario() {
           style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:460, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
             <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>
-              {showMoveModal === "entrada" ? "↓ Registrar entrada" : showMoveModal === "salida" ? "↑ Registrar salida" : "🔄 Transferir"} — {warehouseLabel(warehouse)}
+              {showMoveModal === "entrada" ? "↓ Registrar entrada" : showMoveModal === "salida" ? "↑ Registrar salida" : showMoveModal === "compra" ? "🧾 Solicitud de compra" : "🔄 Transferir"} — {warehouseLabel(warehouse)}
             </div>
+
+            {showMoveModal === "compra" && (
+              <div>
+                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Concepto de la solicitud</label>
+                <input placeholder="Ej. Reabastecimiento de insumos generales" value={purchaseConcept} onChange={e => setPurchaseConcept(e.target.value)} style={inputStyle} />
+                <div style={{ fontSize:10, color:"#666", marginTop:4 }}>Este documento solo genera el PDF para pedirlo a QualMedical -- no descuenta ni suma nada al inventario. La entrada real se registra aparte cuando llegue la mercancía.</div>
+              </div>
+            )}
 
             {showMoveModal === "transferencia" && (
               <div style={{ padding:"8px 12px", borderRadius:9, background:"rgba(175,169,236,0.08)", border:"1px solid rgba(175,169,236,0.25)", fontSize:12, color:"#AFA9EC" }}>
@@ -762,11 +808,11 @@ export default function Inventario() {
               <button onClick={() => setShowMoveModal(null)} disabled={saving} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, cursor: saving ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                 Cancelar
               </button>
-              <button onClick={showMoveModal === "transferencia" ? registerTransfer : registerMovement}
-                disabled={saving || moveList.length===0 || (showMoveModal === "transferencia" && !transferTo)}
+              <button onClick={showMoveModal === "transferencia" ? registerTransfer : showMoveModal === "compra" ? generatePurchaseOrder : registerMovement}
+                disabled={saving || moveList.length===0 || (showMoveModal === "transferencia" && !transferTo) || (showMoveModal === "compra" && !purchaseConcept.trim())}
                 style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (saving || moveList.length===0) ? "not-allowed" : "pointer",
-                background: showMoveModal === "entrada" ? "linear-gradient(135deg,#00d4aa,#0F6E56)" : showMoveModal === "transferencia" ? "linear-gradient(135deg,#AFA9EC,#8B7FD8)" : "linear-gradient(135deg,#ff6b6b,#c94848)", border:"none", color:"#fff", opacity: (saving || moveList.length===0) ? 0.5 : 1 }}>
-                {saving ? "Guardando…" : `✓ ${showMoveModal === "transferencia" ? "Transferir" : "Guardar"} (${moveList.length} artículo${moveList.length!==1?"s":""})`}
+                background: showMoveModal === "entrada" ? "linear-gradient(135deg,#00d4aa,#0F6E56)" : showMoveModal === "transferencia" ? "linear-gradient(135deg,#AFA9EC,#8B7FD8)" : showMoveModal === "compra" ? "linear-gradient(135deg,#ffb347,#e08e2a)" : "linear-gradient(135deg,#ff6b6b,#c94848)", border:"none", color: showMoveModal === "compra" ? "#000" : "#fff", opacity: (saving || moveList.length===0) ? 0.5 : 1 }}>
+                {saving ? (showMoveModal === "compra" ? "Generando…" : "Guardando…") : `✓ ${showMoveModal === "transferencia" ? "Transferir" : showMoveModal === "compra" ? "Generar PDF" : "Guardar"} (${moveList.length} artículo${moveList.length!==1?"s":""})`}
               </button>
             </div>
           </div>
