@@ -49,9 +49,20 @@ const WAREHOUSES = [
   { key: "CIPI_PRO", label: "CIPI PRO" },
   { key: "CIPI_PED", label: "CIPI PED" },
 ];
+// Inventario general de la farmacia (QualMedical) -- todo el medicamento
+// pertenece a esta farmacia antes de asignarse a un centro. Solo el jefe lo
+// ve; para enfermería el flujo se ve exactamente igual que hasta ahora.
+const QUAL_WAREHOUSE = { key: "QUAL", label: "Inventario Qual (farmacia)" };
+// Categorías de MASTER_CATALOG que se consideran "medicamento" para efectos
+// del descuento automático de Inventario Qual (insumos/soluciones no aplican).
+const MED_CATEGORIES = ["Medicamentos", "Oncológicos", "Inmunoterapia"];
 
 function inventoryDocId(warehouse, item) {
   return `${warehouse}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
+}
+
+function warehouseLabel(key) {
+  return [...WAREHOUSES, QUAL_WAREHOUSE].find(w => w.key === key)?.label || key;
 }
 
 export default function Inventario() {
@@ -98,6 +109,7 @@ export default function Inventario() {
   };
 
   useEffect(() => { load(); }, [user]);
+  useEffect(() => { if (!isJefe && warehouse === "QUAL") setWarehouse("CITIO"); }, [isJefe, warehouse]);
 
   const warehouseInventory = inventory.filter(i => i.warehouse === warehouse);
   const filteredInventory = search.trim()
@@ -324,6 +336,47 @@ export default function Inventario() {
       });
       await checkOk(evRes, "Registro del evento de movimiento");
 
+      // Si es una entrada de MEDICAMENTO a un almacén de centro (no a Qual
+      // mismo), es en realidad un traslado desde la farmacia -- se descuenta
+      // solo de Inventario Qual, sin que enfermería tenga que hacer nada
+      // aparte. Insumos/soluciones generales no vienen de Qual, no aplica.
+      if (type === "entrada" && warehouse !== "QUAL") {
+        const medItems = moveList.filter(({ item }) => {
+          const cat = MASTER_CATALOG.find(c => c.item === item)?.category;
+          return MED_CATEGORIES.includes(cat);
+        });
+        if (medItems.length > 0) {
+          for (const { item, qty } of medItems) {
+            const qualDocId = inventoryDocId("QUAL", item);
+            const qualExisting = inventory.find(i => i.id === qualDocId);
+            const qualCurrentStock = qualExisting?.currentStock ?? 0;
+            const catalogEntry = MASTER_CATALOG.find(c => c.item === item);
+            const qualRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${qualDocId}`, {
+              method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+              body: JSON.stringify({ fields: {
+                item: { stringValue: item }, warehouse: { stringValue: "QUAL" },
+                category: { stringValue: catalogEntry?.category || qualExisting?.category || "" },
+                unit: { stringValue: catalogEntry?.unit || qualExisting?.unit || "PIEZA" },
+                currentStock: toFV(qualCurrentStock - qty), minStock: toFV(qualExisting?.minStock ?? 0),
+                lastCost: toFV(qualExisting?.lastCost ?? 0), avgCost: toFV(qualExisting?.avgCost ?? 0), totalReceived: toFV(qualExisting?.totalReceived ?? 0),
+                lastUpdated: { stringValue: new Date().toISOString() },
+              }}),
+            });
+            await checkOk(qualRes, `Traslado desde Qual de "${item}"`);
+          }
+          await fetch(`${FIRESTORE_BASE_URL}/inventory_events`, {
+            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({ fields: {
+              type: { stringValue: "salida" }, warehouse: { stringValue: "QUAL" },
+              items: toFV(medItems),
+              reason: { stringValue: `Traslado automático a ${warehouseLabel(warehouse)}` },
+              userEmail: { stringValue: profile?.email || user?.email || "" },
+              createdAt: { stringValue: new Date().toISOString() },
+            }}),
+          });
+        }
+      }
+
       setShowMoveModal(null); setMoveList([]); setMoveReason(""); setInvoiceFolio("");
       load();
     } catch (e) {
@@ -358,15 +411,20 @@ export default function Inventario() {
       <div style={{ marginBottom:24 }}>
         <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Inventario</h1>
         <p style={{ fontSize:13, color:"#555" }}>Existencias y movimientos de entrada/salida de material</p>
+        {warehouse === "QUAL" && (
+          <p style={{ fontSize:12, color:"#ffb347", marginTop:6 }}>
+            📦 Stock general recibido de la farmacia QualMedical, antes de asignarse a un centro. Se descuenta solo cuando enfermería registra la entrada del medicamento en CITIO/CIPI PRO/CIPI PED — no requiere ninguna acción aparte de ellas.
+          </p>
+        )}
       </div>
 
       <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
-        {WAREHOUSES.map(w => (
+        {[...WAREHOUSES, ...(isJefe ? [QUAL_WAREHOUSE] : [])].map(w => (
           <button key={w.key} onClick={() => setWarehouse(w.key)} style={{
             padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
-            background: warehouse===w.key ? "rgba(79,195,247,0.12)" : "rgba(255,255,255,0.04)",
-            border: `1px solid ${warehouse===w.key ? "rgba(79,195,247,0.3)" : "rgba(255,255,255,0.08)"}`,
-            color: warehouse===w.key ? "#4fc3f7" : "#666",
+            background: warehouse===w.key ? (w.key==="QUAL" ? "rgba(255,179,71,0.12)" : "rgba(79,195,247,0.12)") : "rgba(255,255,255,0.04)",
+            border: `1px solid ${warehouse===w.key ? (w.key==="QUAL" ? "rgba(255,179,71,0.3)" : "rgba(79,195,247,0.3)") : "rgba(255,255,255,0.08)"}`,
+            color: warehouse===w.key ? (w.key==="QUAL" ? "#ffb347" : "#4fc3f7") : "#666",
           }}>{w.label}</button>
         ))}
       </div>
@@ -497,7 +555,7 @@ export default function Inventario() {
           style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:460, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
             <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>
-              {showMoveModal === "entrada" ? "↓ Registrar entrada" : "↑ Registrar salida"} — {WAREHOUSES.find(w=>w.key===warehouse)?.label}
+              {showMoveModal === "entrada" ? "↓ Registrar entrada" : "↑ Registrar salida"} — {warehouseLabel(warehouse)}
             </div>
 
             {showMoveModal === "entrada" && !xmlReview && (
@@ -515,7 +573,7 @@ export default function Inventario() {
                     Receptor en la factura: <strong style={{ color:"#fff" }}>{xmlReceptor || "(no se encontró el nombre)"}</strong>
                   </div>
                   <div style={{ fontSize:12, color:"#ccc", marginTop:2 }}>
-                    Almacén seleccionado: <strong style={{ color:"#ffb347" }}>{WAREHOUSES.find(w=>w.key===warehouse)?.label}</strong>
+                    Almacén seleccionado: <strong style={{ color:"#ffb347" }}>{warehouseLabel(warehouse)}</strong>
                   </div>
                   <div style={{ fontSize:10, color:"#888", marginTop:4 }}>Si no corresponde, cierra este cuadro y cambia de pestaña de almacén arriba antes de volver a intentar.</div>
                 </div>
@@ -537,7 +595,7 @@ export default function Inventario() {
                     Cancelar
                   </button>
                   <button onClick={confirmXmlReview} style={{ flex:2, padding:"9px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.15)", border:"1px solid rgba(175,169,236,0.4)", color:"#AFA9EC" }}>
-                    ✓ Agregar {xmlReview.filter(r=>r.matchedItem).length} artículo{xmlReview.filter(r=>r.matchedItem).length!==1?"s":""} a {WAREHOUSES.find(w=>w.key===warehouse)?.label}
+                    ✓ Agregar {xmlReview.filter(r=>r.matchedItem).length} artículo{xmlReview.filter(r=>r.matchedItem).length!==1?"s":""} a {warehouseLabel(warehouse)}
                   </button>
                 </div>
               </div>
