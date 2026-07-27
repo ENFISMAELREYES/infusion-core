@@ -131,13 +131,13 @@ export default async function handler(req, res) {
       y = doc.y + 10;
     }
 
-    // Firmas de solicita/autoriza al final -- en todos los documentos que
-    // genera este endpoint (pedidos de sesión, anexos, y solicitudes de compra).
+    // Firmas de solicita/autoriza/recibe al final -- en todos los documentos
+    // que genera este endpoint (pedidos de sesión, anexos, y solicitudes de compra).
     const sigBoxY = Math.max(y + 20, doc.page.height - 130);
     if (sigBoxY + 60 > doc.page.height - 45) { doc.addPage(); drawWatermark(); }
     const finalSigY = (sigBoxY + 60 > doc.page.height - 45) ? 60 : sigBoxY;
-    const sigW = (W - 30) / 2;
-    [["SOLICITA", 45], ["AUTORIZA", 45 + sigW + 30]].forEach(([label, x]) => {
+    const sigW = (W - 40) / 3;
+    [["SOLICITA", 45], ["AUTORIZA", 45 + sigW + 20], ["RECIBE", 45 + (sigW + 20) * 2]].forEach(([label, x]) => {
       doc.moveTo(x, finalSigY + 40).lineTo(x + sigW, finalSigY + 40).lineWidth(0.75).strokeColor(LINE).stroke();
       doc.fontSize(9).fillColor(GRAY).font("Helvetica-Bold").text(label, x, finalSigY + 44, { width: sigW, align: "center" });
       doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("Nombre y firma", x, finalSigY + 58, { width: sigW, align: "center" });
