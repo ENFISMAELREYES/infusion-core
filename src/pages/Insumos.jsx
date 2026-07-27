@@ -116,6 +116,9 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   const [anexoQty, setAnexoQty] = useState("1");
   const [anexoNote, setAnexoNote] = useState("");
   const [savingAnexo, setSavingAnexo] = useState(false);
+  const [showInvModal, setShowInvModal] = useState(false);
+  const [invItems, setInvItems] = useState([]);
+  const [savingInv, setSavingInv] = useState(false);
 
   const toFV = (val) => {
     if (typeof val === "string") return { stringValue: val };
@@ -227,6 +230,82 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     await downloadPharmacyOrder(s, combinedMaterial, note, cipiVariant, "todo");
   };
 
+  const openInvModal = () => {
+    setInvItems(material.items.map(it => ({ ...it })));
+    setShowInvModal(true);
+  };
+  const setInvQty = (idx, qty) => setInvItems(prev => prev.map((it,i) => i===idx ? { ...it, qty: Math.max(0, qty) } : it));
+
+  // Da de baja del inventario los artículos confirmados -- acción
+  // independiente del retiro de la sesión (antes vivía dentro del flujo de
+  // firmas de NurseView, pero si ese flujo se interrumpía a medias podía
+  // duplicar el cargo; ahora es un paso aparte, deliberado, que se puede
+  // hacer en cualquier momento).
+  const confirmInvSalida = async () => {
+    setSavingInv(true);
+    try {
+      const warehouse = s.center === "CIPI" ? `CIPI_${(cipiVariant || "PRO").toUpperCase()}` : (s.center || "");
+      const inventoryDocId = (w, item) => `${w}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
+      const checkOk = async (res, label) => {
+        if (!res.ok) { let msg=`Error ${res.status}`; try{const b=await res.json(); msg=b?.error?.message||msg;}catch{} throw new Error(`${label}: ${msg}`); }
+      };
+      const itemsToDeduct = invItems.filter(x => x.qty > 0);
+
+      for (const it of itemsToDeduct) {
+        const docId = inventoryDocId(warehouse, it.item);
+        let currentStock = 0, minStock = 0, category = "", unit = "PIEZA";
+        try {
+          const getRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`, { headers:{ "Authorization":`Bearer ${token}` } });
+          if (getRes.ok) {
+            const doc = await getRes.json();
+            currentStock = parseInt(doc.fields?.currentStock?.integerValue || doc.fields?.currentStock?.doubleValue || 0);
+            minStock = parseInt(doc.fields?.minStock?.integerValue || 0);
+            category = doc.fields?.category?.stringValue || "";
+            unit = doc.fields?.unit?.stringValue || "PIEZA";
+          }
+        } catch {}
+        const invRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`,
+          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+            body: JSON.stringify({ fields: {
+              item: { stringValue: it.item }, warehouse: { stringValue: warehouse },
+              category: { stringValue: category }, unit: { stringValue: unit },
+              currentStock: toFV(currentStock - it.qty), minStock: toFV(minStock),
+              lastUpdated: { stringValue: new Date().toISOString() },
+            }}) });
+        await checkOk(invRes, `Existencias de "${it.item}"`);
+      }
+
+      if (itemsToDeduct.length > 0) {
+        const evRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory_events`,
+          { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+            body: JSON.stringify({ fields: {
+              type: { stringValue: "salida" }, warehouse: { stringValue: warehouse },
+              items: toFV(itemsToDeduct),
+              sessionId: { stringValue: s.id }, sessionPatientName: { stringValue: s.patientName || "" },
+              reason: { stringValue: "Baja de inventario de la sesión" },
+              userEmail: { stringValue: user?.email || "" },
+              createdAt: { stringValue: new Date().toISOString() },
+            }}) });
+        await checkOk(evRes, "Registro del evento de movimiento");
+      }
+
+      const doneRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=inventorySalidaDone&updateMask.fieldPaths=inventorySalidaAt`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            inventorySalidaDone: { booleanValue: true },
+            inventorySalidaAt: { stringValue: new Date().toISOString() },
+          }}) });
+      await checkOk(doneRes, "Marcar sesión como dada de baja");
+
+      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, inventorySalidaDone: true } : x));
+      setShowInvModal(false);
+    } catch (e) {
+      alert("Error al dar de baja el inventario: " + e.message);
+    } finally {
+      setSavingInv(false);
+    }
+  };
+
   return (
     <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
       <div onClick={onToggle} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
@@ -316,6 +395,16 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                   style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
                   📎 Todo junto
                 </button>
+
+                <button onClick={e => { e.stopPropagation(); if (!s.inventorySalidaDone) openInvModal(); }}
+                  disabled={s.inventorySalidaDone}
+                  title={s.inventorySalidaDone ? `Inventario ya dado de baja ${s.inventorySalidaAt ? new Date(s.inventorySalidaAt).toLocaleString("es-MX") : ""}` : "Descontar del inventario el material de esta sesión"}
+                  style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: s.inventorySalidaDone ? "default" : "pointer",
+                    background: s.inventorySalidaDone ? "rgba(0,212,170,0.08)" : "rgba(255,107,107,0.1)",
+                    border: `1px solid ${s.inventorySalidaDone ? "rgba(0,212,170,0.2)" : "rgba(255,107,107,0.25)"}`,
+                    color: s.inventorySalidaDone ? "#00d4aa" : "#ff6b6b" }}>
+                  {s.inventorySalidaDone ? "✓ Inventario dado de baja" : "📦 Dar de baja inventario"}
+                </button>
               </>
             )}
           </>
@@ -398,6 +487,38 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
               <button onClick={() => setShowAnexoModal(false)} disabled={savingAnexo} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
               <button onClick={generateAnexo} disabled={savingAnexo || anexoItems.length===0} style={{ flex:2, padding:"9px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"linear-gradient(135deg,#ffb347,#e08e2a)", border:"none", color:"#000", opacity: (savingAnexo||anexoItems.length===0)?0.5:1 }}>
                 {savingAnexo ? "Generando…" : `✓ Generar Anexo ${anexos.length+1}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showInvModal && (
+        <div onClick={() => !savingInv && setShowInvModal(false)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:440, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>📦 Dar de baja inventario</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{s.patientName} — revisa y ajusta antes de descontar del almacén de {isCipi ? `CIPI (${cipiVariant})` : s.center}</div>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:"50vh", overflowY:"auto" }}>
+              {invItems.map((it, i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 8px", borderRadius:8, background:"rgba(255,255,255,0.02)" }}>
+                  <span style={{ flex:1, fontSize:12, color:"#ccc" }}>{it.item}</span>
+                  <input type="number" min="0" value={it.qty} onChange={e => setInvQty(i, parseInt(e.target.value) || 0)}
+                    style={{ width:56, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:12, outline:"none", textAlign:"center" }} />
+                </div>
+              ))}
+              {invItems.length === 0 && <div style={{ fontSize:12, color:"#555", textAlign:"center", padding:12 }}>Sin material calculado para esta sesión.</div>}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setShowInvModal(false)} disabled={savingInv}
+                style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingInv ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                Cancelar
+              </button>
+              <button onClick={confirmInvSalida} disabled={savingInv}
+                style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingInv ? "wait" : "pointer", background:"linear-gradient(135deg,#ff6b6b,#c94848)", border:"none", color:"#fff", opacity: savingInv ? 0.6 : 1 }}>
+                {savingInv ? "Dando de baja…" : "✓ Confirmar baja de inventario"}
               </button>
             </div>
           </div>
