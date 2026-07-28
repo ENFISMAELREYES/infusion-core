@@ -531,10 +531,18 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
 export default function Insumos() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
+  // Solo Paola Vargas puede ver ambos centros siendo enfermera; el resto solo
+  // ve el material/inventario de su propio centro asignado.
+  const canSeeAllCenters = isJefe || profile?.name === "Paola Vargas";
   const [tab, setTab] = useState("consolidado");
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
-  const [centerFilter, setCenterFilter] = useState("Todos");
+  const [centerFilter, setCenterFilter] = useState(() => canSeeAllCenters ? "Todos" : (profile?.center || "CITIO"));
+  useEffect(() => {
+    if (!canSeeAllCenters && profile?.center && centerFilter !== profile.center) {
+      setCenterFilter(profile.center);
+    }
+  }, [profile, canSeeAllCenters]);
   const [dateFilter, setDateFilter] = useState("rango"); // "hoy" | "rango" | "todas"
   const [rangeFrom, setRangeFrom] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }));
   const [rangeTo, setRangeTo] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 6); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); });
@@ -767,7 +775,7 @@ export default function Insumos() {
       {tab === "consolidado" && (
         <div>
           <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
-            {["Todos","CITIO","CIPI"].map(c => (
+            {(canSeeAllCenters ? ["Todos","CITIO","CIPI"] : [profile?.center || "CITIO"]).map(c => (
               <button key={c} onClick={() => setCenterFilter(c)} style={{
                 padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
                 background: centerFilter===c ? "rgba(79,195,247,0.12)" : "rgba(255,255,255,0.04)",
