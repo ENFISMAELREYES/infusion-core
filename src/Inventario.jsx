@@ -74,8 +74,8 @@ function warehouseLabel(key) {
 export default function Inventario() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
-  // Solo Paola Vargas puede ver ambos centros siendo enfermera; el resto solo
-  // ve el inventario de su propio centro asignado (CIPI cubre PRO y PED).
+  // Solo Paola Vargas puede ver ambos centros siendo enfermera (incluyendo
+  // Qual); el resto solo ve el inventario de su propio centro asignado.
   const canSeeAllCenters = isJefe || profile?.name === "Paola Vargas";
   const allowedWarehouses = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI_PRO","CIPI_PED"] : ["CITIO"]);
   const [tab, setTab] = useState("existencias"); // "existencias" | "movimientos"
