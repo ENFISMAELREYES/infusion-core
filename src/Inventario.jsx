@@ -74,13 +74,20 @@ function warehouseLabel(key) {
 export default function Inventario() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
+  // Solo Paola Vargas puede ver ambos centros siendo enfermera; el resto solo
+  // ve el inventario de su propio centro asignado (CIPI cubre PRO y PED).
+  const canSeeAllCenters = isJefe || profile?.name === "Paola Vargas";
+  const allowedWarehouses = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI_PRO","CIPI_PED"] : ["CITIO"]);
   const [tab, setTab] = useState("existencias"); // "existencias" | "movimientos"
-  const [warehouse, setWarehouse] = useState("CITIO");
+  const [warehouse, setWarehouse] = useState(() => canSeeAllCenters ? "CITIO" : (allowedWarehouses?.[0] || "CITIO"));
+  useEffect(() => {
+    if (allowedWarehouses && !allowedWarehouses.includes(warehouse)) {
+      setWarehouse(allowedWarehouses[0]);
+    }
+  }, [profile]);
   const [token, setToken] = useState("");
   const [inventory, setInventory] = useState([]);
   const [events, setEvents] = useState([]);
-  const [purchaseOrders, setPurchaseOrders] = useState([]);
-  const [expandedPO, setExpandedPO] = useState(null);
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [search, setSearch] = useState("");
@@ -104,14 +111,12 @@ export default function Inventario() {
     try {
       const t = await user.getIdToken(true);
       setToken(t);
-      const [inv, ev, po] = await Promise.all([
+      const [inv, ev] = await Promise.all([
         fetchCollection(t, "inventory"),
         fetchCollection(t, "inventory_events"),
-        fetchCollection(t, "purchase_orders"),
       ]);
       setInventory(inv);
       setEvents(ev.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")));
-      setPurchaseOrders(po.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")));
     } catch (e) {
       console.error(e);
     } finally {
@@ -121,7 +126,7 @@ export default function Inventario() {
   };
 
   useEffect(() => { load(); }, [user]);
-  useEffect(() => { if (!isJefe && warehouse.startsWith("QUAL")) setWarehouse("CITIO"); }, [isJefe, warehouse]);
+  useEffect(() => { if (!canSeeAllCenters && warehouse.startsWith("QUAL")) setWarehouse("CITIO"); }, [canSeeAllCenters, warehouse]);
 
   const warehouseInventory = inventory.filter(i => i.warehouse === warehouse);
   const filteredInventory = search.trim()
@@ -398,48 +403,9 @@ export default function Inventario() {
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-
-      // Guardar la solicitud para rastreo -- no toca el inventario, solo
-      // queda el registro de que se pidió, con folio para poder ubicarla.
-      const now = new Date();
-      const folio = `SC-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(now.getHours()).padStart(2,"0")}${String(now.getMinutes()).padStart(2,"0")}${String(now.getSeconds()).padStart(2,"0")}`;
-      const checkOk = async (res, label) => {
-        if (!res.ok) { let msg=`Error ${res.status}`; try{const b=await res.json(); msg=b?.error?.message||msg;}catch{} throw new Error(`${label}: ${msg}`); }
-      };
-      const poRes = await fetch(`${FIRESTORE_BASE_URL}/purchase_orders`, {
-        method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ fields: {
-          folio: { stringValue: folio }, warehouse: { stringValue: warehouse },
-          concepto: { stringValue: purchaseConcept }, items: toFV(moveList),
-          status: { stringValue: "pendiente" },
-          userEmail: { stringValue: profile?.email || user?.email || "" },
-          createdAt: { stringValue: now.toISOString() },
-        }}),
-      });
-      await checkOk(poRes, "Registro de la solicitud de compra");
-
       setShowMoveModal(null); setMoveList([]); setPurchaseConcept("");
-      load();
     } catch (e) {
       alert("Error al generar la solicitud de compra: " + e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Marca una solicitud como recibida -- solo para rastreo, no toca el
-  // inventario (eso se registra aparte cuando llega la mercancía).
-  const markPOReceived = async (po) => {
-    setSaving(true);
-    try {
-      const res = await fetch(`${FIRESTORE_BASE_URL}/purchase_orders/${po.id}?updateMask.fieldPaths=status&updateMask.fieldPaths=receivedAt`, {
-        method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ fields: { status: { stringValue: "recibida" }, receivedAt: { stringValue: new Date().toISOString() } } }),
-      });
-      if (!res.ok) throw new Error(`Error ${res.status}`);
-      setPurchaseOrders(prev => prev.map(x => x.id === po.id ? { ...x, status: "recibida" } : x));
-    } catch (e) {
-      alert("Error al marcar como recibida: " + e.message);
     } finally {
       setSaving(false);
     }
@@ -597,7 +563,7 @@ export default function Inventario() {
       </div>
 
       <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
-        {[...WAREHOUSES, ...(isJefe ? QUAL_WAREHOUSES : [])].map(w => (
+        {[...WAREHOUSES.filter(w => !allowedWarehouses || allowedWarehouses.includes(w.key)), ...(canSeeAllCenters ? QUAL_WAREHOUSES : [])].map(w => (
           <button key={w.key} onClick={() => setWarehouse(w.key)} style={{
             padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
             background: warehouse===w.key ? (w.key.startsWith("QUAL") ? "rgba(255,179,71,0.12)" : "rgba(79,195,247,0.12)") : "rgba(255,255,255,0.04)",
@@ -608,7 +574,7 @@ export default function Inventario() {
       </div>
 
       <div style={{ display:"flex", gap:8, marginBottom:20, borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-        {[["existencias","Existencias"],["movimientos","Movimientos"],["solicitudes","Solicitudes de compra"]].map(([val,label]) => (
+        {[["existencias","Existencias"],["movimientos","Movimientos"]].map(([val,label]) => (
           <button key={val} onClick={() => setTab(val)} style={{
             padding:"10px 16px", fontSize:13, fontWeight:600, cursor:"pointer", background:"none", border:"none",
             borderBottom: tab===val ? "2px solid #00d4aa" : "2px solid transparent",
@@ -728,53 +694,6 @@ export default function Inventario() {
                         🗑 Eliminar (revertir existencias)
                       </button>
                     )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {tab === "solicitudes" && (
-        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-          {purchaseOrders.filter(po => po.warehouse === warehouse).length === 0 ? (
-            <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
-              Sin solicitudes de compra registradas todavía en este almacén.
-            </div>
-          ) : purchaseOrders.filter(po => po.warehouse === warehouse).map(po => {
-            const isOpen = expandedPO === po.id;
-            const poItems = Array.isArray(po.items) ? po.items : [];
-            const received = po.status === "recibida";
-            return (
-              <div key={po.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
-                <div onClick={() => setExpandedPO(isOpen ? null : po.id)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-                  <span style={{ fontSize:11, padding:"3px 10px", borderRadius:99, background: received ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)", color: received ? "#00d4aa" : "#ffb347" }}>
-                    {received ? "✓ Recibida" : "⏳ Pendiente"}
-                  </span>
-                  <span style={{ fontSize:11, color:"#AFA9EC", fontFamily:"'IBM Plex Mono', monospace" }}>{po.folio}</span>
-                  <span style={{ fontSize:13, color:"#f0f0f0" }}>{po.concepto}</span>
-                  <span style={{ fontSize:11, color:"#555" }}>{poItems.length} artículo{poItems.length!==1?"s":""}</span>
-                  <span style={{ marginLeft:"auto", fontSize:11, color:"#555" }}>{po.createdAt ? new Date(po.createdAt).toLocaleString("es-MX") : ""}</span>
-                  <span style={{ color:"#555" }}>{isOpen ? "▲" : "▼"}</span>
-                </div>
-                {isOpen && (
-                  <div style={{ padding:"0 16px 14px", display:"flex", flexDirection:"column", gap:4 }}>
-                    {poItems.map((it, i) => (
-                      <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"#ccc", padding:"3px 0" }}>
-                        <span>{it.item}</span><span style={{ color:"#ffb347" }}>{it.qty}</span>
-                      </div>
-                    ))}
-                    <div style={{ marginTop:8, paddingTop:8, borderTop:"1px solid rgba(255,255,255,0.06)", fontSize:11, color:"#666" }}>
-                      Solicitado por: {po.userEmail || "—"}
-                    </div>
-                    {!received && (
-                      <button onClick={e => { e.stopPropagation(); markPOReceived(po); }} disabled={saving}
-                        style={{ marginTop:8, alignSelf:"flex-start", padding:"5px 12px", borderRadius:7, fontSize:11, fontWeight:600, cursor: saving ? "wait" : "pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
-                        ✓ Marcar como recibida
-                      </button>
-                    )}
-                    <div style={{ fontSize:10, color:"#555", marginTop:2 }}>Marcarla como recibida es solo para rastreo -- registra la entrada real (a mano o por factura) por separado cuando llegue la mercancía.</div>
                   </div>
                 )}
               </div>
