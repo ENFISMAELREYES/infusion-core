@@ -2094,22 +2094,22 @@ function solutionItemFor(vol, type, catalog) {
 }
 
 function parsePresentationMg(itemName) {
-  const gr = itemName.match(/(\d+(?:\.\d+)?)\s*GR\.?/i);
+  const gr = itemName.match(/(\d+\.\d+|\.\d+|\d+)\s*GR\.?/i);
   if (gr) return parseFloat(gr[1]) * 1000;
-  const mg = itemName.match(/(\d+(?:\.\d+)?)\s*MG/i);
+  const mg = itemName.match(/(\d+\.\d+|\.\d+|\d+)\s*MG/i);
   if (mg) return parseFloat(mg[1]);
-  const mcg = itemName.match(/(\d+(?:\.\d+)?)\s*MCG/i);
+  const mcg = itemName.match(/(\d+\.\d+|\.\d+|\d+)\s*MCG/i);
   if (mcg) return parseFloat(mcg[1]) / 1000;
   return null;
 }
 
 function parseDoseMg(doseStr) {
   if (!doseStr) return null;
-  const gr = doseStr.match(/(\d+(?:\.\d+)?)\s*GR/i);
+  const gr = doseStr.match(/(\d+\.\d+|\.\d+|\d+)\s*GR/i);
   if (gr) return parseFloat(gr[1]) * 1000;
-  const mcg = doseStr.match(/(\d+(?:\.\d+)?)\s*(MCG|UG|MICROGR)/i);
+  const mcg = doseStr.match(/(\d+\.\d+|\.\d+|\d+)\s*(MCG|UG|MICROGR)/i);
   if (mcg) return parseFloat(mcg[1]) / 1000;
-  const mg = doseStr.match(/(\d+(?:\.\d+)?)/);
+  const mg = doseStr.match(/(\d+\.\d+|\.\d+|\d+)/);
   return mg ? parseFloat(mg[1]) : null;
 }
 
@@ -2193,6 +2193,12 @@ export function computeMedicationPieces(medName, doseStr, extraCatalog = [], ext
   }
 
   const totalMg = pieces.reduce((acc, p) => acc + p.mg * p.count, 0);
+  // Salvaguarda: si por algún error de captura de dosis el cálculo da un
+  // número de piezas irreal (ej. 100 frascos), mejor no calcular nada -- que
+  // se marque como pendiente de revisar a mano, en vez de dar un resultado
+  // silenciosamente absurdo.
+  if (pieces.some(p => p.count > 30)) return null;
+
   return { doseMg, pieces, totalMg, waste: totalMg - doseMg };
 }
 
@@ -2280,8 +2286,39 @@ const PREMEDICACION_DRUGS = new Set([
     add(EQUIPO_OPTIONS[session.equipoChoice], 1);
   }
 
+  // Aplicar los ajustes guardados desde el modal de solicitud (solo afecta
+  // insumos/soluciones, nunca al medicamento en sí -- eso se agrega después,
+  // ver nota abajo): artículos excluidos, cantidades editadas a mano, y
+  // material extra anexado.
+  (session.excludedMaterial || []).forEach(item => { delete combined[item]; });
+  Object.entries(session.qtyOverrides || {}).forEach(([item, qty]) => {
+    if (combined[item] !== undefined) combined[item] = qty;
+  });
+  (session.extraMaterial || []).forEach(({ item, qty }) => add(item, qty || 0));
+
+  // Piezas del medicamento en sí (frascos/ampolletas según la dosis) -- se
+  // agrega AL FINAL a propósito: su cantidad correcta solo la define
+  // pieceOverrides (o el cálculo automático), nunca qtyOverrides -- si el
+  // nombre de la presentación coincidiera por casualidad con algo ya en la
+  // lista de insumos, esto asegura que el medicamento tenga la última
+  // palabra y no quede pisado por un ajuste de insumos.
+  (session.meds || []).forEach((m, idx) => {
+    if (!m.name || !m.dose) return;
+    const medKey = `${idx}_${m.name}`;
+    const overridden = session.pieceOverrides?.[medKey];
+    if (overridden) {
+      overridden.forEach(({ item, count }) => {
+        if (count > 0) combined[item] = count;
+        else delete combined[item];
+      });
+    } else {
+      const auto = computeMedicationPieces(m.name, m.dose, extraCatalog, extraDefaults);
+      if (auto) auto.pieces.forEach(({ item, count }) => { if (count > 0) combined[item] = count; });
+    }
+  });
+
   return {
-    items: Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item)),
+    items: Object.entries(combined).filter(([, qty]) => qty !== undefined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item)),
     unmatched,
     unmatchedSolutions,
     pendingAlternatives,

@@ -485,6 +485,24 @@ const handleDataEdit = async (patientName, draft) => {
     finally { setSaving(false); }
   };
 
+  // Fusiona TODAS las variantes de un grupo hacia el nombre elegido (no
+  // necesariamente la "canónica" original) -- permite corregir el caso donde
+  // el nombre detectado primero no era el correcto.
+  const handleMergeInto = async (group, chosen) => {
+    const others = group.variants.filter(v => v !== chosen);
+    if (!confirm(`¿Usar "${chosen}" como nombre correcto?\n\nSe fusionarán: ${others.join(", ")}`)) return;
+    setSaving(true);
+    try {
+      let total = 0;
+      for (const v of others) {
+        total += await bulkUpdate(token, sessions, "patientName", v, chosen);
+      }
+      alert(`✓ Fusionado en ${total} sesión${total !== 1 ? "es" : ""}`);
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
   const handleStatusChange = async (patientName, status) => {
     try {
       await savePatientStatus(token, patientName, status);
@@ -737,16 +755,20 @@ const handleDataEdit = async (patientName, draft) => {
                       </div>
                     </div>
 
-                    {/* Variantes duplicadas */}
+                    {/* Variantes duplicadas -- se muestran TODAS (no solo las
+                        distintas a la canónica) para poder elegir cuál es
+                        el nombre correcto, en vez de que quede fijo el
+                        primero que se detectó */}
                     {hasDups && (
                       <div>
-                        <div style={{ fontSize:11, color:"#ffb347", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>⚠ Variantes similares</div>
-                        {g.variants.filter(v => v !== g.canonical).map((v, j) => (
+                        <div style={{ fontSize:11, color:"#ffb347", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>⚠ Variantes similares — elige cuál es el nombre correcto</div>
+                        {g.variants.map((v, j) => (
                           <div key={j} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                            <span style={{ fontSize:12, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{v}</span>
+                            <span style={{ fontSize:12, color: v === g.canonical ? "#f0f0f0" : "#888", fontWeight: v === g.canonical ? 600 : 400, fontFamily:"'IBM Plex Mono', monospace" }}>{v}</span>
+                            {v === g.canonical && <span style={{ fontSize:9, color:"#00d4aa", background:"rgba(0,212,170,0.1)", padding:"1px 6px", borderRadius:99 }}>en uso</span>}
                             {canEdit && (
-                            <button onClick={() => handleMerge(v, g.canonical)} style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
-                              Fusionar
+                            <button onClick={() => handleMergeInto(g, v)} style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+                              ✓ Usar este nombre
                             </button>
                           )}
                           </div>
@@ -937,6 +959,21 @@ function CatalogSection({ title, icon, groups, field, sessions, token, onRefresh
     finally { setSaving(false); }
   };
 
+  const handleMergeInto = async (group, chosen) => {
+    const others = group.variants.filter(v => v !== chosen);
+    if (!confirm(`¿Usar "${chosen}" como nombre correcto?\n\nSe fusionarán: ${others.join(", ")}`)) return;
+    setSaving(true);
+    try {
+      let total = 0;
+      for (const v of others) {
+        total += await bulkUpdate(token, sessions, field, v, chosen);
+      }
+      alert(`✓ Fusionado en ${total} sesión${total !== 1 ? "es" : ""}`);
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
   return (
     <div>
       <input placeholder={`Buscar en ${title.toLowerCase()}...`} value={search} onChange={e => setSearch(e.target.value)}
@@ -964,11 +1001,12 @@ function CatalogSection({ title, icon, groups, field, sessions, token, onRefresh
                   <div style={{ fontSize:11, color:"#555", marginTop:4 }}>{g.count} sesión{g.count !== 1 ? "es" : ""}</div>
                   {hasDups && (
                     <div style={{ marginTop:6 }}>
-                      <div style={{ fontSize:10, color:"#ffb347", letterSpacing:1, textTransform:"uppercase", marginBottom:4 }}>⚠ Variantes similares:</div>
-                      {g.variants.filter(v => v !== g.canonical).map((v, j) => (
+                      <div style={{ fontSize:10, color:"#ffb347", letterSpacing:1, textTransform:"uppercase", marginBottom:4 }}>⚠ Variantes similares — elige cuál es el nombre correcto:</div>
+                      {g.variants.map((v, j) => (
                         <div key={j} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                          <span style={{ fontSize:12, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{v}</span>
-                          <button onClick={() => handleMerge(v, g.canonical)} style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>Fusionar</button>
+                          <span style={{ fontSize:12, color: v === g.canonical ? "#f0f0f0" : "#888", fontWeight: v === g.canonical ? 600 : 400, fontFamily:"'IBM Plex Mono', monospace" }}>{v}</span>
+                          {v === g.canonical && <span style={{ fontSize:9, color:"#00d4aa", background:"rgba(0,212,170,0.1)", padding:"1px 6px", borderRadius:99 }}>en uso</span>}
+                          <button onClick={() => handleMergeInto(g, v)} style={{ fontSize:10, padding:"3px 8px", borderRadius:6, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✓ Usar este nombre</button>
                         </div>
                       ))}
                     </div>

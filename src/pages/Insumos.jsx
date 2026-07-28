@@ -103,17 +103,22 @@ function CatalogSuggestions({ query, catalog, onSelect }) {
 // Pedido, y — cuando se está viendo "todas las cargadas" — el botón de Anexar
 // para agregar material extra si hubo cambios el día de la sesión o después
 // (hasta 3 anexos por sesión).
-function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user, onRefresh, setSessions, downloadPharmacyOrder, showAnexo }) {
-  const pedidoHecho = !!s.pedidoGeneradoAt;
+function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user, onRefresh, setSessions, downloadPharmacyOrder, showAnexo, mode }) {
+  const medsHecho = !!s.medsPedidoGeneradoAt;
+  const materialHecho = !!s.materialPedidoGeneradoAt;
   const anexos = s.anexos || [];
   const isCipi = s.center === "CIPI";
   const [cipiVariant, setCipiVariant] = useState(s.cipiVariant || "PRO");
+  const [docsRevealed, setDocsRevealed] = useState(medsHecho || materialHecho || anexos.length > 0);
   const [showAnexoModal, setShowAnexoModal] = useState(false);
   const [anexoItems, setAnexoItems] = useState([]);
   const [anexoSearch, setAnexoSearch] = useState("");
   const [anexoQty, setAnexoQty] = useState("1");
   const [anexoNote, setAnexoNote] = useState("");
   const [savingAnexo, setSavingAnexo] = useState(false);
+  const [showInvModal, setShowInvModal] = useState(false);
+  const [invItems, setInvItems] = useState([]);
+  const [savingInv, setSavingInv] = useState(false);
 
   const toFV = (val) => {
     if (typeof val === "string") return { stringValue: val };
@@ -123,13 +128,13 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     return { stringValue: String(val) };
   };
 
-  const markPedidoHecho = async () => {
+  const markPedidoHecho = async (field) => {
     try {
       const nowIso = new Date().toISOString();
-      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=pedidoGeneradoAt`,
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=${field}`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-          body: JSON.stringify({ fields: { pedidoGeneradoAt: { stringValue: nowIso } } }) });
-      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, pedidoGeneradoAt: nowIso } : x));
+          body: JSON.stringify({ fields: { [field]: { stringValue: nowIso } } }) });
+      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, [field]: nowIso } : x));
     } catch (err) { /* si falla el marcado, no bloquea la descarga */ }
   };
 
@@ -162,21 +167,142 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       if (!res.ok) throw new Error(`Error ${res.status} al generar el anexo`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `ANEXO${anexoNumber}_${s.center}_${(s.patientName||"paciente").replace(/\s+/g,"_")}.pdf`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
 
       const newAnexos = [...anexos, { number: anexoNumber, items: anexoItems, note: anexoNote, generatedAt: new Date().toISOString() }];
       await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=anexos`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
           body: JSON.stringify({ fields: { anexos: toFV(newAnexos) } }) });
       setSessions(prev => prev.map(x => x.id === s.id ? { ...x, anexos: newAnexos } : x));
+
+      // Si el inventario de esta sesión ya se dio de baja (retiro ya
+      // completado), este anexo se captura DESPUÉS del cierre -- se descuenta
+      // del inventario aparte, automáticamente, ligado a la misma sesión.
+      if (s.inventorySalidaDone) {
+        const warehouse = s.center === "CIPI" ? `CIPI_${(cipiVariant || "PRO").toUpperCase()}` : (s.center || "");
+        const inventoryDocId = (w, item) => `${w}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
+        for (const it of anexoItems) {
+          const docId = inventoryDocId(warehouse, it.item);
+          let currentStock = 0, minStock = 0, category = "", unit = "PIEZA";
+          try {
+            const getRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`, { headers:{ "Authorization":`Bearer ${token}` } });
+            if (getRes.ok) {
+              const doc = await getRes.json();
+              currentStock = parseInt(doc.fields?.currentStock?.integerValue || doc.fields?.currentStock?.doubleValue || 0);
+              minStock = parseInt(doc.fields?.minStock?.integerValue || 0);
+              category = doc.fields?.category?.stringValue || "";
+              unit = doc.fields?.unit?.stringValue || "PIEZA";
+            }
+          } catch {}
+          await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`,
+            { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+              body: JSON.stringify({ fields: {
+                item: { stringValue: it.item }, warehouse: { stringValue: warehouse },
+                category: { stringValue: category }, unit: { stringValue: unit },
+                currentStock: toFV(currentStock - it.qty), minStock: toFV(minStock),
+                lastUpdated: { stringValue: new Date().toISOString() },
+              }}) });
+        }
+        await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory_events`,
+          { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+            body: JSON.stringify({ fields: {
+              type: { stringValue: "salida" }, warehouse: { stringValue: warehouse },
+              items: toFV(anexoItems),
+              sessionId: { stringValue: s.id }, sessionPatientName: { stringValue: s.patientName || "" },
+              reason: { stringValue: `Anexo ${anexoNumber} (posterior al retiro)` },
+              userEmail: { stringValue: user?.email || "" },
+              createdAt: { stringValue: new Date().toISOString() },
+            }}) });
+      }
+
       setShowAnexoModal(false); setAnexoItems([]); setAnexoNote("");
     } catch (e) {
       alert("Error al generar el anexo: " + e.message);
     } finally {
       setSavingAnexo(false);
+    }
+  };
+
+  const downloadAllTogether = async () => {
+    const anexoItemsFlat = anexos.flatMap(a => a.items || []);
+    const combinedMaterial = { items: [...material.items, ...anexoItemsFlat] };
+    await downloadPharmacyOrder(s, combinedMaterial, note, cipiVariant, "todo");
+  };
+
+  const openInvModal = () => {
+    setInvItems(material.items.map(it => ({ ...it })));
+    setShowInvModal(true);
+  };
+  const setInvQty = (idx, qty) => setInvItems(prev => prev.map((it,i) => i===idx ? { ...it, qty: Math.max(0, qty) } : it));
+
+  // Da de baja del inventario los artículos confirmados -- acción
+  // independiente del retiro de la sesión (antes vivía dentro del flujo de
+  // firmas de NurseView, pero si ese flujo se interrumpía a medias podía
+  // duplicar el cargo; ahora es un paso aparte, deliberado, que se puede
+  // hacer en cualquier momento).
+  const confirmInvSalida = async () => {
+    setSavingInv(true);
+    try {
+      const warehouse = s.center === "CIPI" ? `CIPI_${(cipiVariant || "PRO").toUpperCase()}` : (s.center || "");
+      const inventoryDocId = (w, item) => `${w}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
+      const checkOk = async (res, label) => {
+        if (!res.ok) { let msg=`Error ${res.status}`; try{const b=await res.json(); msg=b?.error?.message||msg;}catch{} throw new Error(`${label}: ${msg}`); }
+      };
+      const itemsToDeduct = invItems.filter(x => x.qty > 0);
+
+      for (const it of itemsToDeduct) {
+        const docId = inventoryDocId(warehouse, it.item);
+        let currentStock = 0, minStock = 0, category = "", unit = "PIEZA";
+        try {
+          const getRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`, { headers:{ "Authorization":`Bearer ${token}` } });
+          if (getRes.ok) {
+            const doc = await getRes.json();
+            currentStock = parseInt(doc.fields?.currentStock?.integerValue || doc.fields?.currentStock?.doubleValue || 0);
+            minStock = parseInt(doc.fields?.minStock?.integerValue || 0);
+            category = doc.fields?.category?.stringValue || "";
+            unit = doc.fields?.unit?.stringValue || "PIEZA";
+          }
+        } catch {}
+        const invRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`,
+          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+            body: JSON.stringify({ fields: {
+              item: { stringValue: it.item }, warehouse: { stringValue: warehouse },
+              category: { stringValue: category }, unit: { stringValue: unit },
+              currentStock: toFV(currentStock - it.qty), minStock: toFV(minStock),
+              lastUpdated: { stringValue: new Date().toISOString() },
+            }}) });
+        await checkOk(invRes, `Existencias de "${it.item}"`);
+      }
+
+      if (itemsToDeduct.length > 0) {
+        const evRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory_events`,
+          { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+            body: JSON.stringify({ fields: {
+              type: { stringValue: "salida" }, warehouse: { stringValue: warehouse },
+              items: toFV(itemsToDeduct),
+              sessionId: { stringValue: s.id }, sessionPatientName: { stringValue: s.patientName || "" },
+              reason: { stringValue: "Baja de inventario de la sesión" },
+              userEmail: { stringValue: user?.email || "" },
+              createdAt: { stringValue: new Date().toISOString() },
+            }}) });
+        await checkOk(evRes, "Registro del evento de movimiento");
+      }
+
+      const doneRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=inventorySalidaDone&updateMask.fieldPaths=inventorySalidaAt`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            inventorySalidaDone: { booleanValue: true },
+            inventorySalidaAt: { stringValue: new Date().toISOString() },
+          }}) });
+      await checkOk(doneRes, "Marcar sesión como dada de baja");
+
+      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, inventorySalidaDone: true } : x));
+      setShowInvModal(false);
+    } catch (e) {
+      alert("Error al dar de baja el inventario: " + e.message);
+    } finally {
+      setSavingInv(false);
     }
   };
 
@@ -200,7 +326,15 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         {isCipi && (
           <div onClick={e => e.stopPropagation()} style={{ display:"flex", gap:2 }}>
             {["PRO","PED"].map(v => (
-              <button key={v} onClick={() => setCipiVariant(v)}
+              <button key={v} onClick={async () => {
+                  setCipiVariant(v);
+                  try {
+                    await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=cipiVariant`,
+                      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+                        body: JSON.stringify({ fields: { cipiVariant: { stringValue: v } } }) });
+                    setSessions(prev => prev.map(x => x.id === s.id ? { ...x, cipiVariant: v } : x));
+                  } catch (err) { /* si falla, la app sigue funcionando con el valor local */ }
+                }}
                 title={v === "PRO" ? "Centro de Infusión Profesional Integral" : "Centro de Infusión Pediátrica Integral"}
                 style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:600, cursor:"pointer",
                   background: cipiVariant===v ? "rgba(175,169,236,0.15)" : "rgba(255,255,255,0.04)",
@@ -212,25 +346,68 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           </div>
         )}
 
-        <div onClick={e => e.stopPropagation()}>
-          <MaterialModal session={s} token={token} user={user} onRefresh={onRefresh} compact />
-        </div>
+        {mode === "captura" ? (
+          <div onClick={e => e.stopPropagation()}>
+            <MaterialModal session={s} token={token} user={user} onRefresh={onRefresh} compact
+              label={s.materialSolicitudGuardada ? "✓ Solicitud guardada" : "🧰 Solicitar material"} />
+          </div>
+        ) : (
+          <>
+            <div onClick={e => e.stopPropagation()}>
+              <MaterialModal session={s} token={token} user={user} onRefresh={onRefresh} compact label="✏️ Editar solicitud" />
+            </div>
 
-        <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant); await markPedidoHecho(); }}
-          title={pedidoHecho ? `Pedido generado ${new Date(s.pedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Descargar pedido para farmacia"}
-          style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
-            background: pedidoHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
-            border: `1px solid ${pedidoHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
-            color: pedidoHecho ? "#666" : "#00d4aa" }}>
-          {pedidoHecho ? "✓ Pedido hecho" : "📄 Pedido"}
-        </button>
+            {!docsRevealed ? (
+              <button onClick={e => { e.stopPropagation(); setDocsRevealed(true); }}
+                style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
+                📄 Generar documento
+              </button>
+            ) : (
+              <>
+                <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant, "medicamentos"); await markPedidoHecho("medsPedidoGeneradoAt"); }}
+                  title={medsHecho ? `Medicamentos solicitados ${new Date(s.medsPedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Solicitar medicamentos (con anticipación)"}
+                  style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
+                    background: medsHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
+                    border: `1px solid ${medsHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
+                    color: medsHecho ? "#666" : "#00d4aa" }}>
+                  {medsHecho ? "✓ Medicamentos" : "💊 Medicamentos"}
+                </button>
 
-        {showAnexo && anexos.length < 3 && (
-          <button onClick={e => { e.stopPropagation(); setShowAnexoModal(true); }}
-            title="Anexar material adicional (cambios el día de la sesión o después)"
-            style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
-            ➕ Anexar
-          </button>
+                <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant, "material"); await markPedidoHecho("materialPedidoGeneradoAt"); }}
+                  title={materialHecho ? `Material solicitado ${new Date(s.materialPedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Solicitar material (días antes o el mismo día)"}
+                  style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
+                    background: materialHecho ? "rgba(255,255,255,0.05)" : "rgba(0,212,170,0.1)",
+                    border: `1px solid ${materialHecho ? "rgba(255,255,255,0.1)" : "rgba(0,212,170,0.25)"}`,
+                    color: materialHecho ? "#666" : "#00d4aa" }}>
+                  {materialHecho ? "✓ Material" : "🧰 Material"}
+                </button>
+
+                {showAnexo && anexos.length < 3 && (
+                  <button onClick={e => { e.stopPropagation(); setShowAnexoModal(true); }}
+                    title="Anexar material adicional (cambios el día de la sesión o después)"
+                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+                    ➕ Anexar
+                  </button>
+                )}
+
+                <button onClick={async e => { e.stopPropagation(); await downloadAllTogether(); }}
+                  title="Descargar un solo PDF con medicamentos + material + anexos juntos"
+                  style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                  📎 Todo junto
+                </button>
+
+                <button onClick={e => { e.stopPropagation(); if (!s.inventorySalidaDone) openInvModal(); }}
+                  disabled={s.inventorySalidaDone}
+                  title={s.inventorySalidaDone ? `Inventario ya dado de baja ${s.inventorySalidaAt ? new Date(s.inventorySalidaAt).toLocaleString("es-MX") : ""}` : "Descontar del inventario el material de esta sesión"}
+                  style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: s.inventorySalidaDone ? "default" : "pointer",
+                    background: s.inventorySalidaDone ? "rgba(0,212,170,0.08)" : "rgba(255,107,107,0.1)",
+                    border: `1px solid ${s.inventorySalidaDone ? "rgba(0,212,170,0.2)" : "rgba(255,107,107,0.25)"}`,
+                    color: s.inventorySalidaDone ? "#00d4aa" : "#ff6b6b" }}>
+                  {s.inventorySalidaDone ? "✓ Inventario dado de baja" : "📦 Dar de baja inventario"}
+                </button>
+              </>
+            )}
+          </>
         )}
 
         <button onClick={toggleExcludeFromOrder}
@@ -315,6 +492,38 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           </div>
         </div>
       )}
+
+      {showInvModal && (
+        <div onClick={() => !savingInv && setShowInvModal(false)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:440, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>📦 Dar de baja inventario</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{s.patientName} — revisa y ajusta antes de descontar del almacén de {isCipi ? `CIPI (${cipiVariant})` : s.center}</div>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:"50vh", overflowY:"auto" }}>
+              {invItems.map((it, i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 8px", borderRadius:8, background:"rgba(255,255,255,0.02)" }}>
+                  <span style={{ flex:1, fontSize:12, color:"#ccc" }}>{it.item}</span>
+                  <input type="number" min="0" value={it.qty} onChange={e => setInvQty(i, parseInt(e.target.value) || 0)}
+                    style={{ width:56, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:12, outline:"none", textAlign:"center" }} />
+                </div>
+              ))}
+              {invItems.length === 0 && <div style={{ fontSize:12, color:"#555", textAlign:"center", padding:12 }}>Sin material calculado para esta sesión.</div>}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setShowInvModal(false)} disabled={savingInv}
+                style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingInv ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                Cancelar
+              </button>
+              <button onClick={confirmInvSalida} disabled={savingInv}
+                style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingInv ? "wait" : "pointer", background:"linear-gradient(135deg,#ff6b6b,#c94848)", border:"none", color:"#fff", opacity: savingInv ? 0.6 : 1 }}>
+                {savingInv ? "Dando de baja…" : "✓ Confirmar baja de inventario"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -322,10 +531,18 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
 export default function Insumos() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
+  // Solo Paola Vargas puede ver ambos centros siendo enfermera; el resto solo
+  // ve el material/inventario de su propio centro asignado.
+  const canSeeAllCenters = isJefe || profile?.name === "Paola Vargas";
   const [tab, setTab] = useState("consolidado");
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
-  const [centerFilter, setCenterFilter] = useState("Todos");
+  const [centerFilter, setCenterFilter] = useState(() => canSeeAllCenters ? "Todos" : (profile?.center || "CITIO"));
+  useEffect(() => {
+    if (!canSeeAllCenters && profile?.center && centerFilter !== profile.center) {
+      setCenterFilter(profile.center);
+    }
+  }, [profile, canSeeAllCenters]);
   const [dateFilter, setDateFilter] = useState("rango"); // "hoy" | "rango" | "todas"
   const [rangeFrom, setRangeFrom] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }));
   const [rangeTo, setRangeTo] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 6); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); });
@@ -372,9 +589,9 @@ export default function Insumos() {
   };
 
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.pedidoGeneradoAt)
+  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.materialSolicitudGuardada)
     : dateFilter === "hoy" ? sessions.filter(s => s.date === today)
-    : sessions.filter(s => s.date >= rangeFrom && s.date <= rangeTo); // "rango"
+    : sessions.filter(s => s.date >= rangeFrom && s.date <= rangeTo && !s.materialSolicitudGuardada); // "rango"
   const filtered = centerFilter === "Todos" ? dateFiltered : dateFiltered.filter(s => s.center === centerFilter);
   const calcOverrides = {
     extraDefaults: overrides.extraDefaults,
@@ -387,23 +604,7 @@ export default function Insumos() {
       return { session: s, material: { items: [], unmatched: [] }, note: s.materialNote || "" };
     }
     const preview = computeSessionMaterial(s, calcOverrides);
-    const excluded = s.excludedMaterial || [];
-    const qtyOv = s.qtyOverrides || {};
-    const pieceOv = s.pieceOverrides || {};
-    const combined = {};
-    preview.items.forEach(({ item, qty }) => {
-      if (excluded.includes(item)) return;
-      combined[item] = (combined[item] || 0) + (qtyOv[item] !== undefined ? qtyOv[item] : qty);
-    });
-    (s.meds || []).forEach(m => {
-      const auto = computeMedicationPieces(m.name, m.dose, overrides.extraCatalog, overrides.extraDefaults);
-      if (!auto) return;
-      const finalPieces = pieceOv[m.name] || auto.pieces;
-      finalPieces.forEach(({ item, count }) => { combined[item] = (combined[item] || 0) + count; });
-    });
-    (s.extraMaterial || []).forEach(({ item, qty }) => { combined[item] = (combined[item] || 0) + (qty || 0); });
-    const items = Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
-    return { session: s, material: { items, unmatched: preview.unmatched }, note: s.materialNote || "" };
+    return { session: s, material: { items: preview.items, unmatched: preview.unmatched }, note: s.materialNote || "" };
   });
 
   const grandTotal = {};
@@ -412,7 +613,7 @@ export default function Insumos() {
   });
   const grandTotalList = Object.entries(grandTotal).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
 
-  const downloadPharmacyOrder = async (s, material, note, cipiVariant) => {
+  const downloadPharmacyOrder = async (s, material, note, cipiVariant, scope = "todo") => {
     // Clasifica cada artículo en Medicamentos / Soluciones / Insumos según el catálogo maestro
     const catalogByName = {};
     MASTER_CATALOG.forEach(c => { catalogByName[c.item.toUpperCase()] = c.category; });
@@ -431,23 +632,26 @@ export default function Insumos() {
     const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
     material.items.forEach(t => groups[categoryFor(t.item)].push(t));
 
+    // Paso 1 (medicamentos, con anticipación) vs paso 2 (material: soluciones +
+    // insumos, días antes o el mismo día) vs "todo" (compatibilidad / anexos)
+    const sendGroups = scope === "medicamentos" ? { MEDICAMENTOS: groups.MEDICAMENTOS, SOLUCIONES: [], INSUMOS: [] }
+      : scope === "material" ? { MEDICAMENTOS: [], SOLUCIONES: groups.SOLUCIONES, INSUMOS: groups.INSUMOS }
+      : groups;
+
     try {
       const res = await fetch("/api/generate-material-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           center: s.center, cipiVariant, patientName: s.patientName, cycle: s.cycle, date: s.date,
-          groups, note,
+          groups: sendGroups, note, scope,
         }),
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `SOLICITUD_${s.center || ""}_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {
       alert("Error al generar el pedido: " + e.message);
     }
@@ -571,7 +775,7 @@ export default function Insumos() {
       {tab === "consolidado" && (
         <div>
           <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
-            {["Todos","CITIO","CIPI"].map(c => (
+            {(canSeeAllCenters ? ["Todos","CITIO","CIPI"] : [profile?.center || "CITIO"]).map(c => (
               <button key={c} onClick={() => setCenterFilter(c)} style={{
                 padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
                 background: centerFilter===c ? "rgba(79,195,247,0.12)" : "rgba(255,255,255,0.04)",
@@ -641,7 +845,8 @@ export default function Insumos() {
               <PatientMaterialRow key={s.id} s={s} material={material} note={note}
                 expanded={expandedPatient===i} onToggle={() => setExpandedPatient(p => p===i ? null : i)}
                 token={token} user={user} onRefresh={load} setSessions={setSessions}
-                downloadPharmacyOrder={downloadPharmacyOrder} showAnexo={dateFilter==="todas"} />
+                downloadPharmacyOrder={downloadPharmacyOrder} showAnexo={dateFilter==="todas"}
+                mode={dateFilter==="todas" ? "solicitud" : "captura"} />
             ))}
           </div>
         </div>

@@ -13,6 +13,7 @@ const NAV = {
     { to:"/insumos", icon:"🧰", label:"Insumos" },
     { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
     { to:"/reportes", icon:"📊", label:"Reportes" },
+    { to:"/inventario", icon:"📦", label:"Inventario" },
     { to:"/auditoria", icon:"🛡️", label:"Auditoría" },
   ],
   enfermera: [
@@ -22,6 +23,7 @@ const NAV = {
     { to:"/agenda",    icon:"📅", label:"Agenda"     },
     { to:"/catalogo",  icon:"◈", label:"Catálogo"  },
     { to:"/insumos", icon:"🧰", label:"Insumos" },
+    { to:"/inventario", icon:"📦", label:"Inventario" },
     { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
   ],
   visualizador: [

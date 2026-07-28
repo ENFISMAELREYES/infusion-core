@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
+import { computeSessionMaterial } from "../data/materialCatalog";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -575,6 +576,21 @@ function SessionCard({ session, token, onRefresh, user }) {
 
   // Sube las dos firmas capturadas a Firebase Storage, las vincula a la sesión
   // y solo entonces completa el evento de retiro (igual que recordEvent("retiro")).
+  // Antes de poder pasar a las firmas de retiro: revisa que se hayan
+  // solicitado medicamentos y material (si falta alguno, avisa pero no
+  // bloquea), y luego abre la confirmación de baja de inventario con el
+  // material combinado, editable, antes de dar de baja nada.
+  const startRetiroFlow = () => {
+    const faltantes = [];
+    if (!session.medsPedidoGeneradoAt) faltantes.push("Medicamentos");
+    if (!session.materialPedidoGeneradoAt) faltantes.push("Material");
+    if (faltantes.length > 0) {
+      const seguir = confirm(`⚠️ Falta solicitar: ${faltantes.join(" y ")}.\n\n¿Deseas continuar de todas formas?`);
+      if (!seguir) return;
+    }
+    setShowSignModal(true);
+  };
+
   const confirmSignaturesAndRetiro = async () => {
     setSigning(true);
     try {
@@ -805,12 +821,17 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
 
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
             <TimeBtn label="Ingreso del paciente" time={events.ingreso} onRecord={() => recordEvent("ingreso")} disabled={!session.authorized} />
-          <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={() => setShowSignModal(true)} disabled={
+          <TimeBtn label="Retiro del paciente" time={events.retiro} onRecord={startRetiroFlow} disabled={
                 session.sessionType === "procedimiento"
                   ? !events.ingreso || !medEvents["proc_inicio"]?.fin || !session.procedureNote
                   : !events.ingreso || completedMeds < totalTimed || !allWashDone
               } />
           </div>
+          {!session.inventorySalidaDone && (
+            <div style={{ marginBottom:16, padding:"8px 12px", borderRadius:9, background:"rgba(255,179,71,0.06)", border:"1px solid rgba(255,179,71,0.2)", fontSize:11, color:"#ffb347" }}>
+              📦 Recordatorio: el material de esta sesión aún no se ha dado de baja del inventario (se hace desde Insumos).
+            </div>
+          )}
 {session.sessionType === "procedimiento" ? (
             <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
               <div style={{ padding:"10px 14px", borderRadius:10, background:"rgba(255,179,71,0.06)", border:"1px solid rgba(255,179,71,0.2)" }}>

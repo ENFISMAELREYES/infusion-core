@@ -117,7 +117,7 @@ async function patchSession(token, sessionId, updates) {
 
 // Botón + modal de "Solicitar material", como unidad reutilizable. Se le pasa
 // la sesión, el token/usuario y un onRefresh (para recargar tras guardar).
-export default function MaterialModal({ session, token, user, onRefresh, compact }) {
+export default function MaterialModal({ session, token, user, onRefresh, compact, label }) {
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [catalogOverrides, setCatalogOverrides] = useState(null);
   const [excludePatientDefault, setExcludePatientDefault] = useState(!!session.excludePatientDefault);
@@ -152,8 +152,10 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
         pieceOverrides: newPieceOverrides,
         materialNote: newNote || "",
         equipoChoice: newEquipoChoice || null,
+        materialSolicitudGuardada: true,
+        materialSolicitudGuardadaAt: new Date().toISOString(),
       });
-      onRefresh();
+      await onRefresh();
     } catch(e) {
       alert("Error al guardar el material: " + e.message);
     } finally {
@@ -165,7 +167,7 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
     <>
       <button onClick={e => { e.stopPropagation(); setShowMaterialModal(true); }}
         title="Solicitar material" style={{ padding: compact ? "4px 10px" : "5px 9px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC", flexShrink:0 }}>
-        🧰 Solicitar material
+        {label || "🧰 Solicitar material"}
       </button>
 
       {showMaterialModal && (() => {
@@ -193,9 +195,18 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
             return { medKey, name: m.name, dose: m.dose, calc: overridden ? { ...auto, pieces: overridden } : auto, isOverridden: !!overridden, autoPieces: auto.pieces };
           })
           .filter(Boolean);
-        // Combinar defaults + extras, respetando lo excluido y las cantidades editadas, en una sola lista consolidada
+        // Combinar defaults + extras, respetando lo excluido y las cantidades editadas, en una sola lista consolidada.
+        // Las piezas de medicamento se excluyen de preview.items aquí porque
+        // ya se agregan aparte desde medPieces (que refleja la edición en
+        // vivo, no solo lo último guardado) -- evita contarlas dos veces.
+        const medPieceItemNames = new Set();
+        medPieces.forEach(p => {
+          getMedicationPresentations(p.name, catalogOverrides.extraCatalog, catalogOverrides.extraDefaults)
+            .forEach(pr => medPieceItemNames.add(pr.item));
+        });
         const combined = {};
         preview.items.forEach(({ item, qty }) => {
+          if (medPieceItemNames.has(item)) return;
           if (excludedItems.includes(item)) return;
           const finalQty = qtyOverrides[item] !== undefined ? qtyOverrides[item] : qty;
           combined[item] = (combined[item]||0) + finalQty;
@@ -213,7 +224,11 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
             const currentPieces = prev[medKey] || medPieces.find(p => p.medKey === medKey)?.autoPieces || [];
             const map = new Map(currentPieces.map(p => [p.item, p.count]));
             map.set(item, Math.max(0, newCount));
-            const next = allPresentations.map(pr => ({ item: pr.item, mg: pr.mg, count: map.get(pr.item) || 0 })).filter(p => p.count > 0);
+            // No se filtran los ceros: si la persona puso todo en 0 a propósito
+            // (ej. "no hay en existencia, no incluir nada"), eso debe quedar
+            // guardado explícito -- de lo contrario no hay forma de distinguir
+            // "nunca se tocó" de "se puso en cero a propósito".
+            const next = allPresentations.map(pr => ({ item: pr.item, mg: pr.mg, count: map.get(pr.item) || 0 }));
             return { ...prev, [medKey]: next };
           });
         };
@@ -339,7 +354,7 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
               <div>
                 <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Material por defecto (desmarca lo que no aplique, o ajusta la cantidad)</label>
                 <div style={{ maxHeight:160, overflowY:"auto", display:"flex", flexDirection:"column", gap:3 }}>
-                  {preview.items.map((t,i) => {
+                  {preview.items.filter(t => !medPieceItemNames.has(t.item)).map((t,i) => {
                     const excluded = excludedItems.includes(t.item);
                     const currentQty = qtyOverrides[t.item] !== undefined ? qtyOverrides[t.item] : t.qty;
                     return (
@@ -401,9 +416,10 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
                   style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingMaterial ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                   Cancelar
                 </button>
-                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault, qtyOverrides, pieceOverrides, materialNote, equipoChoice); setShowMaterialModal(false); }} disabled={savingMaterial}
-                  style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingMaterial ? "wait" : "pointer", background:"linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color:"#fff", opacity: savingMaterial ? 0.6 : 1 }}>
-                  {savingMaterial ? "Guardando…" : "✓ Guardar solicitud"}
+                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault, qtyOverrides, pieceOverrides, materialNote, equipoChoice); setShowMaterialModal(false); }} disabled={savingMaterial || session.inventorySalidaDone}
+                  title={session.inventorySalidaDone ? "Ya se dio de baja el inventario de esta sesión -- si necesitas agregar algo, usa Anexar en Insumos" : undefined}
+                  style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (savingMaterial || session.inventorySalidaDone) ? "not-allowed" : "pointer", background: session.inventorySalidaDone ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color: session.inventorySalidaDone ? "#666" : "#fff", opacity: savingMaterial ? 0.6 : 1 }}>
+                  {savingMaterial ? "Guardando…" : session.inventorySalidaDone ? "🔒 Ya se dio de baja el inventario" : "✓ Guardar solicitud"}
                 </button>
               </div>
             </div>
