@@ -85,6 +85,30 @@ function getProgress(s) {
   return Math.round((done / total) * 100);
 }
 
+// Minutos restantes para terminar la sesión: toma lo programado (medicamento
+// + sus lavados) y le resta lo que ya se completó, según los eventos
+// registrados. Es un estimado basado en lo programado, no en el reloj real.
+function getRemainingMinutes(s) {
+  const me = s.medEvents || {};
+  const we = s.washEvents || {};
+  let total = 0, done = 0;
+  (s.meds || []).forEach(m => {
+    const medTime = m.time || 0;
+    total += medTime;
+    if (me[`med_${m.id}`]?.fin) done += medTime;
+    if (m.wash?.time && !m.washNA) {
+      total += m.wash.time;
+      if (we[`wash_${m.id}`]?.fin) done += m.wash.time;
+    }
+    if (m.wash2?.time) {
+      total += m.wash2.time;
+      if (we[`wash2_${m.id}`]?.fin) done += m.wash2.time;
+    }
+  });
+  if (total === 0) return null;
+  return Math.max(0, total - done);
+}
+
 function MedTimeline({ meds, medEvents }) {
   const me = medEvents || {};
   return (
@@ -321,6 +345,15 @@ function PatientRow({ s }) {
           <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:99, height:4, overflow:"hidden" }}>
             <div style={{ height:"100%", borderRadius:99, transition:"width 0.5s", width:`${pct}%`, background:s.status==="completado"?"#4fc3f7":"#1D9E75" }} />
           </div>
+          {s.status !== "completado" && (() => {
+            const remaining = getRemainingMinutes(s);
+            if (remaining === null) return null;
+            return (
+              <div style={{ fontSize:11, color:"#1D9E75", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
+                ⏳ {remaining === 0 ? "Por terminar" : `Tiempo restante: ${Math.floor(remaining/60)}h ${remaining%60}m`}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
