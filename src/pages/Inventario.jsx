@@ -238,39 +238,48 @@ export default function Inventario() {
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
+      // Todo el texto seguido, sin intentar reconstruir "renglones" por
+      // posición -- el PDF puede desalinear celdas (ej. una columna que
+      // envuelve a 2 líneas), lo que rompía la lectura por línea y perdía el
+      // nombre del producto. En vez de eso, se usa el patrón de precios al
+      // final de cada renglón como ancla, y todo lo que hay ENTRE dos anclas
+      // es la descripción de ese artículo -- funciona sin importar cómo
+      // quedó posicionado el texto.
       let fullText = "";
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
-        // Agrupar por línea usando la posición vertical de cada fragmento de
-        // texto (el PDF no guarda "renglones", solo texto posicionado).
-        const lines = {};
-        content.items.forEach(item => {
-          const y = Math.round(item.transform[5]);
-          if (!lines[y]) lines[y] = [];
-          lines[y].push(item.str);
-        });
-        Object.keys(lines).map(Number).sort((a, b) => b - a).forEach(y => {
-          fullText += lines[y].join(" ") + "\n";
-        });
+        fullText += content.items.map(item => item.str).join(" ") + " ";
       }
 
       const folioMatch = fullText.match(/FOLIO:\s*(\S+)/i);
       const folio = folioMatch ? folioMatch[1] : "";
 
-      // Cada renglón de artículo termina en: cantidad, precio unitario, IVA,
-      // precio total (todos con $) -- se usa esa parte final como ancla,
-      // porque la descripción puede traer números propios (dosis, tamaños).
-      const rowRegex = /^(.+?)\s+(\d+)\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})\s*$/gm;
+      const MESES = "ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic";
+      const cleanDescription = (desc) => {
+        let d = desc;
+        // Encabezados de columna y de sección que pueden quedar pegados
+        // antes de la descripción real (ej. "INSUMOS CLORURO DE SODIO...").
+        d = d.replace(/\b(DESCRIPCION|UNIDAD|LOTE|CAD\.?|CANT\.?|PRECIO\s+UNITARIO|IVA|PRECIO|INSUMOS|MEDICAMENTOS|SOLUCIONES)\b/gi, " ");
+        // Lote (cualquier token) + mes-año de caducidad, ej. "M2510429 nov-27"
+        d = d.replace(new RegExp(`\\s+\\S+\\s+(${MESES})-\\d{2}\\s*$`, "i"), "");
+        d = d.replace(/\s+-\s*$/, "");
+        d = d.replace(/^[\s.]+/, ""); // puntos/espacios sueltos al inicio, residuo de encabezados removidos
+        return d.replace(/\s+/g, " ").trim();
+      };
+
+      // Ancla: cantidad seguida de 3 importes con $ (unitario, IVA, precio).
+      const anchorRegex = /(\d+)\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})/g;
       const review = [];
+      let lastEnd = 0;
       let m;
-      while ((m = rowRegex.exec(fullText)) !== null) {
-        const descRaw = m[1].trim();
-        const cantidad = parseInt(m[2]) || 1;
-        const precioTotal = parseFloat(m[5].replace(/,/g, ""));
-        const valorUnitario = cantidad > 0 ? precioTotal / cantidad : parseFloat(m[3].replace(/,/g, ""));
-        // Evitar falsos positivos de líneas de subtotal/total, que no son artículos.
-        if (/^(SUB\s?TOTAL|IMPUESTOS|TOTAL)$/i.test(descRaw)) continue;
+      while ((m = anchorRegex.exec(fullText)) !== null) {
+        const descRaw = cleanDescription(fullText.slice(lastEnd, m.index));
+        lastEnd = anchorRegex.lastIndex;
+        const cantidad = parseInt(m[1]) || 1;
+        const precioTotal = parseFloat(m[4].replace(/,/g, ""));
+        const valorUnitario = cantidad > 0 ? precioTotal / cantidad : parseFloat(m[2].replace(/,/g, ""));
+        if (!descRaw || /^(SUB\s?TOTAL|IMPUESTOS|TOTAL)$/i.test(descRaw)) continue;
         review.push({ descripcion: descRaw, cantidad, valorUnitario, matchedItem: suggestCatalogMatch(descRaw) });
       }
       if (review.length === 0) throw new Error("No se encontraron artículos reconocibles en el PDF.");
