@@ -214,6 +214,80 @@ export default function Inventario() {
     }
   };
 
+  // Carga pdf.js bajo demanda (por CDN, sin agregar dependencia nueva al
+  // proyecto) para poder leer el texto de las cotizaciones en PDF.
+  const loadPdfJs = () => new Promise((resolve, reject) => {
+    if (window.pdfjsLib) return resolve(window.pdfjsLib);
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    script.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      resolve(window.pdfjsLib);
+    };
+    script.onerror = () => reject(new Error("No se pudo cargar el lector de PDF."));
+    document.head.appendChild(script);
+  });
+
+  // Lee una cotización de QualMedical en PDF: extrae folio y cada renglón de
+  // artículo (los que terminan en "cantidad $unitario $iva $total"), y
+  // reutiliza la misma pantalla de revisión que usa el XML de facturas.
+  const handlePdfFile = async (file) => {
+    if (!file) return;
+    try {
+      const pdfjsLib = await loadPdfJs();
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+      let fullText = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        // Agrupar por línea usando la posición vertical de cada fragmento de
+        // texto (el PDF no guarda "renglones", solo texto posicionado).
+        const lines = {};
+        content.items.forEach(item => {
+          const y = Math.round(item.transform[5]);
+          if (!lines[y]) lines[y] = [];
+          lines[y].push(item.str);
+        });
+        Object.keys(lines).map(Number).sort((a, b) => b - a).forEach(y => {
+          fullText += lines[y].join(" ") + "\n";
+        });
+      }
+
+      const folioMatch = fullText.match(/FOLIO:\s*(\S+)/i);
+      const folio = folioMatch ? folioMatch[1] : "";
+
+      // Cada renglón de artículo termina en: cantidad, precio unitario, IVA,
+      // precio total (todos con $) -- se usa esa parte final como ancla,
+      // porque la descripción puede traer números propios (dosis, tamaños).
+      const rowRegex = /^(.+?)\s+(\d+)\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})\s*$/gm;
+      const review = [];
+      let m;
+      while ((m = rowRegex.exec(fullText)) !== null) {
+        const descRaw = m[1].trim();
+        const cantidad = parseInt(m[2]) || 1;
+        const precioTotal = parseFloat(m[5].replace(/,/g, ""));
+        const valorUnitario = cantidad > 0 ? precioTotal / cantidad : parseFloat(m[3].replace(/,/g, ""));
+        // Evitar falsos positivos de líneas de subtotal/total, que no son artículos.
+        if (/^(SUB\s?TOTAL|IMPUESTOS|TOTAL)$/i.test(descRaw)) continue;
+        review.push({ descripcion: descRaw, cantidad, valorUnitario, matchedItem: suggestCatalogMatch(descRaw) });
+      }
+      if (review.length === 0) throw new Error("No se encontraron artículos reconocibles en el PDF.");
+      setXmlReview(review);
+
+      if (folio) {
+        setInvoiceFolio(folio);
+        const yaCargada = events.some(ev => ev.invoiceFolio && ev.invoiceFolio.toUpperCase() === folio.toUpperCase());
+        if (yaCargada) {
+          alert(`⚠️ Esta cotización (folio ${folio}) ya se había cargado antes. Revisa en "Movimientos" antes de continuar para no duplicarla.`);
+        }
+      }
+    } catch (e) {
+      alert("Error al leer el PDF: " + e.message);
+    }
+  };
+
   const confirmXmlReview = () => {
     const unmatched = xmlReview.filter(r => !r.matchedItem);
     if (unmatched.length > 0) {
@@ -725,10 +799,16 @@ export default function Inventario() {
             )}
 
             {showMoveModal === "entrada" && !xmlReview && (
-              <label style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px dashed rgba(175,169,236,0.35)", color:"#AFA9EC" }}>
-                📄 Cargar factura (XML)
-                <input type="file" accept=".xml" style={{ display:"none" }} onChange={e => handleXmlFile(e.target.files?.[0])} />
-              </label>
+              <div style={{ display:"flex", gap:8 }}>
+                <label style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px dashed rgba(175,169,236,0.35)", color:"#AFA9EC" }}>
+                  📄 Factura (XML)
+                  <input type="file" accept=".xml" style={{ display:"none" }} onChange={e => handleXmlFile(e.target.files?.[0])} />
+                </label>
+                <label style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px dashed rgba(255,179,71,0.35)", color:"#ffb347" }}>
+                  📑 Cotización (PDF)
+                  <input type="file" accept=".pdf" style={{ display:"none" }} onChange={e => handlePdfFile(e.target.files?.[0])} />
+                </label>
+              </div>
             )}
 
             {xmlReview && (
