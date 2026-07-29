@@ -1092,7 +1092,7 @@ export const PUNCION_DEFAULTS = {
         "qty": 2
       },
       {
-        "item": "BANDA ADHESIVA CIRCULAR",
+        "item": "BANDA ADHESIVA CIRCULAR 22 MM",
         "qty": 1
       },
       {
@@ -1113,7 +1113,7 @@ export const PUNCION_DEFAULTS = {
         "qty": 4
       },
       {
-        "item": "BANDA ADHESIVA CIRCULAR",
+        "item": "BANDA ADHESIVA CIRCULAR 22 MM",
         "qty": 1
       },
       {
@@ -1297,8 +1297,18 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Insumos",
-    "item": "BANDA ADHESIVA CIRCULAR",
+    "item": "BANDA ADHESIVA CIRCULAR 22 MM",
     "unit": "PIEZA"
+  },
+  {
+    "category": "Insumos",
+    "item": "CINTA TRANSPORE DE 5CM",
+    "unit": "PIEZA"
+  },
+  {
+    "category": "Insumos",
+    "item": "GLUCONATO DE CLORHEXIDINA 60 ML",
+    "unit": "FRASCO"
   },
   {
     "category": "Insumos",
@@ -1637,7 +1647,7 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Medicamentos",
-    "item": "PARACETAMOL 100 MG",
+    "item": "PARACETAMOL 1000 MG",
     "unit": "FRASCO"
   },
   {
