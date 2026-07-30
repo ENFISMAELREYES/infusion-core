@@ -545,6 +545,7 @@ export default function Insumos() {
   }, [profile, canSeeAllCenters]);
   const [dateFilter, setDateFilter] = useState("rango"); // "hoy" | "rango" | "todas"
   const [selectedDay, setSelectedDay] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }));
+  const [todasMode, setTodasMode] = useState("dia"); // "dia" | "rango" | "todo" -- cómo filtrar la pestaña "Con solicitud generada"
   const [rangeFrom, setRangeFrom] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }));
   const [rangeTo, setRangeTo] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 6); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); });
   const [overrides, setOverrides] = useState({ extraCatalog: [], extraDefaults: {} });
@@ -590,7 +591,11 @@ export default function Insumos() {
   };
 
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.materialSolicitudGuardada)
+  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.materialSolicitudGuardada && (
+      todasMode === "todo" ? true
+      : todasMode === "rango" ? (s.date >= rangeFrom && s.date <= rangeTo)
+      : s.date === selectedDay
+    ))
     : dateFilter === "hoy" ? sessions.filter(s => s.date === selectedDay)
     : sessions.filter(s => s.date >= rangeFrom && s.date <= rangeTo && !s.materialSolicitudGuardada); // "rango"
   const filtered = centerFilter === "Todos" ? dateFiltered : dateFiltered.filter(s => s.center === centerFilter);
@@ -809,7 +814,19 @@ export default function Insumos() {
                 color: dateFilter===val ? "#00d4aa" : "#666",
               }}>{label}</button>
             ))}
-            {dateFilter === "hoy" && (
+            {dateFilter === "todas" && (
+              <div style={{ display:"flex", gap:6 }}>
+                {[["dia","Por día"],["rango","Por rango"],["todo","Todas"]].map(([val,label]) => (
+                  <button key={val} onClick={() => setTodasMode(val)} style={{
+                    padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
+                    background: todasMode===val ? "rgba(0,212,170,0.1)" : "rgba(255,255,255,0.03)",
+                    border: `1px solid ${todasMode===val ? "rgba(0,212,170,0.25)" : "rgba(255,255,255,0.07)"}`,
+                    color: todasMode===val ? "#00d4aa" : "#666",
+                  }}>{label}</button>
+                ))}
+              </div>
+            )}
+            {(dateFilter === "hoy" || (dateFilter === "todas" && todasMode === "dia")) && (
               <>
                 <button onClick={() => { const d = new Date(selectedDay+"T12:00:00"); d.setDate(d.getDate()-1); setSelectedDay(d.toLocaleDateString("en-CA")); }}
                   style={{ padding:"5px 10px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>◀</button>
@@ -822,7 +839,7 @@ export default function Insumos() {
                 )}
               </>
             )}
-            {dateFilter === "rango" && (
+            {(dateFilter === "rango" || (dateFilter === "todas" && todasMode === "rango")) && (
               <>
                 <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)}
                   style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"5px 8px", color:"#f0f0f0", fontSize:12 }} />
@@ -849,7 +866,7 @@ export default function Insumos() {
                         td{padding:6px 8px;border-bottom:1px solid #ddd;}
                       </style></head><body>
                         <h1>Total consolidado -- ${label.replace(/^\S+\s/, "")}</h1>
-                        <p>${centerFilter} · ${dateFilter === "todas" ? "Con solicitud generada" : dateFilter === "hoy" ? selectedDay : `${rangeFrom} a ${rangeTo}`} · Generado ${new Date().toLocaleString("es-MX")}</p>
+                        <p>${centerFilter} · ${dateFilter === "todas" ? (todasMode === "todo" ? "Con solicitud generada (todas las fechas)" : todasMode === "rango" ? `Con solicitud generada · ${rangeFrom} a ${rangeTo}` : `Con solicitud generada · ${selectedDay}`) : dateFilter === "hoy" ? selectedDay : `${rangeFrom} a ${rangeTo}`} · Generado ${new Date().toLocaleString("es-MX")}</p>
                         <table>${rows}</table>
                         <script>window.onload = () => window.print();<\/script>
                       </body></html>`);
