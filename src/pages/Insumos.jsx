@@ -39,7 +39,7 @@ async function fetchUpcomingSessions(token, fromDate) {
         from: [{ collectionId: "sessions" }],
         where: { fieldFilter: { field: { fieldPath: "date" }, op: "GREATER_THAN_OR_EQUAL", value: { stringValue: fromDate } } },
         orderBy: [{ field: { fieldPath: "date" }, direction: "ASCENDING" }],
-        limit: 500,
+        limit: 1500,
       }})
     }
   );
@@ -583,7 +583,10 @@ export default function Insumos() {
   const load = async () => {
     setLoading(true);
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-    const [s, ov] = await Promise.all([fetchUpcomingSessions(token, today), fetchOverrides(token)]);
+    // 180 días atrás -- antes solo se pedía desde "hoy", por eso al navegar
+    // a fechas pasadas no aparecía nada (nunca se habían traído del todo).
+    const fromDate = (() => { const d = new Date(); d.setDate(d.getDate() - 180); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); })();
+    const [s, ov] = await Promise.all([fetchUpcomingSessions(token, fromDate), fetchOverrides(token)]);
     setSessions(s.filter(x => Array.isArray(x.meds) && x.meds.length > 0));
     setOverrides(ov);
     setLoading(false);
