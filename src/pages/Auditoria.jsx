@@ -101,6 +101,7 @@ export default function Auditoria() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [filters, setFilters] = useState({ collection: "", docId: "", userEmail: "" });
+  const [patientSearch, setPatientSearch] = useState("");
 
   const load = async () => {
     if (!user) return;
@@ -122,6 +123,9 @@ export default function Auditoria() {
   useEffect(() => { load(); }, [user]);
 
   const inputStyle = { background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"8px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
+  const filteredEntries = patientSearch.trim()
+    ? entries.filter(e => (e.sessionInfo?.patientName || "").toUpperCase().includes(patientSearch.toUpperCase()))
+    : entries;
 
   if (!isJefe) {
     return (
@@ -149,6 +153,8 @@ export default function Auditoria() {
           onChange={e => setFilters(f => ({ ...f, docId: e.target.value }))} style={{ ...inputStyle, minWidth:220 }} />
         <input placeholder="Correo del usuario (opcional)" value={filters.userEmail}
           onChange={e => setFilters(f => ({ ...f, userEmail: e.target.value }))} style={{ ...inputStyle, minWidth:220 }} />
+        <input placeholder="Nombre del paciente (opcional)" value={patientSearch}
+          onChange={e => setPatientSearch(e.target.value)} style={{ ...inputStyle, minWidth:220 }} />
         <button onClick={load} style={{ padding:"8px 20px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
           Buscar
         </button>
@@ -156,14 +162,14 @@ export default function Auditoria() {
 
       {loading && !hasLoadedOnce ? (
         <div style={{ color:"#555", fontSize:14, padding:24 }}>Cargando…</div>
-      ) : entries.length === 0 ? (
+      ) : filteredEntries.length === 0 ? (
         <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
           Sin registros con esos filtros.
         </div>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-          <div style={{ fontSize:12, color:"#555", marginBottom:4 }}>{entries.length} registro{entries.length !== 1 ? "s" : ""} (últimos 300)</div>
-          {entries.map(e => {
+          <div style={{ fontSize:12, color:"#555", marginBottom:4 }}>{filteredEntries.length} registro{filteredEntries.length !== 1 ? "s" : ""} (de los últimos 300 en total)</div>
+          {filteredEntries.map(e => {
             const isOpen = expanded === e.id;
             const changeKeys = Object.keys(e.changes || {});
             return (
