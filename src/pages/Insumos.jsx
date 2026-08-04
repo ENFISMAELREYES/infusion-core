@@ -231,7 +231,12 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   };
 
   const openInvModal = () => {
-    setInvItems(material.items.map(it => ({ ...it })));
+    // Combinar el material base con todos los anexos generados -- antes solo
+    // tomaba material.items, dejando fuera lo agregado después vía anexo.
+    const combined = {};
+    material.items.forEach(({ item, qty }) => { combined[item] = (combined[item] || 0) + qty; });
+    anexos.forEach(a => (a.items || []).forEach(({ item, qty }) => { combined[item] = (combined[item] || 0) + qty; }));
+    setInvItems(Object.entries(combined).map(([item, qty]) => ({ item, qty })));
     setShowInvModal(true);
   };
   const setInvQty = (idx, qty) => setInvItems(prev => prev.map((it,i) => i===idx ? { ...it, qty: Math.max(0, qty) } : it));
