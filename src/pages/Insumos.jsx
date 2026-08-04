@@ -39,7 +39,7 @@ async function fetchUpcomingSessions(token, fromDate) {
         from: [{ collectionId: "sessions" }],
         where: { fieldFilter: { field: { fieldPath: "date" }, op: "GREATER_THAN_OR_EQUAL", value: { stringValue: fromDate } } },
         orderBy: [{ field: { fieldPath: "date" }, direction: "ASCENDING" }],
-        limit: 500,
+        limit: 1500,
       }})
     }
   );
@@ -544,6 +544,8 @@ export default function Insumos() {
     }
   }, [profile, canSeeAllCenters]);
   const [dateFilter, setDateFilter] = useState("rango"); // "hoy" | "rango" | "todas"
+  const [selectedDay, setSelectedDay] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }));
+  const [todasMode, setTodasMode] = useState("dia"); // "dia" | "rango" | "todo" -- cómo filtrar la pestaña "Con solicitud generada"
   const [rangeFrom, setRangeFrom] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }));
   const [rangeTo, setRangeTo] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 6); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); });
   const [overrides, setOverrides] = useState({ extraCatalog: [], extraDefaults: {} });
@@ -581,7 +583,10 @@ export default function Insumos() {
   const load = async () => {
     setLoading(true);
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-    const [s, ov] = await Promise.all([fetchUpcomingSessions(token, today), fetchOverrides(token)]);
+    // 180 días atrás -- antes solo se pedía desde "hoy", por eso al navegar
+    // a fechas pasadas no aparecía nada (nunca se habían traído del todo).
+    const fromDate = (() => { const d = new Date(); d.setDate(d.getDate() - 180); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); })();
+    const [s, ov] = await Promise.all([fetchUpcomingSessions(token, fromDate), fetchOverrides(token)]);
     setSessions(s.filter(x => Array.isArray(x.meds) && x.meds.length > 0));
     setOverrides(ov);
     setLoading(false);
@@ -589,8 +594,12 @@ export default function Insumos() {
   };
 
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.materialSolicitudGuardada)
-    : dateFilter === "hoy" ? sessions.filter(s => s.date === today)
+  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.materialSolicitudGuardada && (
+      todasMode === "todo" ? true
+      : todasMode === "rango" ? (s.date >= rangeFrom && s.date <= rangeTo)
+      : s.date === selectedDay
+    ))
+    : dateFilter === "hoy" ? sessions.filter(s => s.date === selectedDay)
     : sessions.filter(s => s.date >= rangeFrom && s.date <= rangeTo && !s.materialSolicitudGuardada); // "rango"
   const filtered = centerFilter === "Todos" ? dateFiltered : dateFiltered.filter(s => s.center === centerFilter);
   const calcOverrides = {
@@ -612,6 +621,21 @@ export default function Insumos() {
     material.items.forEach(({ item, qty }) => { grandTotal[item] = (grandTotal[item] || 0) + qty; });
   });
   const grandTotalList = Object.entries(grandTotal).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
+
+  // Clasificar el consolidado general en Medicamentos vs Material (soluciones
+  // + insumos), para poder imprimirlos por separado.
+  const catalogByNameGT = {};
+  MASTER_CATALOG.forEach(c => { catalogByNameGT[c.item.toUpperCase()] = c.category; });
+  const isMedItem = (itemName) => {
+    const up = itemName.toUpperCase();
+    if (up.includes("CLORURO DE SODIO") || up.includes("GLUCOSA") || up.includes("HARTMANN")) return false;
+    const cat = catalogByNameGT[up];
+    if (cat) return ["Medicamentos","Oncológicos","Inmunoterapia"].includes(cat);
+    const fuzzy = MASTER_CATALOG.find(c => up.startsWith(c.item.toUpperCase()) || c.item.toUpperCase().startsWith(up));
+    return fuzzy ? ["Medicamentos","Oncológicos","Inmunoterapia"].includes(fuzzy.category) : false;
+  };
+  const grandTotalMeds = grandTotalList.filter(t => isMedItem(t.item));
+  const grandTotalMaterial = grandTotalList.filter(t => !isMedItem(t.item));
 
   const downloadPharmacyOrder = async (s, material, note, cipiVariant, scope = "todo") => {
     // Clasifica cada artículo en Medicamentos / Soluciones / Insumos según el catálogo maestro
@@ -785,7 +809,7 @@ export default function Insumos() {
             ))}
           </div>
           <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
-            {[["hoy","Hoy"],["rango","Rango de fechas"],["todas","Con solicitud generada"]].map(([val,label]) => (
+            {[["hoy","Por día"],["rango","Rango de fechas"],["todas","Con solicitud generada"]].map(([val,label]) => (
               <button key={val} onClick={() => setDateFilter(val)} style={{
                 padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
                 background: dateFilter===val ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
@@ -793,7 +817,32 @@ export default function Insumos() {
                 color: dateFilter===val ? "#00d4aa" : "#666",
               }}>{label}</button>
             ))}
-            {dateFilter === "rango" && (
+            {dateFilter === "todas" && (
+              <div style={{ display:"flex", gap:6 }}>
+                {[["dia","Por día"],["rango","Por rango"],["todo","Todas"]].map(([val,label]) => (
+                  <button key={val} onClick={() => setTodasMode(val)} style={{
+                    padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
+                    background: todasMode===val ? "rgba(0,212,170,0.1)" : "rgba(255,255,255,0.03)",
+                    border: `1px solid ${todasMode===val ? "rgba(0,212,170,0.25)" : "rgba(255,255,255,0.07)"}`,
+                    color: todasMode===val ? "#00d4aa" : "#666",
+                  }}>{label}</button>
+                ))}
+              </div>
+            )}
+            {(dateFilter === "hoy" || (dateFilter === "todas" && todasMode === "dia")) && (
+              <>
+                <button onClick={() => { const d = new Date(selectedDay+"T12:00:00"); d.setDate(d.getDate()-1); setSelectedDay(d.toLocaleDateString("en-CA")); }}
+                  style={{ padding:"5px 10px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>◀</button>
+                <input type="date" value={selectedDay} onChange={e => setSelectedDay(e.target.value)}
+                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"5px 8px", color:"#f0f0f0", fontSize:12 }} />
+                <button onClick={() => { const d = new Date(selectedDay+"T12:00:00"); d.setDate(d.getDate()+1); setSelectedDay(d.toLocaleDateString("en-CA")); }}
+                  style={{ padding:"5px 10px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>▶</button>
+                {selectedDay !== today && (
+                  <button onClick={() => setSelectedDay(today)} style={{ padding:"5px 10px", borderRadius:8, fontSize:11, cursor:"pointer", background:"rgba(79,195,247,0.1)", border:"1px solid rgba(79,195,247,0.25)", color:"#4fc3f7" }}>Hoy</button>
+                )}
+              </>
+            )}
+            {(dateFilter === "rango" || (dateFilter === "todas" && todasMode === "rango")) && (
               <>
                 <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)}
                   style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"5px 8px", color:"#f0f0f0", fontSize:12 }} />
@@ -806,27 +855,31 @@ export default function Insumos() {
           </div>
 
           <div style={{ background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.2)", borderRadius:14, padding:16, marginBottom:20 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:8 }}>
               <div style={{ fontSize:13, color:"#00d4aa", fontWeight:600 }}>Total consolidado ({grandTotalList.length} artículos)</div>
-              <button onClick={() => {
-                  const rows = grandTotalList.map(t => `<tr><td>${t.item}</td><td style="text-align:right;font-weight:bold;">${t.qty}</td></tr>`).join("");
-                  const win = window.open("", "_blank", "width=700,height=900");
-                  win.document.write(`<!DOCTYPE html><html><head><title>Total consolidado</title><style>
-                    body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;}
-                    h1{font-size:18px;margin-bottom:2px;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
-                    table{width:100%;border-collapse:collapse;font-size:12px;}
-                    td{padding:6px 8px;border-bottom:1px solid #ddd;}
-                  </style></head><body>
-                    <h1>Total consolidado de material</h1>
-                    <p>${centerFilter} · ${dateFilter === "todas" ? "Con solicitud generada" : dateFilter === "hoy" ? "Hoy" : `${rangeFrom} a ${rangeTo}`} · Generado ${new Date().toLocaleString("es-MX")}</p>
-                    <table>${rows}</table>
-                    <script>window.onload = () => window.print();<\/script>
-                  </body></html>`);
-                  win.document.close();
-                }}
-                style={{ padding:"6px 14px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>
-                🖨️ Imprimir
-              </button>
+              <div style={{ display:"flex", gap:6 }}>
+                {[["💊 Medicamentos", grandTotalMeds], ["🧰 Material", grandTotalMaterial], ["📎 Todo", grandTotalList]].map(([label, list]) => (
+                  <button key={label} onClick={() => {
+                      const rows = list.map(t => `<tr><td>${t.item}</td><td style="text-align:right;font-weight:bold;">${t.qty}</td></tr>`).join("");
+                      const win = window.open("", "_blank", "width=700,height=900");
+                      win.document.write(`<!DOCTYPE html><html><head><title>Total consolidado</title><style>
+                        body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;}
+                        h1{font-size:18px;margin-bottom:2px;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
+                        table{width:100%;border-collapse:collapse;font-size:12px;}
+                        td{padding:6px 8px;border-bottom:1px solid #ddd;}
+                      </style></head><body>
+                        <h1>Total consolidado -- ${label.replace(/^\S+\s/, "")}</h1>
+                        <p>${centerFilter} · ${dateFilter === "todas" ? (todasMode === "todo" ? "Con solicitud generada (todas las fechas)" : todasMode === "rango" ? `Con solicitud generada · ${rangeFrom} a ${rangeTo}` : `Con solicitud generada · ${selectedDay}`) : dateFilter === "hoy" ? selectedDay : `${rangeFrom} a ${rangeTo}`} · Generado ${new Date().toLocaleString("es-MX")}</p>
+                        <table>${rows}</table>
+                        <script>window.onload = () => window.print();<\/script>
+                      </body></html>`);
+                      win.document.close();
+                    }}
+                    style={{ padding:"6px 14px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>
+                    🖨️ {label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div style={{ maxHeight:280, overflowY:"auto", display:"flex", flexDirection:"column", gap:4 }}>
               {grandTotalList.map((t,i) => (
