@@ -71,6 +71,18 @@ function warehouseLabel(key) {
   return [...WAREHOUSES, ...QUAL_WAREHOUSES].find(w => w.key === key)?.label || key;
 }
 
+// Regla de reorden: con 1 paquete cerrado de reserva + 1 en uso (2 paquetes
+// = máximo), se sugiere comprar 1 paquete más en cuanto se consume la mitad
+// del segundo -- es decir, al bajar a 1.5 paquetes (redondeado hacia abajo,
+// menos 1). La cantidad sugerida siempre es 1 paquete completo. Aplica igual
+// para todos los productos que tengan definido su tamaño de paquete.
+function reorderInfo(item) {
+  if (!item.packSize || item.packSize <= 0) return { min: item.minStock ?? 0, suggestQty: 0 };
+  const min = Math.floor(item.packSize * 1.5) - 1;
+  const suggestQty = item.currentStock <= min ? item.packSize : 0;
+  return { min, suggestQty };
+}
+
 export default function Inventario() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
@@ -132,7 +144,8 @@ export default function Inventario() {
   const filteredInventory = search.trim()
     ? warehouseInventory.filter(i => i.item.toUpperCase().includes(search.toUpperCase()))
     : warehouseInventory;
-  const lowStock = warehouseInventory.filter(i => i.currentStock <= (i.minStock ?? 0));
+  const lowStock = warehouseInventory.filter(i => i.currentStock <= (i.packSize ? reorderInfo(i).min : (i.minStock ?? 0)));
+  const suggestedReorders = warehouseInventory.filter(i => reorderInfo(i).suggestQty > 0);
 
   const addToMoveList = (item, cost) => {
     const qty = parseInt(moveQty) || 1;
@@ -623,6 +636,20 @@ export default function Inventario() {
     } catch (e) { console.error(e); }
   };
 
+  // Tamaño del paquete de compra (ej. 100 piezas por caja de agujas). A
+  // partir de esto se calculan solos el mínimo y la cantidad sugerida --
+  // ya no hay que capturar el mínimo a mano para cada artículo.
+  const setPackSize = async (docId, newSize) => {
+    try {
+      const val = parseInt(newSize) || 0;
+      await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}?updateMask.fieldPaths=packSize`, {
+        method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ fields: { packSize: toFV(val) } }),
+      });
+      setInventory(prev => prev.map(i => i.id === docId ? { ...i, packSize: val } : i));
+    } catch (e) { console.error(e); }
+  };
+
   const inputStyle = { background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"8px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
 
   if (loading && !hasLoadedOnce) return <div style={{ padding:40, color:"#666", textAlign:"center" }}>Cargando…</div>;
@@ -684,6 +711,16 @@ export default function Inventario() {
             <button onClick={() => { setShowMoveModal("compra"); setMoveList([]); setPurchaseConcept(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.3)", color:"#ffb347" }}>
               🧾 Solicitud de compra
             </button>
+            {suggestedReorders.length > 0 && (
+              <button onClick={() => {
+                  setShowMoveModal("compra");
+                  setMoveList(suggestedReorders.map(i => ({ item: i.item, qty: reorderInfo(i).suggestQty })));
+                  setPurchaseConcept(`Reabastecimiento sugerido ${new Date().toLocaleDateString("es-MX")}`);
+                }}
+                style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.3)", color:"#ff6b6b" }}>
+                🛒 Solicitar sugeridos ({suggestedReorders.length})
+              </button>
+            )}
           </div>
 
           {lowStock.length > 0 && (
@@ -700,7 +737,8 @@ export default function Inventario() {
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               {filteredInventory.sort((a,b) => a.item.localeCompare(b.item)).map(i => {
-                const low = i.currentStock <= (i.minStock ?? 0);
+                const { min, suggestQty } = reorderInfo(i);
+                const low = i.currentStock <= min;
                 const negative = i.currentStock < 0;
                 return (
                   <div key={i.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10, background: negative ? "rgba(255,107,107,0.06)" : "rgba(255,255,255,0.03)", border:`1px solid ${negative ? "rgba(255,107,107,0.4)" : low ? "rgba(255,107,107,0.3)" : "rgba(255,255,255,0.07)"}` }}>
@@ -712,16 +750,31 @@ export default function Inventario() {
                         ⚠ ingreso pendiente
                       </span>
                     )}
-                    <span style={{ fontSize:14, fontWeight:700, color: negative ? "#ff6b6b" : low ? "#ffb347" : "#00d4aa", fontFamily:"'IBM Plex Mono', monospace", minWidth:60, textAlign:"right" }}>{i.currentStock} {i.unit}</span>
+                    {suggestQty > 0 && (
+                      <span title={`Existencia en o bajo el mínimo (${min}) -- se sugiere comprar 1 paquete más`}
+                        style={{ fontSize:10, color:"#ffb347", background:"rgba(255,179,71,0.12)", padding:"2px 8px", borderRadius:99, fontWeight:600, whiteSpace:"nowrap" }}>
+                        🛒 comprar {suggestQty}
+                      </span>
+                    )}
+                    <span style={{ fontSize:14, fontWeight:700, color: negative ? "#ff6b6b" : low ? "#ffb347" : "#00d4aa", fontFamily:"'IBM Plex Mono', monospace", minWidth:60, textAlign:"right", whiteSpace:"nowrap" }}>
+                      {i.currentStock} {i.unit}{min > 0 && <span style={{ color:"#666", fontWeight:400 }}> (mín. {min})</span>}
+                    </span>
                     {(i.lastCost > 0 || i.avgCost > 0) && (
                       <span style={{ fontSize:10, color:"#888", fontFamily:"'IBM Plex Mono', monospace", whiteSpace:"nowrap" }} title="Último costo / Costo promedio">
                         últ. ${(i.lastCost||0).toFixed(2)} · prom. ${(i.avgCost||0).toFixed(2)}
                       </span>
                     )}
                     {isJefe && (
-                      <input type="number" defaultValue={i.minStock ?? 0} title="Mínimo antes de avisar"
-                        onBlur={e => setMinStock(i.id, e.target.value)}
-                        style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#888", fontSize:11, outline:"none", textAlign:"center" }} />
+                      <>
+                        <input type="number" defaultValue={i.packSize ?? ""} placeholder="paq." title="Tamaño del paquete de compra (ej. 100 = caja de 100 piezas). Al definirlo, el mínimo y la sugerencia se calculan solos."
+                          onBlur={e => setPackSize(i.id, e.target.value)}
+                          style={{ width:46, background:"rgba(175,169,236,0.06)", border:"1px solid rgba(175,169,236,0.2)", borderRadius:6, padding:"3px 6px", color:"#AFA9EC", fontSize:11, outline:"none", textAlign:"center" }} />
+                        {!i.packSize && (
+                          <input type="number" defaultValue={i.minStock ?? 0} title="Mínimo antes de avisar (manual -- o define el tamaño de paquete para que se calcule solo)"
+                            onBlur={e => setMinStock(i.id, e.target.value)}
+                            style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#888", fontSize:11, outline:"none", textAlign:"center" }} />
+                        )}
+                      </>
                     )}
                   </div>
                 );
