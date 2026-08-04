@@ -46,6 +46,30 @@ async function fetchAuditLog(token, filters) {
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
 
+// Trae, de un lote de sesiones referenciadas en la auditoría, sus datos
+// actuales (paciente, estatus, quién la registró) -- el registro de
+// auditoría solo guarda QUÉ CAMBIÓ, no estos datos de contexto por sí solos.
+async function fetchSessionsInfo(token, sessionIds) {
+  if (sessionIds.length === 0) return {};
+  const docPaths = sessionIds.map(id => `projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${id}`);
+  const info = {};
+  // batchGet acepta hasta 500 documentos por solicitud; se trocea por si acaso.
+  for (let i = 0; i < docPaths.length; i += 300) {
+    const chunk = docPaths.slice(i, i + 300);
+    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:batchGet`, {
+      method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ documents: chunk }),
+    });
+    const data = await res.json();
+    (Array.isArray(data) ? data : []).forEach(d => {
+      if (!d.found) return;
+      const parsed = parseDoc(d.found);
+      info[parsed.id] = { patientName: parsed.patientName || "", status: parsed.status || "", nurseName: parsed.nurseName || "" };
+    });
+  }
+  return info;
+}
+
 // Etiquetas legibles para los nombres de campo más comunes que se auditan
 const FIELD_LABELS = {
   meds: "Medicamentos", medEvents: "Eventos de medicamento", washEvents: "Eventos de lavado",
@@ -58,6 +82,9 @@ const FIELD_LABELS = {
   physician: "Médico", diagnosis: "Diagnóstico", sessionType: "Tipo de sesión", schemeName: "Esquema",
   expedienteNumber: "No. expediente",
 };
+
+const STATUS_LABEL = { pendiente: "Pendiente", en_curso: "En curso", completado: "Completado" };
+const STATUS_COLOR = { pendiente: "#ffb347", en_curso: "#4fc3f7", completado: "#00d4aa" };
 
 function formatValue(v) {
   if (v === null || v === undefined) return "—";
@@ -81,7 +108,9 @@ export default function Auditoria() {
     try {
       const token = await user.getIdToken(true);
       const data = await fetchAuditLog(token, filters);
-      setEntries(data);
+      const sessionIds = [...new Set(data.filter(e => e.collection === "sessions").map(e => e.docId))];
+      const sessionsInfo = await fetchSessionsInfo(token, sessionIds);
+      setEntries(data.map(e => ({ ...e, sessionInfo: sessionsInfo[e.docId] })));
     } catch (e) {
       console.error(e);
     } finally {
@@ -141,7 +170,14 @@ export default function Auditoria() {
               <div key={e.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
                 <div onClick={() => setExpanded(isOpen ? null : e.id)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
                   <span style={{ fontSize:11, color:"#666", background:"rgba(255,255,255,0.05)", padding:"2px 8px", borderRadius:99 }}>{e.collection}</span>
-                  <span style={{ fontSize:12, color:"#aaa" }}>{e.userEmail || "(sin correo)"}</span>
+                  {e.sessionInfo?.patientName && <span style={{ fontSize:12, color:"#f0f0f0", fontWeight:600 }}>{e.sessionInfo.patientName}</span>}
+                  {e.sessionInfo?.status && (
+                    <span style={{ fontSize:10, color: STATUS_COLOR[e.sessionInfo.status] || "#888", background:"rgba(255,255,255,0.05)", padding:"2px 8px", borderRadius:99, fontWeight:600 }}>
+                      {STATUS_LABEL[e.sessionInfo.status] || e.sessionInfo.status}
+                    </span>
+                  )}
+                  <span style={{ fontSize:12, color:"#aaa" }}>👤 {e.userEmail || "(sin correo)"}</span>
+                  <span style={{ fontSize:10, color:"#555", fontFamily:"'IBM Plex Mono', monospace" }}>ID: {e.docId}</span>
                   <span style={{ flex:1, fontSize:11, color:"#555" }}>{changeKeys.length} campo{changeKeys.length !== 1 ? "s" : ""} cambiado{changeKeys.length !== 1 ? "s" : ""}</span>
                   <span style={{ fontSize:11, color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace" }}>{e.timestamp ? new Date(e.timestamp).toLocaleString("es-MX") : ""}</span>
                   <span style={{ color:"#555" }}>{isOpen ? "▲" : "▼"}</span>
