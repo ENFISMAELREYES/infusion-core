@@ -72,13 +72,16 @@ function warehouseLabel(key) {
 }
 
 // Regla de reorden: mínimo y máximo se capturan directo en piezas (no por
-// paquete). En cuanto la existencia baja de "mínimo" (osea, mínimo-1 o
-// menos), se sugiere comprar exactamente lo que falta para llegar al máximo.
+// paquete). En cuanto la existencia baja de "mínimo", se sugiere comprar el
+// lote fijo (máximo - mínimo) -- SALVO que la existencia haya caído tanto
+// (ej. llegó a 0) que ese lote fijo ni siquiera alcance a cubrir el mínimo;
+// en ese caso se sugiere al menos lo necesario para llegar al mínimo.
 function reorderInfo(item) {
   const min = item.minStock ?? 0;
   const max = item.maxStock ?? 0;
   if (!max || max <= min) return { min, suggestQty: 0 };
-  const suggestQty = item.currentStock < min ? (max - min) : 0;
+  if (item.currentStock >= min) return { min, suggestQty: 0 };
+  const suggestQty = Math.max(max - min, min - item.currentStock);
   return { min, suggestQty };
 }
 
