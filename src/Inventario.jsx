@@ -71,6 +71,18 @@ function warehouseLabel(key) {
   return [...WAREHOUSES, ...QUAL_WAREHOUSES].find(w => w.key === key)?.label || key;
 }
 
+// Regla de reorden: con 1 paquete cerrado de reserva + 1 en uso (2 paquetes
+// = máximo), se sugiere comprar 1 paquete más en cuanto se consume la mitad
+// del segundo -- es decir, al bajar a 1.5 paquetes (redondeado hacia abajo,
+// menos 1). La cantidad sugerida siempre es 1 paquete completo. Aplica igual
+// para todos los productos que tengan definido su tamaño de paquete.
+function reorderInfo(item) {
+  if (!item.packSize || item.packSize <= 0) return { min: item.minStock ?? 0, suggestQty: 0 };
+  const min = Math.floor(item.packSize * 1.5) - 1;
+  const suggestQty = item.currentStock <= min ? item.packSize : 0;
+  return { min, suggestQty };
+}
+
 export default function Inventario() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
@@ -132,7 +144,8 @@ export default function Inventario() {
   const filteredInventory = search.trim()
     ? warehouseInventory.filter(i => i.item.toUpperCase().includes(search.toUpperCase()))
     : warehouseInventory;
-  const lowStock = warehouseInventory.filter(i => i.currentStock <= (i.minStock ?? 0));
+  const lowStock = warehouseInventory.filter(i => i.currentStock <= (i.packSize ? reorderInfo(i).min : (i.minStock ?? 0)));
+  const suggestedReorders = warehouseInventory.filter(i => reorderInfo(i).suggestQty > 0);
 
   const addToMoveList = (item, cost) => {
     const qty = parseInt(moveQty) || 1;
@@ -238,39 +251,48 @@ export default function Inventario() {
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
+      // Todo el texto seguido, sin intentar reconstruir "renglones" por
+      // posición -- el PDF puede desalinear celdas (ej. una columna que
+      // envuelve a 2 líneas), lo que rompía la lectura por línea y perdía el
+      // nombre del producto. En vez de eso, se usa el patrón de precios al
+      // final de cada renglón como ancla, y todo lo que hay ENTRE dos anclas
+      // es la descripción de ese artículo -- funciona sin importar cómo
+      // quedó posicionado el texto.
       let fullText = "";
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
-        // Agrupar por línea usando la posición vertical de cada fragmento de
-        // texto (el PDF no guarda "renglones", solo texto posicionado).
-        const lines = {};
-        content.items.forEach(item => {
-          const y = Math.round(item.transform[5]);
-          if (!lines[y]) lines[y] = [];
-          lines[y].push(item.str);
-        });
-        Object.keys(lines).map(Number).sort((a, b) => b - a).forEach(y => {
-          fullText += lines[y].join(" ") + "\n";
-        });
+        fullText += content.items.map(item => item.str).join(" ") + " ";
       }
 
       const folioMatch = fullText.match(/FOLIO:\s*(\S+)/i);
       const folio = folioMatch ? folioMatch[1] : "";
 
-      // Cada renglón de artículo termina en: cantidad, precio unitario, IVA,
-      // precio total (todos con $) -- se usa esa parte final como ancla,
-      // porque la descripción puede traer números propios (dosis, tamaños).
-      const rowRegex = /^(.+?)\s+(\d+)\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})\s*$/gm;
+      const MESES = "ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic";
+      const cleanDescription = (desc) => {
+        let d = desc;
+        // Encabezados de columna y de sección que pueden quedar pegados
+        // antes de la descripción real (ej. "INSUMOS CLORURO DE SODIO...").
+        d = d.replace(/\b(DESCRIPCION|UNIDAD|LOTE|CAD\.?|CANT\.?|PRECIO\s+UNITARIO|IVA|PRECIO|INSUMOS|MEDICAMENTOS|SOLUCIONES)\b/gi, " ");
+        // Lote (cualquier token) + mes-año de caducidad, ej. "M2510429 nov-27"
+        d = d.replace(new RegExp(`\\s+\\S+\\s+(${MESES})-\\d{2}\\s*$`, "i"), "");
+        d = d.replace(/\s+-\s*$/, "");
+        d = d.replace(/^[\s.]+/, ""); // puntos/espacios sueltos al inicio, residuo de encabezados removidos
+        return d.replace(/\s+/g, " ").trim();
+      };
+
+      // Ancla: cantidad seguida de 3 importes con $ (unitario, IVA, precio).
+      const anchorRegex = /(\d+)\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})/g;
       const review = [];
+      let lastEnd = 0;
       let m;
-      while ((m = rowRegex.exec(fullText)) !== null) {
-        const descRaw = m[1].trim();
-        const cantidad = parseInt(m[2]) || 1;
-        const precioTotal = parseFloat(m[5].replace(/,/g, ""));
-        const valorUnitario = cantidad > 0 ? precioTotal / cantidad : parseFloat(m[3].replace(/,/g, ""));
-        // Evitar falsos positivos de líneas de subtotal/total, que no son artículos.
-        if (/^(SUB\s?TOTAL|IMPUESTOS|TOTAL)$/i.test(descRaw)) continue;
+      while ((m = anchorRegex.exec(fullText)) !== null) {
+        const descRaw = cleanDescription(fullText.slice(lastEnd, m.index));
+        lastEnd = anchorRegex.lastIndex;
+        const cantidad = parseInt(m[1]) || 1;
+        const precioTotal = parseFloat(m[4].replace(/,/g, ""));
+        const valorUnitario = cantidad > 0 ? precioTotal / cantidad : parseFloat(m[2].replace(/,/g, ""));
+        if (!descRaw || /^(SUB\s?TOTAL|IMPUESTOS|TOTAL)$/i.test(descRaw)) continue;
         review.push({ descripcion: descRaw, cantidad, valorUnitario, matchedItem: suggestCatalogMatch(descRaw) });
       }
       if (review.length === 0) throw new Error("No se encontraron artículos reconocibles en el PDF.");
@@ -614,6 +636,20 @@ export default function Inventario() {
     } catch (e) { console.error(e); }
   };
 
+  // Tamaño del paquete de compra (ej. 100 piezas por caja de agujas). A
+  // partir de esto se calculan solos el mínimo y la cantidad sugerida --
+  // ya no hay que capturar el mínimo a mano para cada artículo.
+  const setPackSize = async (docId, newSize) => {
+    try {
+      const val = parseInt(newSize) || 0;
+      await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}?updateMask.fieldPaths=packSize`, {
+        method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ fields: { packSize: toFV(val) } }),
+      });
+      setInventory(prev => prev.map(i => i.id === docId ? { ...i, packSize: val } : i));
+    } catch (e) { console.error(e); }
+  };
+
   const inputStyle = { background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"8px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
 
   if (loading && !hasLoadedOnce) return <div style={{ padding:40, color:"#666", textAlign:"center" }}>Cargando…</div>;
@@ -675,6 +711,16 @@ export default function Inventario() {
             <button onClick={() => { setShowMoveModal("compra"); setMoveList([]); setPurchaseConcept(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.3)", color:"#ffb347" }}>
               🧾 Solicitud de compra
             </button>
+            {suggestedReorders.length > 0 && (
+              <button onClick={() => {
+                  setShowMoveModal("compra");
+                  setMoveList(suggestedReorders.map(i => ({ item: i.item, qty: reorderInfo(i).suggestQty })));
+                  setPurchaseConcept(`Reabastecimiento sugerido ${new Date().toLocaleDateString("es-MX")}`);
+                }}
+                style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.3)", color:"#ff6b6b" }}>
+                🛒 Solicitar sugeridos ({suggestedReorders.length})
+              </button>
+            )}
           </div>
 
           {lowStock.length > 0 && (
@@ -691,7 +737,8 @@ export default function Inventario() {
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               {filteredInventory.sort((a,b) => a.item.localeCompare(b.item)).map(i => {
-                const low = i.currentStock <= (i.minStock ?? 0);
+                const { min, suggestQty } = reorderInfo(i);
+                const low = i.currentStock <= min;
                 const negative = i.currentStock < 0;
                 return (
                   <div key={i.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10, background: negative ? "rgba(255,107,107,0.06)" : "rgba(255,255,255,0.03)", border:`1px solid ${negative ? "rgba(255,107,107,0.4)" : low ? "rgba(255,107,107,0.3)" : "rgba(255,255,255,0.07)"}` }}>
@@ -703,16 +750,31 @@ export default function Inventario() {
                         ⚠ ingreso pendiente
                       </span>
                     )}
-                    <span style={{ fontSize:14, fontWeight:700, color: negative ? "#ff6b6b" : low ? "#ffb347" : "#00d4aa", fontFamily:"'IBM Plex Mono', monospace", minWidth:60, textAlign:"right" }}>{i.currentStock} {i.unit}</span>
+                    {suggestQty > 0 && (
+                      <span title={`Existencia en o bajo el mínimo (${min}) -- se sugiere comprar 1 paquete más`}
+                        style={{ fontSize:10, color:"#ffb347", background:"rgba(255,179,71,0.12)", padding:"2px 8px", borderRadius:99, fontWeight:600, whiteSpace:"nowrap" }}>
+                        🛒 comprar {suggestQty}
+                      </span>
+                    )}
+                    <span style={{ fontSize:14, fontWeight:700, color: negative ? "#ff6b6b" : low ? "#ffb347" : "#00d4aa", fontFamily:"'IBM Plex Mono', monospace", minWidth:60, textAlign:"right", whiteSpace:"nowrap" }}>
+                      {i.currentStock} {i.unit}{min > 0 && <span style={{ color:"#666", fontWeight:400 }}> (mín. {min})</span>}
+                    </span>
                     {(i.lastCost > 0 || i.avgCost > 0) && (
                       <span style={{ fontSize:10, color:"#888", fontFamily:"'IBM Plex Mono', monospace", whiteSpace:"nowrap" }} title="Último costo / Costo promedio">
                         últ. ${(i.lastCost||0).toFixed(2)} · prom. ${(i.avgCost||0).toFixed(2)}
                       </span>
                     )}
                     {isJefe && (
-                      <input type="number" defaultValue={i.minStock ?? 0} title="Mínimo antes de avisar"
-                        onBlur={e => setMinStock(i.id, e.target.value)}
-                        style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#888", fontSize:11, outline:"none", textAlign:"center" }} />
+                      <>
+                        <input type="number" defaultValue={i.packSize ?? ""} placeholder="paq." title="Tamaño del paquete de compra (ej. 100 = caja de 100 piezas). Al definirlo, el mínimo y la sugerencia se calculan solos."
+                          onBlur={e => setPackSize(i.id, e.target.value)}
+                          style={{ width:46, background:"rgba(175,169,236,0.06)", border:"1px solid rgba(175,169,236,0.2)", borderRadius:6, padding:"3px 6px", color:"#AFA9EC", fontSize:11, outline:"none", textAlign:"center" }} />
+                        {!i.packSize && (
+                          <input type="number" defaultValue={i.minStock ?? 0} title="Mínimo antes de avisar (manual -- o define el tamaño de paquete para que se calcule solo)"
+                            onBlur={e => setMinStock(i.id, e.target.value)}
+                            style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#888", fontSize:11, outline:"none", textAlign:"center" }} />
+                        )}
+                      </>
                     )}
                   </div>
                 );
