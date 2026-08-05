@@ -54,8 +54,8 @@ async function fetchSessionsInfo(token, sessionIds) {
   const docPaths = sessionIds.map(id => `projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${id}`);
   const info = {};
   // batchGet acepta hasta 500 documentos por solicitud; se trocea por si acaso.
-  for (let i = 0; i < docPaths.length; i += 300) {
-    const chunk = docPaths.slice(i, i + 300);
+  for (let i = 0; i < docPaths.length; i += 3000) {
+    const chunk = docPaths.slice(i, i + 3000);
     const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:batchGet`, {
       method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
       body: JSON.stringify({ documents: chunk }),
