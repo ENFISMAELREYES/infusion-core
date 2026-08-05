@@ -327,6 +327,8 @@ function PendingSessionCard({ session, user, onRefresh }) {
   const [open, setOpen]     = useState(false);
   const [editDate, setEditDate] = useState(session.date || "");
   const [saving, setSaving] = useState(false);
+  const [editingMedId, setEditingMedId] = useState(null);
+  const [medDraft, setMedDraft] = useState({});
 
   const handleReschedule = async () => {
     if (!editDate || editDate === session.date) return;
@@ -357,6 +359,40 @@ function PendingSessionCard({ session, user, onRefresh }) {
     } catch(e) { alert("Error: " + e.message); }
   };
 
+  const startEditMed = (m) => {
+    setEditingMedId(m.id);
+    setMedDraft({
+      diluent: m.diluent || "", time: m.time || "", dose: m.dose || "",
+      parallelType: m.parallelType || "secuencial", startOffset: m.startOffset || 15,
+    });
+  };
+
+  // Guarda la corrección del medicamento -- si la sesión ya estaba
+  // autorizada, la reenvía marcando exactamente qué se corrigió (misma
+  // regla que en la sesión ya en curso), en vez de mandarla en blanco a
+  // revisión completa.
+  const saveEditMed = async (medId) => {
+    setSaving(true);
+    try {
+      const token = await user.getIdToken(true);
+      const med = (session.meds || []).find(m => m.id === medId);
+      const updatedMeds = (session.meds || []).map(m => m.id === medId ? {
+        ...m,
+        diluent: medDraft.diluent, dose: medDraft.dose,
+        time: parseInt(medDraft.time) || m.time,
+        parallelType: medDraft.parallelType,
+        startOffset: medDraft.parallelType === "offset" ? (parseInt(medDraft.startOffset) || 15) : null,
+      } : m);
+      const changeNote = session.authorized ? `✎ Se corrigió ${med?.name || "un medicamento"}` : undefined;
+      await updateSessionMeds(token, session.id, updatedMeds, session.authorized, changeNote);
+      setEditingMedId(null);
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const PARALLEL_LABEL = { secuencial: "Secuencial (uno después del otro)", junto: "Simultáneo (junto con el anterior)", offset: "Con diferencia de tiempo" };
+
   const statusColor = !session.authorized ? "#ffb347" : "#1D9E75";
   const statusLabel = !session.authorized ? "Sin autorizar" : "Autorizado";
 
@@ -380,11 +416,48 @@ function PendingSessionCard({ session, user, onRefresh }) {
           {/* Medicamentos */}
           <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:4 }}>Medicamentos</div>
           {(session.meds||[]).map(m => (
-            <div key={m.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", background:"rgba(255,255,255,0.02)", borderRadius:8, borderLeft:`3px solid ${CAT_COLOR[m.category]||"#888"}` }}>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:12, color:"#ddd", fontWeight:600 }}>{m.name} {m.dose}</div>
-                <div style={{ fontSize:11, color:"#555" }}>{m.diluent} · {m.time} min</div>
-              </div>
+            <div key={m.id} style={{ padding:"8px 12px", background:"rgba(255,255,255,0.02)", borderRadius:8, borderLeft:`3px solid ${CAT_COLOR[m.category]||"#888"}` }}>
+              {editingMedId === m.id ? (
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  <div style={{ fontSize:12, color:"#ddd", fontWeight:600 }}>{m.name}</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                    <input placeholder="Dosis" value={medDraft.dose} onChange={e => setMedDraft(d => ({ ...d, dose:e.target.value }))}
+                      style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                    <input placeholder="Tiempo (min)" type="number" value={medDraft.time} onChange={e => setMedDraft(d => ({ ...d, time:e.target.value }))}
+                      style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                  </div>
+                  <input placeholder="Dilución" value={medDraft.diluent} onChange={e => setMedDraft(d => ({ ...d, diluent:e.target.value }))}
+                    style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                  <div>
+                    <label style={{ fontSize:10, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Tipo de aplicación</label>
+                    <select value={medDraft.parallelType} onChange={e => setMedDraft(d => ({ ...d, parallelType:e.target.value }))}
+                      style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none", cursor:"pointer" }}>
+                      {Object.entries(PARALLEL_LABEL).map(([val,label]) => <option key={val} value={val}>{label}</option>)}
+                    </select>
+                  </div>
+                  {medDraft.parallelType === "offset" && (
+                    <input placeholder="Minutos después del anterior" type="number" value={medDraft.startOffset} onChange={e => setMedDraft(d => ({ ...d, startOffset:e.target.value }))}
+                      style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                  )}
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={() => setEditingMedId(null)} disabled={saving} style={{ flex:1, padding:"7px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
+                    <button onClick={() => saveEditMed(m.id)} disabled={saving} style={{ flex:2, padding:"7px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+                      {saving ? "Guardando…" : "✓ Guardar corrección"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:12, color:"#ddd", fontWeight:600 }}>{m.name} {m.dose}</div>
+                    <div style={{ fontSize:11, color:"#555" }}>{m.diluent} · {m.time} min</div>
+                    {m.parallelType && m.parallelType !== "secuencial" && (
+                      <div style={{ fontSize:10, color:"#ffb347", marginTop:2 }}>⚡ {m.parallelType === "junto" ? "Simultáneo con anterior" : `Inicia ${m.startOffset} min después del anterior`}</div>
+                    )}
+                  </div>
+                  <button onClick={() => startEditMed(m)} style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC" }}>✏️ Editar</button>
+                </div>
+              )}
             </div>
           ))}
 
