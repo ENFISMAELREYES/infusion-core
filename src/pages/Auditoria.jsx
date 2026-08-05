@@ -54,8 +54,8 @@ async function fetchSessionsInfo(token, sessionIds) {
   const docPaths = sessionIds.map(id => `projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${id}`);
   const info = {};
   // batchGet acepta hasta 500 documentos por solicitud; se trocea por si acaso.
-  for (let i = 0; i < docPaths.length; i += 3000) {
-    const chunk = docPaths.slice(i, i + 3000);
+  for (let i = 0; i < docPaths.length; i += 300) {
+    const chunk = docPaths.slice(i, i + 300);
     const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:batchGet`, {
       method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
       body: JSON.stringify({ documents: chunk }),
@@ -71,26 +71,36 @@ async function fetchSessionsInfo(token, sessionIds) {
 }
 
 // Busca sesiones por nombre de paciente (coincidencia de "empieza con", ya
-// que Firestore no soporta "contiene" de forma nativa) -- el registro de
-// auditoría no guarda el nombre del paciente, así que hay que encontrar
-// primero las sesiones y buscar luego por esos IDs.
+// que Firestore no soporta "contiene" de forma nativa). Se prueban varias
+// variantes de mayúsculas/minúsculas porque sesiones antiguas pueden no
+// tener el nombre normalizado igual que las nuevas -- una búsqueda
+// sensible a mayúsculas se perdía esos registros más viejos.
 async function fetchSessionIdsByPatientPrefix(token, query) {
-  const up = query.trim().toUpperCase();
-  if (!up) return [];
-  const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`, {
-    method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-    body: JSON.stringify({ structuredQuery: {
-      from: [{ collectionId: "sessions" }],
-      where: { compositeFilter: { op: "AND", filters: [
-        { fieldFilter: { field: { fieldPath: "patientName" }, op: "GREATER_THAN_OR_EQUAL", value: { stringValue: up } } },
-        { fieldFilter: { field: { fieldPath: "patientName" }, op: "LESS_THAN", value: { stringValue: up + "\uf8ff" } } },
-      ]}},
-      limit: 100,
-    }}),
-  });
-  const data = await res.json();
-  if (!Array.isArray(data)) return [];
-  return data.filter(d => d.document).map(d => d.document.name.split("/").pop());
+  const raw = query.trim();
+  if (!raw) return [];
+  const variants = [...new Set([
+    raw.toUpperCase(),
+    raw.toLowerCase(),
+    raw.replace(/\b\w/g, c => c.toUpperCase()), // Title Case
+    raw,
+  ])];
+  const idsSet = new Set();
+  for (const variant of variants) {
+    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`, {
+      method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ structuredQuery: {
+        from: [{ collectionId: "sessions" }],
+        where: { compositeFilter: { op: "AND", filters: [
+          { fieldFilter: { field: { fieldPath: "patientName" }, op: "GREATER_THAN_OR_EQUAL", value: { stringValue: variant } } },
+          { fieldFilter: { field: { fieldPath: "patientName" }, op: "LESS_THAN", value: { stringValue: variant + "\uf8ff" } } },
+        ]}},
+        limit: 300,
+      }}),
+    });
+    const data = await res.json();
+    if (Array.isArray(data)) data.filter(d => d.document).forEach(d => idsSet.add(d.document.name.split("/").pop()));
+  }
+  return [...idsSet];
 }
 
 // Trae del audit_log los registros que correspondan a una lista de IDs de
@@ -105,7 +115,7 @@ async function fetchAuditLogByDocIds(token, docIds) {
       body: JSON.stringify({ structuredQuery: {
         from: [{ collectionId: "audit_log" }],
         where: { fieldFilter: { field: { fieldPath: "docId" }, op: "IN", value: { arrayValue: { values: chunk.map(id => ({ stringValue: id })) } } } },
-        limit: 300,
+        limit: 1000,
       }}),
     });
     const data = await res.json();
@@ -263,4 +273,3 @@ export default function Auditoria() {
     </div>
   );
 }
-
