@@ -1191,6 +1191,7 @@ export const MEDICATION_ROUTES = {
   "PREDNISONA 20 MG": "ORAL",
   "RIFAMPICINA 300 MG": "ORAL",
   "HARTMANN 1000 ML": "INYECTABLE",
+  "HARTMANN 500 ML": "INYECTABLE",
   "TRAMADOL 100 ML": "INYECTABLE",
   "HEPARINA 100 000 UI": "INYECTABLE",
   "ABEMACICLIB 150 MG": "ORAL",
@@ -1309,6 +1310,16 @@ export const MASTER_CATALOG = [
     "category": "Insumos",
     "item": "GLUCONATO DE CLORHEXIDINA 60 ML",
     "unit": "FRASCO"
+  },
+  {
+    "category": "Insumos",
+    "item": "VENDA ELASTICA 10 CM",
+    "unit": "PIEZA"
+  },
+  {
+    "category": "Insumos",
+    "item": "VENDA ELASTICA 15 CM",
+    "unit": "PIEZA"
   },
   {
     "category": "Insumos",
@@ -1673,6 +1684,11 @@ export const MASTER_CATALOG = [
   {
     "category": "Medicamentos",
     "item": "HARTMANN 1000 ML",
+    "unit": "FRASCO"
+  },
+  {
+    "category": "Medicamentos",
+    "item": "HARTMANN 500 ML",
     "unit": "FRASCO"
   },
   {
