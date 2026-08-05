@@ -157,7 +157,7 @@ async function patchSession(token, sessionId, updates) {
   logAudit(token, "sessions", sessionId, updates); // no se espera (await) para no retrasar el guardado
 }
 
-async function updateSessionMeds(token, sessionId, meds, reAuth) {
+async function updateSessionMeds(token, sessionId, meds, reAuth, changeNote) {
   const toFV = (val) => {
     if (typeof val === "string") return { stringValue:val };
     if (typeof val === "boolean") return { booleanValue:val };
@@ -168,7 +168,15 @@ async function updateSessionMeds(token, sessionId, meds, reAuth) {
     return { stringValue:String(val) };
   };
   const fields = { meds:toFV(meds) };
-  if (reAuth) fields.authorized = { booleanValue:false };
+  if (reAuth) {
+    fields.authorized = { booleanValue:false };
+    // Nota de qué cambió exactamente, para que el jefe no tenga que revisar
+    // toda la sesión desde cero -- solo lo que se modificó.
+    if (changeNote) {
+      fields.pendingChangeNote = { stringValue: changeNote };
+      fields.pendingChangeAt = { stringValue: new Date().toISOString() };
+    }
+  }
   const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${sessionId}?${mask}`,
     { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
@@ -630,10 +638,10 @@ function SessionCard({ session, token, onRefresh, user }) {
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
-  const saveMeds = async (updatedMeds, reAuth) => {
+  const saveMeds = async (updatedMeds, reAuth, changeNote) => {
     try {
       const freshToken = await user.getIdToken(true);
-      await updateSessionMeds(freshToken, session.id, updatedMeds, reAuth);
+      await updateSessionMeds(freshToken, session.id, updatedMeds, reAuth, changeNote);
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
@@ -648,7 +656,7 @@ function SessionCard({ session, token, onRefresh, user }) {
 
   const handleAdd = (newMed) => {
     const medWithDefaults = { ...newMed, order:(session.meds||[]).length+1, parallelType:"secuencial", startOffset:null };
-    saveMeds([...(session.meds||[]), medWithDefaults], true);
+    saveMeds([...(session.meds||[]), medWithDefaults], true, session.authorized ? `+ Se agregó ${newMed.name || "un medicamento"}` : undefined);
     setShowAdd(false);
   };
 
@@ -658,14 +666,15 @@ function SessionCard({ session, token, onRefresh, user }) {
     const reordered = [...others];
     reordered.splice(newOrder-1, 0, updatedMed);
     const updatedMeds = reordered.map((m,i) => ({ ...m, order:i+1 }));
-    saveMeds(updatedMeds, session.authorized);
+    saveMeds(updatedMeds, session.authorized, session.authorized ? `✎ Se modificó ${updatedMed.name || "un medicamento"}` : undefined);
     setEditingId(null);
   };
 
   const handleDelete = (medId) => {
     if (!confirm("¿Eliminar este medicamento?")) return;
+    const deletedMed = (session.meds||[]).find(m => m.id === medId);
     const updatedMeds = (session.meds||[]).filter(m => m.id !== medId).map((m,i) => ({ ...m, order:i+1 }));
-    saveMeds(updatedMeds, session.authorized);
+    saveMeds(updatedMeds, session.authorized, session.authorized ? `− Se eliminó ${deletedMed?.name || "un medicamento"}` : undefined);
   };
 
   const completedMeds = (session.meds||[]).filter(m => 
