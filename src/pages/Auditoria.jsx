@@ -70,6 +70,51 @@ async function fetchSessionsInfo(token, sessionIds) {
   return info;
 }
 
+// Busca sesiones por nombre de paciente (coincidencia de "empieza con", ya
+// que Firestore no soporta "contiene" de forma nativa) -- el registro de
+// auditoría no guarda el nombre del paciente, así que hay que encontrar
+// primero las sesiones y buscar luego por esos IDs.
+async function fetchSessionIdsByPatientPrefix(token, query) {
+  const up = query.trim().toUpperCase();
+  if (!up) return [];
+  const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`, {
+    method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({ structuredQuery: {
+      from: [{ collectionId: "sessions" }],
+      where: { compositeFilter: { op: "AND", filters: [
+        { fieldFilter: { field: { fieldPath: "patientName" }, op: "GREATER_THAN_OR_EQUAL", value: { stringValue: up } } },
+        { fieldFilter: { field: { fieldPath: "patientName" }, op: "LESS_THAN", value: { stringValue: up + "\uf8ff" } } },
+      ]}},
+      limit: 100,
+    }}),
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data.filter(d => d.document).map(d => d.document.name.split("/").pop());
+}
+
+// Trae del audit_log los registros que correspondan a una lista de IDs de
+// sesión (se trocea de a 30, el máximo que acepta el operador IN).
+async function fetchAuditLogByDocIds(token, docIds) {
+  if (docIds.length === 0) return [];
+  const all = [];
+  for (let i = 0; i < docIds.length; i += 30) {
+    const chunk = docIds.slice(i, i + 30);
+    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`, {
+      method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ structuredQuery: {
+        from: [{ collectionId: "audit_log" }],
+        where: { fieldFilter: { field: { fieldPath: "docId" }, op: "IN", value: { arrayValue: { values: chunk.map(id => ({ stringValue: id })) } } } },
+        limit: 300,
+      }}),
+    });
+    const data = await res.json();
+    if (Array.isArray(data)) all.push(...data.filter(d => d.document).map(d => parseDoc(d.document)));
+  }
+  return all.sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""));
+}
+
+
 // Etiquetas legibles para los nombres de campo más comunes que se auditan
 const FIELD_LABELS = {
   meds: "Medicamentos", medEvents: "Eventos de medicamento", washEvents: "Eventos de lavado",
@@ -108,7 +153,18 @@ export default function Auditoria() {
     setLoading(true);
     try {
       const token = await user.getIdToken(true);
-      const data = await fetchAuditLog(token, filters);
+      let data;
+      if (patientSearch.trim()) {
+        // Búsqueda por paciente: primero encontrar sus sesiones, luego traer
+        // la auditoría de esas sesiones específicas -- no depende de la
+        // ventana de los últimos 300 registros generales.
+        const sessionIds = await fetchSessionIdsByPatientPrefix(token, patientSearch);
+        data = await fetchAuditLogByDocIds(token, sessionIds);
+        if (filters.userEmail) data = data.filter(e => e.userEmail === filters.userEmail);
+        if (filters.docId)     data = data.filter(e => e.docId === filters.docId);
+      } else {
+        data = await fetchAuditLog(token, filters);
+      }
       const sessionIds = [...new Set(data.filter(e => e.collection === "sessions").map(e => e.docId))];
       const sessionsInfo = await fetchSessionsInfo(token, sessionIds);
       setEntries(data.map(e => ({ ...e, sessionInfo: sessionsInfo[e.docId] })));
@@ -123,9 +179,6 @@ export default function Auditoria() {
   useEffect(() => { load(); }, [user]);
 
   const inputStyle = { background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"8px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
-  const filteredEntries = patientSearch.trim()
-    ? entries.filter(e => (e.sessionInfo?.patientName || "").toUpperCase().includes(patientSearch.toUpperCase()))
-    : entries;
 
   if (!isJefe) {
     return (
@@ -162,14 +215,14 @@ export default function Auditoria() {
 
       {loading && !hasLoadedOnce ? (
         <div style={{ color:"#555", fontSize:14, padding:24 }}>Cargando…</div>
-      ) : filteredEntries.length === 0 ? (
+      ) : entries.length === 0 ? (
         <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
           Sin registros con esos filtros.
         </div>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-          <div style={{ fontSize:12, color:"#555", marginBottom:4 }}>{filteredEntries.length} registro{filteredEntries.length !== 1 ? "s" : ""} (de los últimos 300 en total)</div>
-          {filteredEntries.map(e => {
+          <div style={{ fontSize:12, color:"#555", marginBottom:4 }}>{entries.length} registro{entries.length !== 1 ? "s" : ""} {patientSearch.trim() ? "de este paciente" : "(últimos 300)"}</div>
+          {entries.map(e => {
             const isOpen = expanded === e.id;
             const changeKeys = Object.keys(e.changes || {});
             return (
