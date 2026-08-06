@@ -541,7 +541,7 @@ export const MATERIAL_DEFAULTS = {
     ],
     "soluciones": []
   },
-  "VINCLISTINA": {
+  "VINCRISTINA": {
     "insumos": [
       {
         "item": "GASA ESTERIL 10x10 CM",
