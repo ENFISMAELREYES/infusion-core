@@ -391,6 +391,21 @@ function PendingSessionCard({ session, user, onRefresh }) {
     finally { setSaving(false); }
   };
 
+  const deleteMed = async (medId) => {
+    const med = (session.meds || []).find(m => m.id === medId);
+    if (!confirm(`¿Quitar ${med?.name || "este medicamento"} de la sesión?`)) return;
+    setSaving(true);
+    try {
+      const token = await user.getIdToken(true);
+      const updatedMeds = (session.meds || []).filter(m => m.id !== medId).map((m,i) => ({ ...m, order:i+1 }));
+      const changeNote = session.authorized ? `− Se eliminó ${med?.name || "un medicamento"}` : undefined;
+      await updateSessionMeds(token, session.id, updatedMeds, session.authorized, changeNote);
+      setEditingMedId(null);
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
   const PARALLEL_LABEL = { secuencial: "Secuencial (uno después del otro)", junto: "Simultáneo (junto con el anterior)", offset: "Con diferencia de tiempo" };
 
   const statusColor = !session.authorized ? "#ffb347" : "#1D9E75";
@@ -441,6 +456,7 @@ function PendingSessionCard({ session, user, onRefresh }) {
                   )}
                   <div style={{ display:"flex", gap:8 }}>
                     <button onClick={() => setEditingMedId(null)} disabled={saving} style={{ flex:1, padding:"7px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
+                    <button onClick={() => deleteMed(m.id)} disabled={saving} style={{ padding:"7px 12px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑 Quitar</button>
                     <button onClick={() => saveEditMed(m.id)} disabled={saving} style={{ flex:2, padding:"7px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
                       {saving ? "Guardando…" : "✓ Guardar corrección"}
                     </button>
