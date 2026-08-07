@@ -26,3 +26,4 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(BUILD_VERSION),
   },
 })
+
