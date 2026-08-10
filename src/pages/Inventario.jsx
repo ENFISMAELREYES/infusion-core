@@ -845,13 +845,16 @@ export default function Inventario() {
           if (!byItem[i.item]) byItem[i.item] = { item: i.item, unit: i.unit, category: i.category, CITIO:0, CIPI_PRO:0, CIPI_PED:0, QUAL_CITIO:0, QUAL_CIPI:0 };
           byItem[i.item][i.warehouse] = i.currentStock;
         });
-        const rows = Object.values(byItem).sort((a,b) => a.item.localeCompare(b.item));
-        return (
-          <div>
-            <div style={{ fontSize:12, color:"#555", marginBottom:12 }}>{rows.length} artículo{rows.length!==1?"s":""} · almacenes de centro (izquierda) y Qual, stock de farmacia (derecha)</div>
+        const allRows = Object.values(byItem).sort((a,b) => a.item.localeCompare(b.item));
+        const materialRows = allRows.filter(r => !MED_CATEGORIES.includes(r.category));
+        const medRows = allRows.filter(r => MED_CATEGORIES.includes(r.category));
+
+        const Section = ({ title, rows }) => (
+          <div style={{ marginBottom:24 }}>
+            <div style={{ fontSize:12, color:"#00d4aa", fontWeight:600, marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>{title} ({rows.length})</div>
             {rows.length === 0 ? (
-              <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
-                Sin existencias registradas todavía.
+              <div style={{ color:"#444", fontSize:13, padding:20, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:12 }}>
+                Sin artículos en esta categoría.
               </div>
             ) : (
               <div style={{ overflowX:"auto" }}>
@@ -889,6 +892,14 @@ export default function Inventario() {
                 </table>
               </div>
             )}
+          </div>
+        );
+
+        return (
+          <div>
+            <div style={{ fontSize:12, color:"#555", marginBottom:16 }}>{allRows.length} artículo{allRows.length!==1?"s":""} en total · almacenes de centro (izquierda) y Qual, stock de farmacia (derecha)</div>
+            <Section title="📦 Material e insumos" rows={materialRows} />
+            <Section title="💊 Medicamentos" rows={medRows} />
           </div>
         );
       })()}
