@@ -157,6 +157,34 @@ async function patchSession(token, sessionId, updates) {
   logAudit(token, "sessions", sessionId, updates); // no se espera (await) para no retrasar el guardado
 }
 
+// Incrementa un contador de forma atómica (transform de Firestore, no
+// lee-y-luego-escribe) -- evita números duplicados cuando varias personas
+// guardan al mismo tiempo, y es mucho más resistente a la saturación del
+// documento bajo uso concurrente. Reintenta con espera creciente si de
+// todas formas se satura ("exceeded maximum bandwidth for writes").
+async function atomicIncrementCounter(token, counterId, maxRetries = 4) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:commit`;
+  const docPath = `projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${counterId}`;
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ writes: [{
+          transform: { document: docPath, fieldTransforms: [{ fieldPath: "lastNumber", increment: { integerValue: "1" } }] },
+        }] }),
+      });
+      const data = await res.json();
+      const val = data?.writeResults?.[0]?.transformResults?.[0]?.integerValue;
+      if (val !== undefined) return parseInt(val);
+      lastError = new Error(data?.error?.message || "Respuesta inesperada al incrementar el contador");
+    } catch (e) { lastError = e; }
+    // Espera creciente antes de reintentar (0.5s, 1s, 2s, 4s...)
+    await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)));
+  }
+  throw lastError || new Error("No se pudo asignar el número consecutivo, intenta de nuevo.");
+}
+
 async function updateSessionMeds(token, sessionId, meds, reAuth, changeNote) {
   const toFV = (val) => {
     if (typeof val === "string") return { stringValue:val };
@@ -590,7 +618,10 @@ function SessionCard({ session, token, onRefresh, user }) {
           }
         } catch(err) { console.log("No se pudo confirmar cita:", err); }
 
-        // Asignar número consecutivo del centro
+        // Asignar número consecutivo del centro -- incremento atómico (no
+        // lee-y-luego-escribe) para que sea seguro con varias enfermeras
+        // guardando al mismo tiempo, sin duplicar números ni saturar el
+        // documento del contador.
         const counterId = session.sessionType === "entrega"
           ? `counter_${session.center}_entrega`
           : (session.sessionType === "intramuscular" || session.sessionType === "im")
@@ -600,18 +631,7 @@ function SessionCard({ session, token, onRefresh, user }) {
           : session.sessionType === "procedimiento"
           ? `counter_${session.center}_procedimiento`
           : `counter_${session.center}`;
-        const counterRes = await fetch(
-          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${counterId}`,
-          { headers: { "Authorization": `Bearer ${freshToken}` } }
-        );
-        const counterDoc = await counterRes.json();
-        const lastNumber = counterDoc.fields?.lastNumber?.integerValue ? parseInt(counterDoc.fields.lastNumber.integerValue) : 0;
-        const newNumber = lastNumber + 1;
-        await fetch(
-          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${counterId}?updateMask.fieldPaths=lastNumber`,
-          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
-            body: JSON.stringify({ fields: { lastNumber: { integerValue: String(newNumber) } } }) }
-        );
+        const newNumber = await atomicIncrementCounter(freshToken, counterId);
         if (session.sessionType === "entrega") {
           updates.deliveryNumber = newNumber;
         } else if (session.sessionType === "intramuscular" || session.sessionType === "im") {
@@ -643,19 +663,7 @@ function SessionCard({ session, token, onRefresh, user }) {
           const existingExpediente = patientData.find(d => d.document);
           if (!existingExpediente) {
             const expCounterId = `counter_${session.center}_expediente`;
-            const expRes = await fetch(
-              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${expCounterId}`,
-              { headers:{ "Authorization":`Bearer ${freshToken}` } }
-            );
-            const expDoc = await expRes.json();
-            const lastExp = expDoc.fields?.lastNumber?.integerValue ? parseInt(expDoc.fields.lastNumber.integerValue) : 0;
-            const newExp = lastExp + 1;
-            await fetch(
-              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${expCounterId}?updateMask.fieldPaths=lastNumber`,
-              { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
-                body: JSON.stringify({ fields:{ lastNumber:{ integerValue: String(newExp) } } }) }
-            );
-            updates.expedienteNumber = newExp;
+            updates.expedienteNumber = await atomicIncrementCounter(freshToken, expCounterId);
           } else {
             const existingDoc = existingExpediente.document.fields;
             if (existingDoc.expedienteNumber?.integerValue) {
