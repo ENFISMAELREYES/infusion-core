@@ -71,17 +71,15 @@ function warehouseLabel(key) {
   return [...WAREHOUSES, ...QUAL_WAREHOUSES].find(w => w.key === key)?.label || key;
 }
 
-// Regla de reorden: mínimo y máximo se capturan directo en piezas (no por
-// paquete). En cuanto la existencia baja de "mínimo", se sugiere comprar el
-// lote fijo (máximo - mínimo) -- SALVO que la existencia haya caído tanto
-// (ej. llegó a 0) que ese lote fijo ni siquiera alcance a cubrir el mínimo;
-// en ese caso se sugiere al menos lo necesario para llegar al mínimo.
+// Regla de reorden: con 1 paquete cerrado de reserva + 1 en uso (2 paquetes
+// = máximo), se sugiere comprar 1 paquete más en cuanto se consume la mitad
+// del segundo -- es decir, al bajar a 1.5 paquetes (redondeado hacia abajo,
+// menos 1). La cantidad sugerida siempre es 1 paquete completo. Aplica igual
+// para todos los productos que tengan definido su tamaño de paquete.
 function reorderInfo(item) {
-  const min = item.minStock ?? 0;
-  const max = item.maxStock ?? 0;
-  if (!max || max <= min) return { min, suggestQty: 0 };
-  if (item.currentStock >= min) return { min, suggestQty: 0 };
-  const suggestQty = Math.max(max - min, min - item.currentStock);
+  if (!item.packSize || item.packSize <= 0) return { min: item.minStock ?? 0, suggestQty: 0 };
+  const min = Math.floor(item.packSize * 1.5) - 1;
+  const suggestQty = item.currentStock <= min ? item.packSize : 0;
   return { min, suggestQty };
 }
 
@@ -146,7 +144,7 @@ export default function Inventario() {
   const filteredInventory = search.trim()
     ? warehouseInventory.filter(i => i.item.toUpperCase().includes(search.toUpperCase()))
     : warehouseInventory;
-  const lowStock = warehouseInventory.filter(i => i.currentStock < (i.minStock ?? 0));
+  const lowStock = warehouseInventory.filter(i => i.currentStock <= (i.packSize ? reorderInfo(i).min : (i.minStock ?? 0)));
   const suggestedReorders = warehouseInventory.filter(i => reorderInfo(i).suggestQty > 0);
 
   const addToMoveList = (item, cost) => {
@@ -641,14 +639,14 @@ export default function Inventario() {
   // Tamaño del paquete de compra (ej. 100 piezas por caja de agujas). A
   // partir de esto se calculan solos el mínimo y la cantidad sugerida --
   // ya no hay que capturar el mínimo a mano para cada artículo.
-  const setMaxStock = async (docId, newMax) => {
+  const setPackSize = async (docId, newSize) => {
     try {
-      const val = parseInt(newMax) || 0;
-      await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}?updateMask.fieldPaths=maxStock`, {
+      const val = parseInt(newSize) || 0;
+      await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}?updateMask.fieldPaths=packSize`, {
         method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ fields: { maxStock: toFV(val) } }),
+        body: JSON.stringify({ fields: { packSize: toFV(val) } }),
       });
-      setInventory(prev => prev.map(i => i.id === docId ? { ...i, maxStock: val } : i));
+      setInventory(prev => prev.map(i => i.id === docId ? { ...i, packSize: val } : i));
     } catch (e) { console.error(e); }
   };
 
@@ -686,7 +684,7 @@ export default function Inventario() {
       </div>
 
       <div style={{ display:"flex", gap:8, marginBottom:20, borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-        {[["existencias","Existencias"],["movimientos","Movimientos"]].map(([val,label]) => (
+        {[["existencias","Existencias"],["movimientos","Movimientos"],...(isJefe ? [["general","Vista general"]] : [])].map(([val,label]) => (
           <button key={val} onClick={() => setTab(val)} style={{
             padding:"10px 16px", fontSize:13, fontWeight:600, cursor:"pointer", background:"none", border:"none",
             borderBottom: tab===val ? "2px solid #00d4aa" : "2px solid transparent",
@@ -740,7 +738,7 @@ export default function Inventario() {
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               {filteredInventory.sort((a,b) => a.item.localeCompare(b.item)).map(i => {
                 const { min, suggestQty } = reorderInfo(i);
-                const low = i.currentStock < min;
+                const low = i.currentStock <= min;
                 const negative = i.currentStock < 0;
                 return (
                   <div key={i.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10, background: negative ? "rgba(255,107,107,0.06)" : "rgba(255,255,255,0.03)", border:`1px solid ${negative ? "rgba(255,107,107,0.4)" : low ? "rgba(255,107,107,0.3)" : "rgba(255,255,255,0.07)"}` }}>
@@ -768,13 +766,14 @@ export default function Inventario() {
                     )}
                     {isJefe && (
                       <>
-                        <input type="number" defaultValue={i.minStock ?? 0} placeholder="mín" title="Mínimo -- en cuanto la existencia baje de este número, se sugiere comprar"
-                          onBlur={e => setMinStock(i.id, e.target.value)}
-                          style={{ width:46, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#888", fontSize:11, outline:"none", textAlign:"center" }} />
-                        <span style={{ color:"#444", fontSize:11 }}>/</span>
-                        <input type="number" defaultValue={i.maxStock ?? ""} placeholder="máx" title="Máximo -- la sugerencia de compra es la diferencia entre máximo y mínimo"
-                          onBlur={e => setMaxStock(i.id, e.target.value)}
+                        <input type="number" defaultValue={i.packSize ?? ""} placeholder="paq." title="Tamaño del paquete de compra (ej. 100 = caja de 100 piezas). Al definirlo, el mínimo y la sugerencia se calculan solos."
+                          onBlur={e => setPackSize(i.id, e.target.value)}
                           style={{ width:46, background:"rgba(175,169,236,0.06)", border:"1px solid rgba(175,169,236,0.2)", borderRadius:6, padding:"3px 6px", color:"#AFA9EC", fontSize:11, outline:"none", textAlign:"center" }} />
+                        {!i.packSize && (
+                          <input type="number" defaultValue={i.minStock ?? 0} title="Mínimo antes de avisar (manual -- o define el tamaño de paquete para que se calcule solo)"
+                            onBlur={e => setMinStock(i.id, e.target.value)}
+                            style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#888", fontSize:11, outline:"none", textAlign:"center" }} />
+                        )}
                       </>
                     )}
                   </div>
@@ -838,6 +837,57 @@ export default function Inventario() {
           })}
         </div>
       )}
+
+      {tab === "general" && isJefe && (() => {
+        // Combinar existencias de los 3 almacenes de centro (Qual queda
+        // fuera a propósito -- es stock de farmacia antes de asignarse,
+        // no inventario operativo del día a día).
+        const centerKeys = ["CITIO","CIPI_PRO","CIPI_PED"];
+        const byItem = {};
+        inventory.filter(i => centerKeys.includes(i.warehouse)).forEach(i => {
+          if (!byItem[i.item]) byItem[i.item] = { item: i.item, unit: i.unit, category: i.category, CITIO:0, CIPI_PRO:0, CIPI_PED:0 };
+          byItem[i.item][i.warehouse] = i.currentStock;
+        });
+        const rows = Object.values(byItem).sort((a,b) => a.item.localeCompare(b.item));
+        return (
+          <div>
+            <div style={{ fontSize:12, color:"#555", marginBottom:12 }}>{rows.length} artículo{rows.length!==1?"s":""} · suma de CITIO + CIPI PRO + CIPI PED (Qual no incluido)</div>
+            {rows.length === 0 ? (
+              <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
+                Sin existencias registradas todavía.
+              </div>
+            ) : (
+              <div style={{ overflowX:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                  <thead>
+                    <tr style={{ borderBottom:"1px solid rgba(255,255,255,0.1)" }}>
+                      <th style={{ textAlign:"left", padding:"8px 10px", color:"#666", fontWeight:600 }}>Artículo</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#4fc3f7", fontWeight:600 }}>CITIO</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#AFA9EC", fontWeight:600 }}>CIPI PRO</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#ffb347", fontWeight:600 }}>CIPI PED</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#00d4aa", fontWeight:600 }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r,i) => {
+                      const total = r.CITIO + r.CIPI_PRO + r.CIPI_PED;
+                      return (
+                        <tr key={i} style={{ borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
+                          <td style={{ padding:"7px 10px", color:"#f0f0f0" }}>{r.item}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color: r.CITIO<0 ? "#ff6b6b" : "#ccc", fontFamily:"'IBM Plex Mono', monospace" }}>{r.CITIO}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color: r.CIPI_PRO<0 ? "#ff6b6b" : "#ccc", fontFamily:"'IBM Plex Mono', monospace" }}>{r.CIPI_PRO}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color: r.CIPI_PED<0 ? "#ff6b6b" : "#ccc", fontFamily:"'IBM Plex Mono', monospace" }}>{r.CIPI_PED}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color:"#00d4aa", fontWeight:700, fontFamily:"'IBM Plex Mono', monospace" }}>{total} {r.unit}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {showMoveModal && (
         <div onClick={() => !saving && (setShowMoveModal(null), setXmlReview(null), setXmlReceptor(""))}
