@@ -846,8 +846,12 @@ export default function Inventario() {
           byItem[i.item][i.warehouse] = i.currentStock;
         });
         const allRows = Object.values(byItem).sort((a,b) => a.item.localeCompare(b.item));
-        const materialRows = allRows.filter(r => !MED_CATEGORIES.includes(r.category));
-        const medRows = allRows.filter(r => MED_CATEGORIES.includes(r.category));
+        // Cloruro, glucosa y Hartmann están catalogados como "Medicamentos"
+        // en el catálogo, pero funcionalmente son soluciones -- van con
+        // material e insumos, igual que en el resto de la app (PDF, consolidado).
+        const isSolution = (name) => /CLORURO DE SODIO|GLUCOSA|HARTMANN/i.test(name);
+        const materialRows = allRows.filter(r => !MED_CATEGORIES.includes(r.category) || isSolution(r.item));
+        const medRows = allRows.filter(r => MED_CATEGORIES.includes(r.category) && !isSolution(r.item));
 
         const Section = ({ title, rows }) => (
           <div style={{ marginBottom:24 }}>
