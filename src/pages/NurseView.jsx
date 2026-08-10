@@ -390,7 +390,7 @@ function PendingSessionCard({ session, user, onRefresh }) {
   const startEditMed = (m) => {
     setEditingMedId(m.id);
     setMedDraft({
-      diluent: m.diluent || "", time: m.time || "", dose: m.dose || "",
+      name: m.name || "", diluent: m.diluent || "", time: m.time || "", dose: m.dose || "",
       parallelType: m.parallelType || "secuencial", startOffset: m.startOffset || 15,
     });
   };
@@ -404,14 +404,18 @@ function PendingSessionCard({ session, user, onRefresh }) {
     try {
       const token = await user.getIdToken(true);
       const med = (session.meds || []).find(m => m.id === medId);
+      const nameChanged = medDraft.name.trim() && medDraft.name.trim() !== med?.name;
       const updatedMeds = (session.meds || []).map(m => m.id === medId ? {
         ...m,
+        name: medDraft.name.trim() || m.name,
         diluent: medDraft.diluent, dose: medDraft.dose,
         time: parseInt(medDraft.time) || m.time,
         parallelType: medDraft.parallelType,
         startOffset: medDraft.parallelType === "offset" ? (parseInt(medDraft.startOffset) || 15) : null,
       } : m);
-      const changeNote = session.authorized ? `✎ Se corrigió ${med?.name || "un medicamento"}` : undefined;
+      const changeNote = session.authorized
+        ? (nameChanged ? `✎ Se corrigió el nombre: ${med?.name || "?"} → ${medDraft.name.trim()}` : `✎ Se corrigió ${med?.name || "un medicamento"}`)
+        : undefined;
       await updateSessionMeds(token, session.id, updatedMeds, session.authorized, changeNote);
       setEditingMedId(null);
       onRefresh();
@@ -462,7 +466,11 @@ function PendingSessionCard({ session, user, onRefresh }) {
             <div key={m.id} style={{ padding:"8px 12px", background:"rgba(255,255,255,0.02)", borderRadius:8, borderLeft:`3px solid ${CAT_COLOR[m.category]||"#888"}` }}>
               {editingMedId === m.id ? (
                 <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                  <div style={{ fontSize:12, color:"#ddd", fontWeight:600 }}>{m.name}</div>
+                  <div>
+                    <label style={{ fontSize:10, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Medicamento</label>
+                    <input placeholder="Nombre del medicamento" value={medDraft.name} onChange={e => setMedDraft(d => ({ ...d, name:e.target.value }))}
+                      style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, fontWeight:600, outline:"none" }} />
+                  </div>
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
                     <input placeholder="Dosis" value={medDraft.dose} onChange={e => setMedDraft(d => ({ ...d, dose:e.target.value }))}
                       style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
