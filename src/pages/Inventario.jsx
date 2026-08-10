@@ -839,19 +839,16 @@ export default function Inventario() {
       )}
 
       {tab === "general" && isJefe && (() => {
-        // Combinar existencias de los 3 almacenes de centro (Qual queda
-        // fuera a propósito -- es stock de farmacia antes de asignarse,
-        // no inventario operativo del día a día).
         const centerKeys = ["CITIO","CIPI_PRO","CIPI_PED"];
         const byItem = {};
-        inventory.filter(i => centerKeys.includes(i.warehouse)).forEach(i => {
-          if (!byItem[i.item]) byItem[i.item] = { item: i.item, unit: i.unit, category: i.category, CITIO:0, CIPI_PRO:0, CIPI_PED:0 };
+        inventory.filter(i => centerKeys.includes(i.warehouse) || i.warehouse === "QUAL_CITIO" || i.warehouse === "QUAL_CIPI").forEach(i => {
+          if (!byItem[i.item]) byItem[i.item] = { item: i.item, unit: i.unit, category: i.category, CITIO:0, CIPI_PRO:0, CIPI_PED:0, QUAL_CITIO:0, QUAL_CIPI:0 };
           byItem[i.item][i.warehouse] = i.currentStock;
         });
         const rows = Object.values(byItem).sort((a,b) => a.item.localeCompare(b.item));
         return (
           <div>
-            <div style={{ fontSize:12, color:"#555", marginBottom:12 }}>{rows.length} artículo{rows.length!==1?"s":""} · suma de CITIO + CIPI PRO + CIPI PED (Qual no incluido)</div>
+            <div style={{ fontSize:12, color:"#555", marginBottom:12 }}>{rows.length} artículo{rows.length!==1?"s":""} · almacenes de centro (izquierda) y Qual, stock de farmacia (derecha)</div>
             {rows.length === 0 ? (
               <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
                 Sin existencias registradas todavía.
@@ -865,19 +862,26 @@ export default function Inventario() {
                       <th style={{ textAlign:"right", padding:"8px 10px", color:"#4fc3f7", fontWeight:600 }}>CITIO</th>
                       <th style={{ textAlign:"right", padding:"8px 10px", color:"#AFA9EC", fontWeight:600 }}>CIPI PRO</th>
                       <th style={{ textAlign:"right", padding:"8px 10px", color:"#ffb347", fontWeight:600 }}>CIPI PED</th>
-                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#00d4aa", fontWeight:600 }}>Total</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#00d4aa", fontWeight:600, borderRight:"1px solid rgba(255,255,255,0.1)" }}>Total</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#4fc3f7", fontWeight:600 }}>Qual CITIO</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#AFA9EC", fontWeight:600 }}>Qual CIPI</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#00d4aa", fontWeight:600 }}>Total Qual</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((r,i) => {
                       const total = r.CITIO + r.CIPI_PRO + r.CIPI_PED;
+                      const totalQual = r.QUAL_CITIO + r.QUAL_CIPI;
                       return (
                         <tr key={i} style={{ borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
                           <td style={{ padding:"7px 10px", color:"#f0f0f0" }}>{r.item}</td>
                           <td style={{ padding:"7px 10px", textAlign:"right", color: r.CITIO<0 ? "#ff6b6b" : "#ccc", fontFamily:"'IBM Plex Mono', monospace" }}>{r.CITIO}</td>
                           <td style={{ padding:"7px 10px", textAlign:"right", color: r.CIPI_PRO<0 ? "#ff6b6b" : "#ccc", fontFamily:"'IBM Plex Mono', monospace" }}>{r.CIPI_PRO}</td>
                           <td style={{ padding:"7px 10px", textAlign:"right", color: r.CIPI_PED<0 ? "#ff6b6b" : "#ccc", fontFamily:"'IBM Plex Mono', monospace" }}>{r.CIPI_PED}</td>
-                          <td style={{ padding:"7px 10px", textAlign:"right", color:"#00d4aa", fontWeight:700, fontFamily:"'IBM Plex Mono', monospace" }}>{total} {r.unit}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color:"#00d4aa", fontWeight:700, fontFamily:"'IBM Plex Mono', monospace", borderRight:"1px solid rgba(255,255,255,0.06)" }}>{total} {r.unit}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color: r.QUAL_CITIO<0 ? "#ff6b6b" : "#999", fontFamily:"'IBM Plex Mono', monospace" }}>{r.QUAL_CITIO}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color: r.QUAL_CIPI<0 ? "#ff6b6b" : "#999", fontFamily:"'IBM Plex Mono', monospace" }}>{r.QUAL_CIPI}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color:"#00d4aa", fontWeight:700, fontFamily:"'IBM Plex Mono', monospace" }}>{totalQual} {r.unit}</td>
                         </tr>
                       );
                     })}
