@@ -865,14 +865,21 @@ export default function Insumos() {
                 {[["💊 Medicamentos", grandTotalMeds], ["🧰 Material", grandTotalMaterial], ["📎 Todo", grandTotalList]].map(([label, list]) => (
                   <button key={label} onClick={() => {
                       const rows = list.map(t => `<tr><td>${t.item}</td><td style="text-align:right;font-weight:bold;">${t.qty}</td></tr>`).join("");
+                      const logoFile = centerFilter === "CITIO" ? "logo-citio-icon.png" : "logo-cipi-icon.png";
+                      const logoUrl = `${window.location.origin}/${logoFile}`;
                       const win = window.open("", "_blank", "width=700,height=900");
                       win.document.write(`<!DOCTYPE html><html><head><title>Total consolidado</title><style>
                         body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;}
-                        h1{font-size:18px;margin-bottom:2px;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
+                        .header{display:flex;align-items:center;gap:12px;margin-bottom:4px;}
+                        .header img{height:44px;width:auto;}
+                        h1{font-size:18px;margin:0;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
                         table{width:100%;border-collapse:collapse;font-size:12px;}
                         td{padding:6px 8px;border-bottom:1px solid #ddd;}
                       </style></head><body>
-                        <h1>Total consolidado -- ${label.replace(/^\S+\s/, "")}</h1>
+                        <div class="header">
+                          <img src="${logoUrl}" onerror="this.style.display='none'" />
+                          <h1>Total consolidado -- ${label.replace(/^\S+\s/, "")}</h1>
+                        </div>
                         <p>${centerFilter} · ${dateFilter === "todas" ? (todasMode === "todo" ? "Con solicitud generada (todas las fechas)" : todasMode === "rango" ? `Con solicitud generada · ${rangeFrom} a ${rangeTo}` : `Con solicitud generada · ${selectedDay}`) : dateFilter === "hoy" ? selectedDay : `${rangeFrom} a ${rangeTo}`} · Generado ${new Date().toLocaleString("es-MX")}</p>
                         <table>${rows}</table>
                         <script>window.onload = () => window.print();<\/script>
