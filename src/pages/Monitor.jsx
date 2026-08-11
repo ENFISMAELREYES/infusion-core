@@ -370,6 +370,7 @@ function PatientRow({ s, onNoShow, isJefe }) {
 export default function Monitor() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
+  const isVisualizador = profile?.role === "visualizador";
   const [sessions, setSessions] = useState([]);
   const [clock, setClock] = useState(new Date().toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false }));
   const [filter, setFilter] = useState("Todos");
@@ -397,7 +398,7 @@ export default function Monitor() {
   }, []);
 
   const centers = ["Todos", "CIPI", "CITIO"];
-  const visibleSessions = sessions.filter(s => !s.noShowToday);
+  const visibleSessions = sessions.filter(s => !s.noShowToday && (!isVisualizador || s.confirmed));
   const noShowSessions = sessions.filter(s => s.noShowToday);
   const filtered = filter === "Todos" ? visibleSessions : visibleSessions.filter(s => s.center === filter);
   const ns = visibleSessions.filter(s => s.center === "CIPI");
@@ -485,6 +486,7 @@ export default function Monitor() {
               {noShowSessions.map(s => (
                 <div key={s.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 14px", borderRadius:10, background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", opacity:0.7 }}>
                   <span style={{ flex:1, fontSize:12, color:"#999" }}>{s.patientName}</span>
+                  <span style={{ fontSize:10, color:"#666" }}>{s.cycle}</span>
                   <span style={{ fontSize:10, color:"#666" }}>{s.center}</span>
                   <span style={{ fontSize:10, color:"#555" }} title={s.noShowMarkedAt ? new Date(s.noShowMarkedAt).toLocaleString("es-MX") : ""}>Marcado por: {s.noShowMarkedBy || "—"}</span>
                   <button onClick={() => toggleNoShow(s)} style={{ fontSize:10, fontWeight:600, padding:"3px 8px", borderRadius:7, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
