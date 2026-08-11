@@ -335,6 +335,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           {s.confirmed ? "✓ Confirmada" : "⏳ Sin confirmar"}
         </button>
         <span style={{ flex:1, fontSize:13, color: s.excludeFromOrder ? "#555" : "#f0f0f0", fontWeight:600, minWidth:120, textDecoration: s.excludeFromOrder ? "line-through" : "none" }}>{s.patientName}</span>
+        <span style={{ fontSize:11, color:"#666" }}>{s.cycle}</span>
         {s.excludeFromOrder ? (
           <span style={{ fontSize:11, color:"#888" }}>Material ya cubierto</span>
         ) : (
@@ -855,6 +856,7 @@ export default function Insumos() {
               <div key={s.id} style={{ padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
                 <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                   <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
+                  <span style={{ fontSize:11, color:"#888" }}>{s.cycle}</span>
                   <span style={{ fontSize:11, color:"#666" }}>{s.center}{s.cipiVariant ? ` ${s.cipiVariant}` : ""}</span>
                   <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
                     background: s.confirmed ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
