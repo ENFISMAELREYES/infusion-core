@@ -66,6 +66,8 @@ async function authorizeSession(token, sessionId, meds, globalNote, corrected, u
     status:         { stringValue: status },
     meds:           toFV(meds),
     date:           { stringValue: date },
+    pendingChangeNote: { nullValue: null },
+    pendingChangeAt:   { nullValue: null },
   };
   const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   await fetch(
@@ -510,12 +512,17 @@ useEffect(() => { loadUnfinished(); }, [user]);
           <div style={{ fontSize: 13, color: "#444", textAlign: "center", padding: "16px 0" }}>✓ Sin pendientes</div>
         ) : sessions.map(s => (
           <div key={s.id} onClick={() => { setSelected(s); setDone(false); }}
-            style={{ padding: "10px 12px", borderRadius: 10, cursor: "pointer", marginBottom: 8, background: selected?.id === s.id ? "rgba(255,179,71,0.12)" : "rgba(255,255,255,0.03)", border: `1px solid ${selected?.id === s.id ? "rgba(255,179,71,0.35)" : "rgba(255,255,255,0.07)"}`, transition: "all 0.15s" }}>
+            style={{ padding: "10px 12px", borderRadius: 10, cursor: "pointer", marginBottom: 8, background: selected?.id === s.id ? "rgba(255,179,71,0.12)" : "rgba(255,255,255,0.03)", border: `1px solid ${s.pendingChangeNote ? "rgba(79,195,247,0.35)" : selected?.id === s.id ? "rgba(255,179,71,0.35)" : "rgba(255,255,255,0.07)"}`, transition: "all 0.15s" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 600, marginBottom: 2 }}>{s.patientName}</div>
                 <div style={{ fontSize: 11, color: "#666" }}>{s.center} · {s.cycle}</div>
                 <div style={{ fontSize: 10, color: "#555", marginTop: 2 }}>{s.date} · {s.nurseName}</div>
+                {s.pendingChangeNote && (
+                  <div style={{ fontSize: 10, color: "#4fc3f7", background: "rgba(79,195,247,0.1)", padding: "3px 7px", borderRadius: 7, marginTop: 5, fontWeight: 600 }}>
+                    🔔 Ya autorizada -- {s.pendingChangeNote}
+                  </div>
+                )}
               </div>
               <button type="button" onClick={e => { e.stopPropagation(); handleDeleteSession(s.id, s.patientName); }}
                 style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff6b6b", borderRadius: 8, padding: "4px 8px", fontSize: 11, cursor: "pointer", flexShrink: 0, marginLeft: 6 }}>🗑</button>

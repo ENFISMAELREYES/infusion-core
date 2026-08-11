@@ -537,10 +537,11 @@ export default function Insumos() {
   const [tab, setTab] = useState("consolidado");
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
-  const [centerFilter, setCenterFilter] = useState(() => canSeeAllCenters ? "Todos" : (profile?.center || "CITIO"));
+  const allowedCenters = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI PRO","CIPI PED"] : [profile?.center || "CITIO"]);
+  const [centerFilter, setCenterFilter] = useState(() => canSeeAllCenters ? "Todos" : (allowedCenters?.[0] || "CITIO"));
   useEffect(() => {
-    if (!canSeeAllCenters && profile?.center && centerFilter !== profile.center) {
-      setCenterFilter(profile.center);
+    if (allowedCenters && !allowedCenters.includes(centerFilter)) {
+      setCenterFilter(allowedCenters[0]);
     }
   }, [profile, canSeeAllCenters]);
   const [dateFilter, setDateFilter] = useState("rango"); // "hoy" | "rango" | "todas"
@@ -601,7 +602,10 @@ export default function Insumos() {
     ))
     : dateFilter === "hoy" ? sessions.filter(s => s.date === selectedDay)
     : sessions.filter(s => s.date >= rangeFrom && s.date <= rangeTo && !s.materialSolicitudGuardada); // "rango"
-  const filtered = centerFilter === "Todos" ? dateFiltered : dateFiltered.filter(s => s.center === centerFilter);
+  const filtered = centerFilter === "Todos" ? dateFiltered
+    : centerFilter === "CIPI PRO" ? dateFiltered.filter(s => s.center === "CIPI" && (s.cipiVariant || "PRO") === "PRO")
+    : centerFilter === "CIPI PED" ? dateFiltered.filter(s => s.center === "CIPI" && s.cipiVariant === "PED")
+    : dateFiltered.filter(s => s.center === centerFilter);
   const calcOverrides = {
     extraDefaults: overrides.extraDefaults,
     extraCatalog: overrides.extraCatalog,
@@ -799,7 +803,7 @@ export default function Insumos() {
       {tab === "consolidado" && (
         <div>
           <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
-            {(canSeeAllCenters ? ["Todos","CITIO","CIPI"] : [profile?.center || "CITIO"]).map(c => (
+            {(canSeeAllCenters ? ["Todos","CITIO","CIPI PRO","CIPI PED"] : allowedCenters).map(c => (
               <button key={c} onClick={() => setCenterFilter(c)} style={{
                 padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
                 background: centerFilter===c ? "rgba(79,195,247,0.12)" : "rgba(255,255,255,0.04)",
@@ -861,14 +865,21 @@ export default function Insumos() {
                 {[["💊 Medicamentos", grandTotalMeds], ["🧰 Material", grandTotalMaterial], ["📎 Todo", grandTotalList]].map(([label, list]) => (
                   <button key={label} onClick={() => {
                       const rows = list.map(t => `<tr><td>${t.item}</td><td style="text-align:right;font-weight:bold;">${t.qty}</td></tr>`).join("");
+                      const logoFile = centerFilter === "CITIO" ? "logo-citio-icon.png" : "logo-cipi-icon.png";
+                      const logoUrl = `${window.location.origin}/${logoFile}`;
                       const win = window.open("", "_blank", "width=700,height=900");
                       win.document.write(`<!DOCTYPE html><html><head><title>Total consolidado</title><style>
                         body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;}
-                        h1{font-size:18px;margin-bottom:2px;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
+                        .header{display:flex;align-items:center;gap:12px;margin-bottom:4px;}
+                        .header img{height:44px;width:auto;}
+                        h1{font-size:18px;margin:0;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
                         table{width:100%;border-collapse:collapse;font-size:12px;}
                         td{padding:6px 8px;border-bottom:1px solid #ddd;}
                       </style></head><body>
-                        <h1>Total consolidado -- ${label.replace(/^\S+\s/, "")}</h1>
+                        <div class="header">
+                          <img src="${logoUrl}" onerror="this.style.display='none'" />
+                          <h1>Total consolidado -- ${label.replace(/^\S+\s/, "")}</h1>
+                        </div>
                         <p>${centerFilter} · ${dateFilter === "todas" ? (todasMode === "todo" ? "Con solicitud generada (todas las fechas)" : todasMode === "rango" ? `Con solicitud generada · ${rangeFrom} a ${rangeTo}` : `Con solicitud generada · ${selectedDay}`) : dateFilter === "hoy" ? selectedDay : `${rangeFrom} a ${rangeTo}`} · Generado ${new Date().toLocaleString("es-MX")}</p>
                         <table>${rows}</table>
                         <script>window.onload = () => window.print();<\/script>

@@ -684,7 +684,7 @@ export default function Inventario() {
       </div>
 
       <div style={{ display:"flex", gap:8, marginBottom:20, borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-        {[["existencias","Existencias"],["movimientos","Movimientos"]].map(([val,label]) => (
+        {[["existencias","Existencias"],["movimientos","Movimientos"],...(isJefe ? [["general","Vista general"]] : [])].map(([val,label]) => (
           <button key={val} onClick={() => setTab(val)} style={{
             padding:"10px 16px", fontSize:13, fontWeight:600, cursor:"pointer", background:"none", border:"none",
             borderBottom: tab===val ? "2px solid #00d4aa" : "2px solid transparent",
@@ -837,6 +837,76 @@ export default function Inventario() {
           })}
         </div>
       )}
+
+      {tab === "general" && isJefe && (() => {
+        const centerKeys = ["CITIO","CIPI_PRO","CIPI_PED"];
+        const byItem = {};
+        inventory.filter(i => centerKeys.includes(i.warehouse) || i.warehouse === "QUAL_CITIO" || i.warehouse === "QUAL_CIPI").forEach(i => {
+          if (!byItem[i.item]) byItem[i.item] = { item: i.item, unit: i.unit, category: i.category, CITIO:0, CIPI_PRO:0, CIPI_PED:0, QUAL_CITIO:0, QUAL_CIPI:0 };
+          byItem[i.item][i.warehouse] = i.currentStock;
+        });
+        const allRows = Object.values(byItem).sort((a,b) => a.item.localeCompare(b.item));
+        // Cloruro, glucosa y Hartmann están catalogados como "Medicamentos"
+        // en el catálogo, pero funcionalmente son soluciones -- van con
+        // material e insumos, igual que en el resto de la app (PDF, consolidado).
+        const isSolution = (name) => /CLORURO DE SODIO|GLUCOSA|HARTMANN/i.test(name);
+        const materialRows = allRows.filter(r => !MED_CATEGORIES.includes(r.category) || isSolution(r.item));
+        const medRows = allRows.filter(r => MED_CATEGORIES.includes(r.category) && !isSolution(r.item));
+
+        const Section = ({ title, rows }) => (
+          <div style={{ marginBottom:24 }}>
+            <div style={{ fontSize:12, color:"#00d4aa", fontWeight:600, marginBottom:8, textTransform:"uppercase", letterSpacing:1 }}>{title} ({rows.length})</div>
+            {rows.length === 0 ? (
+              <div style={{ color:"#444", fontSize:13, padding:20, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:12 }}>
+                Sin artículos en esta categoría.
+              </div>
+            ) : (
+              <div style={{ overflowX:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                  <thead>
+                    <tr style={{ borderBottom:"1px solid rgba(255,255,255,0.1)" }}>
+                      <th style={{ textAlign:"left", padding:"8px 10px", color:"#666", fontWeight:600 }}>Artículo</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#4fc3f7", fontWeight:600 }}>CITIO</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#AFA9EC", fontWeight:600 }}>CIPI PRO</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#ffb347", fontWeight:600 }}>CIPI PED</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#00d4aa", fontWeight:600, borderRight:"1px solid rgba(255,255,255,0.1)" }}>Total</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#4fc3f7", fontWeight:600 }}>Qual CITIO</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#AFA9EC", fontWeight:600 }}>Qual CIPI</th>
+                      <th style={{ textAlign:"right", padding:"8px 10px", color:"#00d4aa", fontWeight:600 }}>Total Qual</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r,i) => {
+                      const total = r.CITIO + r.CIPI_PRO + r.CIPI_PED;
+                      const totalQual = r.QUAL_CITIO + r.QUAL_CIPI;
+                      return (
+                        <tr key={i} style={{ borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
+                          <td style={{ padding:"7px 10px", color:"#f0f0f0" }}>{r.item}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color: r.CITIO<0 ? "#ff6b6b" : "#ccc", fontFamily:"'IBM Plex Mono', monospace" }}>{r.CITIO}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color: r.CIPI_PRO<0 ? "#ff6b6b" : "#ccc", fontFamily:"'IBM Plex Mono', monospace" }}>{r.CIPI_PRO}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color: r.CIPI_PED<0 ? "#ff6b6b" : "#ccc", fontFamily:"'IBM Plex Mono', monospace" }}>{r.CIPI_PED}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color:"#00d4aa", fontWeight:700, fontFamily:"'IBM Plex Mono', monospace", borderRight:"1px solid rgba(255,255,255,0.06)" }}>{total} {r.unit}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color: r.QUAL_CITIO<0 ? "#ff6b6b" : "#999", fontFamily:"'IBM Plex Mono', monospace" }}>{r.QUAL_CITIO}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color: r.QUAL_CIPI<0 ? "#ff6b6b" : "#999", fontFamily:"'IBM Plex Mono', monospace" }}>{r.QUAL_CIPI}</td>
+                          <td style={{ padding:"7px 10px", textAlign:"right", color:"#00d4aa", fontWeight:700, fontFamily:"'IBM Plex Mono', monospace" }}>{totalQual} {r.unit}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+
+        return (
+          <div>
+            <div style={{ fontSize:12, color:"#555", marginBottom:16 }}>{allRows.length} artículo{allRows.length!==1?"s":""} en total · almacenes de centro (izquierda) y Qual, stock de farmacia (derecha)</div>
+            <Section title="📦 Material e insumos" rows={materialRows} />
+            <Section title="💊 Medicamentos" rows={medRows} />
+          </div>
+        );
+      })()}
 
       {showMoveModal && (
         <div onClick={() => !saving && (setShowMoveModal(null), setXmlReview(null), setXmlReceptor(""))}

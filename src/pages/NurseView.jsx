@@ -157,7 +157,35 @@ async function patchSession(token, sessionId, updates) {
   logAudit(token, "sessions", sessionId, updates); // no se espera (await) para no retrasar el guardado
 }
 
-async function updateSessionMeds(token, sessionId, meds, reAuth) {
+// Incrementa un contador de forma atómica (transform de Firestore, no
+// lee-y-luego-escribe) -- evita números duplicados cuando varias personas
+// guardan al mismo tiempo, y es mucho más resistente a la saturación del
+// documento bajo uso concurrente. Reintenta con espera creciente si de
+// todas formas se satura ("exceeded maximum bandwidth for writes").
+async function atomicIncrementCounter(token, counterId, maxRetries = 4) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:commit`;
+  const docPath = `projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${counterId}`;
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ writes: [{
+          transform: { document: docPath, fieldTransforms: [{ fieldPath: "lastNumber", increment: { integerValue: "1" } }] },
+        }] }),
+      });
+      const data = await res.json();
+      const val = data?.writeResults?.[0]?.transformResults?.[0]?.integerValue;
+      if (val !== undefined) return parseInt(val);
+      lastError = new Error(data?.error?.message || "Respuesta inesperada al incrementar el contador");
+    } catch (e) { lastError = e; }
+    // Espera creciente antes de reintentar (0.5s, 1s, 2s, 4s...)
+    await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)));
+  }
+  throw lastError || new Error("No se pudo asignar el número consecutivo, intenta de nuevo.");
+}
+
+async function updateSessionMeds(token, sessionId, meds, reAuth, changeNote) {
   const toFV = (val) => {
     if (typeof val === "string") return { stringValue:val };
     if (typeof val === "boolean") return { booleanValue:val };
@@ -168,7 +196,15 @@ async function updateSessionMeds(token, sessionId, meds, reAuth) {
     return { stringValue:String(val) };
   };
   const fields = { meds:toFV(meds) };
-  if (reAuth) fields.authorized = { booleanValue:false };
+  if (reAuth) {
+    fields.authorized = { booleanValue:false };
+    // Nota de qué cambió exactamente, para que el jefe no tenga que revisar
+    // toda la sesión desde cero -- solo lo que se modificó.
+    if (changeNote) {
+      fields.pendingChangeNote = { stringValue: changeNote };
+      fields.pendingChangeAt = { stringValue: new Date().toISOString() };
+    }
+  }
   const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
   await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${sessionId}?${mask}`,
     { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body:JSON.stringify({ fields }) });
@@ -319,6 +355,8 @@ function PendingSessionCard({ session, user, onRefresh }) {
   const [open, setOpen]     = useState(false);
   const [editDate, setEditDate] = useState(session.date || "");
   const [saving, setSaving] = useState(false);
+  const [editingMedId, setEditingMedId] = useState(null);
+  const [medDraft, setMedDraft] = useState({});
 
   const handleReschedule = async () => {
     if (!editDate || editDate === session.date) return;
@@ -349,6 +387,59 @@ function PendingSessionCard({ session, user, onRefresh }) {
     } catch(e) { alert("Error: " + e.message); }
   };
 
+  const startEditMed = (m) => {
+    setEditingMedId(m.id);
+    setMedDraft({
+      name: m.name || "", diluent: m.diluent || "", time: m.time || "", dose: m.dose || "",
+      parallelType: m.parallelType || "secuencial", startOffset: m.startOffset || 15,
+    });
+  };
+
+  // Guarda la corrección del medicamento -- si la sesión ya estaba
+  // autorizada, la reenvía marcando exactamente qué se corrigió (misma
+  // regla que en la sesión ya en curso), en vez de mandarla en blanco a
+  // revisión completa.
+  const saveEditMed = async (medId) => {
+    setSaving(true);
+    try {
+      const token = await user.getIdToken(true);
+      const med = (session.meds || []).find(m => m.id === medId);
+      const nameChanged = medDraft.name.trim() && medDraft.name.trim() !== med?.name;
+      const updatedMeds = (session.meds || []).map(m => m.id === medId ? {
+        ...m,
+        name: medDraft.name.trim() || m.name,
+        diluent: medDraft.diluent, dose: medDraft.dose,
+        time: parseInt(medDraft.time) || m.time,
+        parallelType: medDraft.parallelType,
+        startOffset: medDraft.parallelType === "offset" ? (parseInt(medDraft.startOffset) || 15) : null,
+      } : m);
+      const changeNote = session.authorized
+        ? (nameChanged ? `✎ Se corrigió el nombre: ${med?.name || "?"} → ${medDraft.name.trim()}` : `✎ Se corrigió ${med?.name || "un medicamento"}`)
+        : undefined;
+      await updateSessionMeds(token, session.id, updatedMeds, session.authorized, changeNote);
+      setEditingMedId(null);
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const deleteMed = async (medId) => {
+    const med = (session.meds || []).find(m => m.id === medId);
+    if (!confirm(`¿Quitar ${med?.name || "este medicamento"} de la sesión?`)) return;
+    setSaving(true);
+    try {
+      const token = await user.getIdToken(true);
+      const updatedMeds = (session.meds || []).filter(m => m.id !== medId).map((m,i) => ({ ...m, order:i+1 }));
+      const changeNote = session.authorized ? `− Se eliminó ${med?.name || "un medicamento"}` : undefined;
+      await updateSessionMeds(token, session.id, updatedMeds, session.authorized, changeNote);
+      setEditingMedId(null);
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const PARALLEL_LABEL = { secuencial: "Secuencial (uno después del otro)", junto: "Simultáneo (junto con el anterior)", offset: "Con diferencia de tiempo" };
+
   const statusColor = !session.authorized ? "#ffb347" : "#1D9E75";
   const statusLabel = !session.authorized ? "Sin autorizar" : "Autorizado";
 
@@ -372,11 +463,53 @@ function PendingSessionCard({ session, user, onRefresh }) {
           {/* Medicamentos */}
           <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:4 }}>Medicamentos</div>
           {(session.meds||[]).map(m => (
-            <div key={m.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", background:"rgba(255,255,255,0.02)", borderRadius:8, borderLeft:`3px solid ${CAT_COLOR[m.category]||"#888"}` }}>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:12, color:"#ddd", fontWeight:600 }}>{m.name} {m.dose}</div>
-                <div style={{ fontSize:11, color:"#555" }}>{m.diluent} · {m.time} min</div>
-              </div>
+            <div key={m.id} style={{ padding:"8px 12px", background:"rgba(255,255,255,0.02)", borderRadius:8, borderLeft:`3px solid ${CAT_COLOR[m.category]||"#888"}` }}>
+              {editingMedId === m.id ? (
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  <div>
+                    <label style={{ fontSize:10, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Medicamento</label>
+                    <input placeholder="Nombre del medicamento" value={medDraft.name} onChange={e => setMedDraft(d => ({ ...d, name:e.target.value }))}
+                      style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, fontWeight:600, outline:"none" }} />
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                    <input placeholder="Dosis" value={medDraft.dose} onChange={e => setMedDraft(d => ({ ...d, dose:e.target.value }))}
+                      style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                    <input placeholder="Tiempo (min)" type="number" value={medDraft.time} onChange={e => setMedDraft(d => ({ ...d, time:e.target.value }))}
+                      style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                  </div>
+                  <input placeholder="Dilución" value={medDraft.diluent} onChange={e => setMedDraft(d => ({ ...d, diluent:e.target.value }))}
+                    style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                  <div>
+                    <label style={{ fontSize:10, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Tipo de aplicación</label>
+                    <select value={medDraft.parallelType} onChange={e => setMedDraft(d => ({ ...d, parallelType:e.target.value }))}
+                      style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none", cursor:"pointer" }}>
+                      {Object.entries(PARALLEL_LABEL).map(([val,label]) => <option key={val} value={val}>{label}</option>)}
+                    </select>
+                  </div>
+                  {medDraft.parallelType === "offset" && (
+                    <input placeholder="Minutos después del anterior" type="number" value={medDraft.startOffset} onChange={e => setMedDraft(d => ({ ...d, startOffset:e.target.value }))}
+                      style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"7px 10px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                  )}
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={() => setEditingMedId(null)} disabled={saving} style={{ flex:1, padding:"7px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
+                    <button onClick={() => deleteMed(m.id)} disabled={saving} style={{ padding:"7px 12px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑 Quitar</button>
+                    <button onClick={() => saveEditMed(m.id)} disabled={saving} style={{ flex:2, padding:"7px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+                      {saving ? "Guardando…" : "✓ Guardar corrección"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:12, color:"#ddd", fontWeight:600 }}>{m.name} {m.dose}</div>
+                    <div style={{ fontSize:11, color:"#555" }}>{m.diluent} · {m.time} min</div>
+                    {m.parallelType && m.parallelType !== "secuencial" && (
+                      <div style={{ fontSize:10, color:"#ffb347", marginTop:2 }}>⚡ {m.parallelType === "junto" ? "Simultáneo con anterior" : `Inicia ${m.startOffset} min después del anterior`}</div>
+                    )}
+                  </div>
+                  <button onClick={() => startEditMed(m)} style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC" }}>✏️ Editar</button>
+                </div>
+              )}
             </div>
           ))}
 
@@ -493,7 +626,10 @@ function SessionCard({ session, token, onRefresh, user }) {
           }
         } catch(err) { console.log("No se pudo confirmar cita:", err); }
 
-        // Asignar número consecutivo del centro
+        // Asignar número consecutivo del centro -- incremento atómico (no
+        // lee-y-luego-escribe) para que sea seguro con varias enfermeras
+        // guardando al mismo tiempo, sin duplicar números ni saturar el
+        // documento del contador.
         const counterId = session.sessionType === "entrega"
           ? `counter_${session.center}_entrega`
           : (session.sessionType === "intramuscular" || session.sessionType === "im")
@@ -503,18 +639,7 @@ function SessionCard({ session, token, onRefresh, user }) {
           : session.sessionType === "procedimiento"
           ? `counter_${session.center}_procedimiento`
           : `counter_${session.center}`;
-        const counterRes = await fetch(
-          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${counterId}`,
-          { headers: { "Authorization": `Bearer ${freshToken}` } }
-        );
-        const counterDoc = await counterRes.json();
-        const lastNumber = counterDoc.fields?.lastNumber?.integerValue ? parseInt(counterDoc.fields.lastNumber.integerValue) : 0;
-        const newNumber = lastNumber + 1;
-        await fetch(
-          `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${counterId}?updateMask.fieldPaths=lastNumber`,
-          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
-            body: JSON.stringify({ fields: { lastNumber: { integerValue: String(newNumber) } } }) }
-        );
+        const newNumber = await atomicIncrementCounter(freshToken, counterId);
         if (session.sessionType === "entrega") {
           updates.deliveryNumber = newNumber;
         } else if (session.sessionType === "intramuscular" || session.sessionType === "im") {
@@ -546,19 +671,7 @@ function SessionCard({ session, token, onRefresh, user }) {
           const existingExpediente = patientData.find(d => d.document);
           if (!existingExpediente) {
             const expCounterId = `counter_${session.center}_expediente`;
-            const expRes = await fetch(
-              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${expCounterId}`,
-              { headers:{ "Authorization":`Bearer ${freshToken}` } }
-            );
-            const expDoc = await expRes.json();
-            const lastExp = expDoc.fields?.lastNumber?.integerValue ? parseInt(expDoc.fields.lastNumber.integerValue) : 0;
-            const newExp = lastExp + 1;
-            await fetch(
-              `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/config/${expCounterId}?updateMask.fieldPaths=lastNumber`,
-              { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
-                body: JSON.stringify({ fields:{ lastNumber:{ integerValue: String(newExp) } } }) }
-            );
-            updates.expedienteNumber = newExp;
+            updates.expedienteNumber = await atomicIncrementCounter(freshToken, expCounterId);
           } else {
             const existingDoc = existingExpediente.document.fields;
             if (existingDoc.expedienteNumber?.integerValue) {
@@ -630,10 +743,10 @@ function SessionCard({ session, token, onRefresh, user }) {
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
-  const saveMeds = async (updatedMeds, reAuth) => {
+  const saveMeds = async (updatedMeds, reAuth, changeNote) => {
     try {
       const freshToken = await user.getIdToken(true);
-      await updateSessionMeds(freshToken, session.id, updatedMeds, reAuth);
+      await updateSessionMeds(freshToken, session.id, updatedMeds, reAuth, changeNote);
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
@@ -648,7 +761,7 @@ function SessionCard({ session, token, onRefresh, user }) {
 
   const handleAdd = (newMed) => {
     const medWithDefaults = { ...newMed, order:(session.meds||[]).length+1, parallelType:"secuencial", startOffset:null };
-    saveMeds([...(session.meds||[]), medWithDefaults], true);
+    saveMeds([...(session.meds||[]), medWithDefaults], true, session.authorized ? `+ Se agregó ${newMed.name || "un medicamento"}` : undefined);
     setShowAdd(false);
   };
 
@@ -658,14 +771,15 @@ function SessionCard({ session, token, onRefresh, user }) {
     const reordered = [...others];
     reordered.splice(newOrder-1, 0, updatedMed);
     const updatedMeds = reordered.map((m,i) => ({ ...m, order:i+1 }));
-    saveMeds(updatedMeds, session.authorized);
+    saveMeds(updatedMeds, session.authorized, session.authorized ? `✎ Se modificó ${updatedMed.name || "un medicamento"}` : undefined);
     setEditingId(null);
   };
 
   const handleDelete = (medId) => {
     if (!confirm("¿Eliminar este medicamento?")) return;
+    const deletedMed = (session.meds||[]).find(m => m.id === medId);
     const updatedMeds = (session.meds||[]).filter(m => m.id !== medId).map((m,i) => ({ ...m, order:i+1 }));
-    saveMeds(updatedMeds, session.authorized);
+    saveMeds(updatedMeds, session.authorized, session.authorized ? `− Se eliminó ${deletedMed?.name || "un medicamento"}` : undefined);
   };
 
   const completedMeds = (session.meds||[]).filter(m => 
