@@ -638,6 +638,16 @@ function SessionCard({ session, token, onRefresh, user }) {
       const updates = { [`events.${key}`]: t };
       if (key === "ingreso") {
         updates.status = "en_curso";
+        // Si registró ingreso es porque el paciente sí llegó -- se confirma
+        // solo, aunque nadie hubiera marcado la confirmación antes. Así
+        // aparece correctamente en Monitor (que para visualizador solo
+        // muestra confirmados) sin que enfermería tenga que acordarse de
+        // confirmar aparte.
+        if (!session.confirmed) {
+          updates.confirmed = true;
+          updates.confirmedAt = new Date().toISOString();
+          updates.confirmedBy = user?.email || "";
+        }
 
         // Confirmar cita en agenda si existe
         try {
