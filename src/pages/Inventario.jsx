@@ -71,15 +71,17 @@ function warehouseLabel(key) {
   return [...WAREHOUSES, ...QUAL_WAREHOUSES].find(w => w.key === key)?.label || key;
 }
 
-// Regla de reorden: con 1 paquete cerrado de reserva + 1 en uso (2 paquetes
-// = máximo), se sugiere comprar 1 paquete más en cuanto se consume la mitad
-// del segundo -- es decir, al bajar a 1.5 paquetes (redondeado hacia abajo,
-// menos 1). La cantidad sugerida siempre es 1 paquete completo. Aplica igual
-// para todos los productos que tengan definido su tamaño de paquete.
+// Regla de reorden: mínimo y máximo se capturan directo en piezas (no por
+// paquete). En cuanto la existencia baja de "mínimo", se sugiere comprar el
+// lote fijo (máximo - mínimo) -- SALVO que la existencia haya caído tanto
+// (ej. llegó a 0) que ese lote fijo ni siquiera alcance a cubrir el mínimo;
+// en ese caso se sugiere al menos lo necesario para llegar al mínimo.
 function reorderInfo(item) {
-  if (!item.packSize || item.packSize <= 0) return { min: item.minStock ?? 0, suggestQty: 0 };
-  const min = Math.floor(item.packSize * 1.5) - 1;
-  const suggestQty = item.currentStock <= min ? item.packSize : 0;
+  const min = item.minStock ?? 0;
+  const max = item.maxStock ?? 0;
+  if (!max || max <= min) return { min, suggestQty: 0 };
+  if (item.currentStock >= min) return { min, suggestQty: 0 };
+  const suggestQty = Math.max(max - min, min - item.currentStock);
   return { min, suggestQty };
 }
 
@@ -144,7 +146,7 @@ export default function Inventario() {
   const filteredInventory = search.trim()
     ? warehouseInventory.filter(i => i.item.toUpperCase().includes(search.toUpperCase()))
     : warehouseInventory;
-  const lowStock = warehouseInventory.filter(i => i.currentStock <= (i.packSize ? reorderInfo(i).min : (i.minStock ?? 0)));
+  const lowStock = warehouseInventory.filter(i => i.currentStock < (i.minStock ?? 0));
   const suggestedReorders = warehouseInventory.filter(i => reorderInfo(i).suggestQty > 0);
 
   const addToMoveList = (item, cost) => {
@@ -639,14 +641,14 @@ export default function Inventario() {
   // Tamaño del paquete de compra (ej. 100 piezas por caja de agujas). A
   // partir de esto se calculan solos el mínimo y la cantidad sugerida --
   // ya no hay que capturar el mínimo a mano para cada artículo.
-  const setPackSize = async (docId, newSize) => {
+  const setMaxStock = async (docId, newMax) => {
     try {
-      const val = parseInt(newSize) || 0;
-      await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}?updateMask.fieldPaths=packSize`, {
+      const val = parseInt(newMax) || 0;
+      await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}?updateMask.fieldPaths=maxStock`, {
         method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ fields: { packSize: toFV(val) } }),
+        body: JSON.stringify({ fields: { maxStock: toFV(val) } }),
       });
-      setInventory(prev => prev.map(i => i.id === docId ? { ...i, packSize: val } : i));
+      setInventory(prev => prev.map(i => i.id === docId ? { ...i, maxStock: val } : i));
     } catch (e) { console.error(e); }
   };
 
@@ -738,7 +740,7 @@ export default function Inventario() {
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               {filteredInventory.sort((a,b) => a.item.localeCompare(b.item)).map(i => {
                 const { min, suggestQty } = reorderInfo(i);
-                const low = i.currentStock <= min;
+                const low = i.currentStock < min;
                 const negative = i.currentStock < 0;
                 return (
                   <div key={i.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10, background: negative ? "rgba(255,107,107,0.06)" : "rgba(255,255,255,0.03)", border:`1px solid ${negative ? "rgba(255,107,107,0.4)" : low ? "rgba(255,107,107,0.3)" : "rgba(255,255,255,0.07)"}` }}>
@@ -766,14 +768,13 @@ export default function Inventario() {
                     )}
                     {isJefe && (
                       <>
-                        <input type="number" defaultValue={i.packSize ?? ""} placeholder="paq." title="Tamaño del paquete de compra (ej. 100 = caja de 100 piezas). Al definirlo, el mínimo y la sugerencia se calculan solos."
-                          onBlur={e => setPackSize(i.id, e.target.value)}
+                        <input type="number" defaultValue={i.minStock ?? 0} placeholder="mín" title="Mínimo -- en cuanto la existencia baje de este número, se sugiere comprar"
+                          onBlur={e => setMinStock(i.id, e.target.value)}
+                          style={{ width:46, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#888", fontSize:11, outline:"none", textAlign:"center" }} />
+                        <span style={{ color:"#444", fontSize:11 }}>/</span>
+                        <input type="number" defaultValue={i.maxStock ?? ""} placeholder="máx" title="Máximo -- la sugerencia de compra es la diferencia entre máximo y mínimo"
+                          onBlur={e => setMaxStock(i.id, e.target.value)}
                           style={{ width:46, background:"rgba(175,169,236,0.06)", border:"1px solid rgba(175,169,236,0.2)", borderRadius:6, padding:"3px 6px", color:"#AFA9EC", fontSize:11, outline:"none", textAlign:"center" }} />
-                        {!i.packSize && (
-                          <input type="number" defaultValue={i.minStock ?? 0} title="Mínimo antes de avisar (manual -- o define el tamaño de paquete para que se calcule solo)"
-                            onBlur={e => setMinStock(i.id, e.target.value)}
-                            style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#888", fontSize:11, outline:"none", textAlign:"center" }} />
-                        )}
                       </>
                     )}
                   </div>
@@ -850,8 +851,14 @@ export default function Inventario() {
         // en el catálogo, pero funcionalmente son soluciones -- van con
         // material e insumos, igual que en el resto de la app (PDF, consolidado).
         const isSolution = (name) => /CLORURO DE SODIO|GLUCOSA|HARTMANN/i.test(name);
-        const materialRows = allRows.filter(r => !MED_CATEGORIES.includes(r.category) || isSolution(r.item));
-        const medRows = allRows.filter(r => MED_CATEGORIES.includes(r.category) && !isSolution(r.item));
+        // La categoría GUARDADA en el documento de inventario puede haber
+        // quedado desactualizada (si el catálogo cambió después); se
+        // reconsulta el catálogo actual por nombre para clasificar bien.
+        const catalogByNameGeneral = {};
+        MASTER_CATALOG.forEach(c => { catalogByNameGeneral[c.item.toUpperCase()] = c.category; });
+        const currentCategory = (r) => catalogByNameGeneral[r.item.toUpperCase()] || r.category;
+        const materialRows = allRows.filter(r => !MED_CATEGORIES.includes(currentCategory(r)) || isSolution(r.item));
+        const medRows = allRows.filter(r => MED_CATEGORIES.includes(currentCategory(r)) && !isSolution(r.item));
 
         const Section = ({ title, rows }) => (
           <div style={{ marginBottom:24 }}>
