@@ -552,9 +552,11 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
 export default function Insumos() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
+  const isVisualizador = profile?.role === "visualizador";
   // Solo Paola Vargas puede ver ambos centros siendo enfermera; el resto solo
-  // ve el material/inventario de su propio centro asignado.
-  const canSeeAllCenters = isJefe || profile?.name === "Paola Vargas";
+  // ve el material/inventario de su propio centro asignado. Visualizador ve
+  // todos los centros, igual que el jefe (pero en modo de solo lectura).
+  const canSeeAllCenters = isJefe || isVisualizador || profile?.name === "Paola Vargas";
   const [tab, setTab] = useState("consolidado");
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
@@ -798,6 +800,73 @@ export default function Insumos() {
   };
 
   if (loading && !hasLoadedOnce) return <div style={{ padding:40, color:"#666", textAlign:"center" }}>Cargando…</div>;
+
+  // Vista simplificada de solo lectura para "visualizador" -- sin cálculo de
+  // material, sin botones de compra ni edición. Solo confirma quién asistirá
+  // hoy/mañana/el día que elija, para dar seguimiento sin poder tocar nada.
+  if (isVisualizador) {
+    const dayList = sessions.filter(s => s.date === selectedDay && (centerFilter === "Todos" ||
+      (centerFilter === "CIPI PRO" ? (s.center === "CIPI" && (s.cipiVariant || "PRO") === "PRO") :
+       centerFilter === "CIPI PED" ? (s.center === "CIPI" && s.cipiVariant === "PED") :
+       s.center === centerFilter)));
+    const confirmedCount = dayList.filter(s => s.confirmed).length;
+    return (
+      <div style={{ padding:"24px 28px", maxWidth:640, margin:"0 auto" }}>
+        <div style={{ marginBottom:20 }}>
+          <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Confirmaciones</h1>
+          <p style={{ fontSize:13, color:"#555" }}>Solo lectura — quién ha confirmado su asistencia</p>
+        </div>
+
+        <div style={{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap" }}>
+          {["Todos","CITIO","CIPI PRO","CIPI PED"].map(c => (
+            <button key={c} onClick={() => setCenterFilter(c)} style={{
+              padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
+              background: centerFilter===c ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
+              border: `1px solid ${centerFilter===c ? "rgba(0,212,170,0.3)" : "rgba(255,255,255,0.08)"}`,
+              color: centerFilter===c ? "#00d4aa" : "#666",
+            }}>{c}</button>
+          ))}
+        </div>
+
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+          <button onClick={() => { const d = new Date(selectedDay+"T12:00:00"); d.setDate(d.getDate()-1); setSelectedDay(d.toLocaleDateString("en-CA")); }}
+            style={{ padding:"5px 10px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>◀</button>
+          <input type="date" value={selectedDay} onChange={e => setSelectedDay(e.target.value)}
+            style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"5px 8px", color:"#f0f0f0", fontSize:12 }} />
+          <button onClick={() => { const d = new Date(selectedDay+"T12:00:00"); d.setDate(d.getDate()+1); setSelectedDay(d.toLocaleDateString("en-CA")); }}
+            style={{ padding:"5px 10px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>▶</button>
+        </div>
+
+        {dayList.length > 0 && (
+          <div style={{ marginBottom:16, padding:"8px 14px", borderRadius:10, background: confirmedCount===dayList.length ? "rgba(0,212,170,0.08)" : "rgba(255,179,71,0.08)", border:`1px solid ${confirmedCount===dayList.length ? "rgba(0,212,170,0.25)" : "rgba(255,179,71,0.25)"}` }}>
+            <span style={{ fontSize:13, fontWeight:600, color: confirmedCount===dayList.length ? "#00d4aa" : "#ffb347" }}>
+              {confirmedCount===dayList.length ? "✓" : "⏳"} {confirmedCount} de {dayList.length} confirmadas para {selectedDay}
+            </span>
+          </div>
+        )}
+
+        {dayList.length === 0 ? (
+          <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
+            Sin sesiones capturadas para esta fecha.
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {dayList.map(s => (
+              <div key={s.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
+                <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
+                <span style={{ fontSize:11, color:"#666" }}>{s.center}{s.cipiVariant ? ` ${s.cipiVariant}` : ""}</span>
+                <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
+                  background: s.confirmed ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
+                  color: s.confirmed ? "#00d4aa" : "#ffb347" }}>
+                  {s.confirmed ? "✓ Confirmada" : "⏳ Sin confirmar"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding:"24px 28px", maxWidth:820, margin:"0 auto" }}>
