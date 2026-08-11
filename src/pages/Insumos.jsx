@@ -852,14 +852,23 @@ export default function Insumos() {
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
             {dayList.map(s => (
-              <div key={s.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
-                <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
-                <span style={{ fontSize:11, color:"#666" }}>{s.center}{s.cipiVariant ? ` ${s.cipiVariant}` : ""}</span>
-                <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
-                  background: s.confirmed ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
-                  color: s.confirmed ? "#00d4aa" : "#ffb347" }}>
-                  {s.confirmed ? "✓ Confirmada" : "⏳ Sin confirmar"}
-                </span>
+              <div key={s.id} style={{ padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
+                  <span style={{ fontSize:11, color:"#666" }}>{s.center}{s.cipiVariant ? ` ${s.cipiVariant}` : ""}</span>
+                  <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
+                    background: s.confirmed ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
+                    color: s.confirmed ? "#00d4aa" : "#ffb347" }}>
+                    {s.confirmed ? "✓ Confirmada" : "⏳ Sin confirmar"}
+                  </span>
+                </div>
+                {(s.meds || []).length > 0 && (
+                  <div style={{ marginTop:6, paddingTop:6, borderTop:"1px solid rgba(255,255,255,0.05)", display:"flex", flexWrap:"wrap", gap:6 }}>
+                    {(s.meds || []).map((m,i) => (
+                      <span key={i} style={{ fontSize:11, color:"#AFA9EC", background:"rgba(175,169,236,0.08)", padding:"2px 8px", borderRadius:99 }}>{m.name}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
