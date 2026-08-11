@@ -398,7 +398,12 @@ export default function Monitor() {
   }, []);
 
   const centers = ["Todos", "CIPI", "CITIO"];
-  const visibleSessions = sessions.filter(s => !s.noShowToday && (!isVisualizador || s.confirmed));
+  // Para visualizador: además de "confirmed", cuenta como asistencia
+  // comprobada que la sesión ya tenga ingreso registrado o esté en curso/
+  // completada -- si ya inició es prueba de que el paciente sí llegó, sin
+  // importar si el campo "confirmed" se activó a tiempo o no.
+  const attendedProof = (s) => s.confirmed || !!s.events?.ingreso || s.status === "en_curso" || s.status === "completado";
+  const visibleSessions = sessions.filter(s => !s.noShowToday && (!isVisualizador || attendedProof(s)));
   const noShowSessions = sessions.filter(s => s.noShowToday);
   const filtered = filter === "Todos" ? visibleSessions : visibleSessions.filter(s => s.center === filter);
   const ns = visibleSessions.filter(s => s.center === "CIPI");
