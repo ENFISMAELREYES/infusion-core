@@ -387,6 +387,38 @@ function PendingSessionCard({ session, user, onRefresh }) {
     } catch(e) { alert("Error: " + e.message); }
   };
 
+  // Confirmar/quitar confirmación de asistencia -- la enfermera es quien
+  // tiene el contacto directo con el paciente, así que es quien más
+  // naturalmente marca esto (aunque también se puede ver/editar en Insumos).
+  const toggleConfirm = async () => {
+    const willConfirm = !session.confirmed;
+    try {
+      const token = await user.getIdToken(true);
+      await patchSession(token, session.id, {
+        confirmed: willConfirm,
+        confirmedAt: willConfirm ? new Date().toISOString() : null,
+        confirmedBy: willConfirm ? (user?.email || "") : null,
+      });
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+  };
+
+  // Marcar que el paciente no asistirá hoy -- se agrega también aquí (además
+  // del respaldo que tiene el jefe en Monitor), ya que la enfermera suele
+  // enterarse primero.
+  const toggleNoShow = async () => {
+    const willMark = !session.noShowToday;
+    try {
+      const token = await user.getIdToken(true);
+      await patchSession(token, session.id, {
+        noShowToday: willMark,
+        noShowMarkedAt: willMark ? new Date().toISOString() : null,
+        noShowMarkedBy: willMark ? (user?.email || "") : null,
+      });
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+  };
+
   const startEditMed = (m) => {
     setEditingMedId(m.id);
     setMedDraft({
@@ -512,6 +544,22 @@ function PendingSessionCard({ session, user, onRefresh }) {
               )}
             </div>
           ))}
+
+          {/* Asistencia */}
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={toggleConfirm} style={{ flex:1, padding:"9px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer",
+              background: session.confirmed ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
+              border: `1px solid ${session.confirmed ? "rgba(0,212,170,0.3)" : "rgba(255,179,71,0.25)"}`,
+              color: session.confirmed ? "#00d4aa" : "#ffb347" }}>
+              {session.confirmed ? "✓ Confirmó asistencia" : "⏳ Marcar como confirmada"}
+            </button>
+            <button onClick={toggleNoShow} style={{ flex:1, padding:"9px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer",
+              background: session.noShowToday ? "rgba(255,107,107,0.12)" : "rgba(255,255,255,0.04)",
+              border: `1px solid ${session.noShowToday ? "rgba(255,107,107,0.3)" : "rgba(255,255,255,0.08)"}`,
+              color: session.noShowToday ? "#ff6b6b" : "#888" }}>
+              {session.noShowToday ? "🚫 No asistirá (marcado)" : "🚫 No asistirá hoy"}
+            </button>
+          </div>
 
           {/* Reagendar */}
           <div>
