@@ -611,7 +611,11 @@ export default function Insumos() {
     // a fechas pasadas no aparecía nada (nunca se habían traído del todo).
     const fromDate = (() => { const d = new Date(); d.setDate(d.getDate() - 180); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); })();
     const [s, ov] = await Promise.all([fetchUpcomingSessions(token, fromDate), fetchOverrides(token)]);
-    setSessions(s.filter(x => Array.isArray(x.meds) && x.meds.length > 0));
+    // Antes se excluía cualquier sesión sin medicamentos -- los procedimientos
+    // suelen no llevar medicamentos capturados de la misma forma, pero sí
+    // pueden necesitar material (insumos del procedimiento), así que siempre
+    // se incluyen sin importar si su lista de meds está vacía.
+    setSessions(s.filter(x => (Array.isArray(x.meds) && x.meds.length > 0) || x.sessionType === "procedimiento"));
     setOverrides(ov);
     setLoading(false);
     setHasLoadedOnce(true);
