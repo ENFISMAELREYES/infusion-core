@@ -1,25 +1,18 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, browserLocalPersistence, setPersistence } from "firebase/auth";
-import { auth } from "../firebase/config";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "../firebase/config";
 
 const AuthContext = createContext(null);
 
-const PROFILES = {
-  "xGme3zlkjbOaYXkRUd6XSzScOB43": { name: "Ismael Reyes",      role: "jefe",         center: "CITIO" },
-  "QQxWhAem1adZsXiy5BvWBgvM15Y2": { name: "Camila Aquino",     role: "enfermera",    center: "CIPI"  },
-  "JRYVuMW3fidrrlQcvDc5KSm00XT2": { name: "Paola Vargas",      role: "enfermera",    center: "CIPI"  },
-  "gHEOTAoTe8fZCR4EjetuzqA59Uu1": { name: "Danna Ramírez",     role: "enfermera",    center: "CITIO" },
-  "iwAUACSAqWYhol991xMDxgq30vq1": { name: "Yessica Madera",    role: "enfermera",    center: "CITIO" },
-  "IhiRm5Fc5IT8BzzmQLQaq1dFXGs1": { name: "Ismael Reyes",      role: "enfermera",    center: "CITIO" },
-  "IC2Tegxjijc6icyaGXZUSjAFrxR2": { name: "Carlos Sorroza",    role: "visualizador", center: "CIPI"  },
-  "0lah1NsefnR5GSpjfTX7D1qc4rh1": { name: "Jonathan Martínez", role: "visualizador", center: "CITIO" },
-  "dmMg7E4GfteR3Huc9hVYu9G4v5s1": { name: "Ana Flores",        role: "visualizador", center: "CIPI"  },
-  "Ms8W1cGrrtY7bDDeSkt3RISvDZM2": { name: "Paola Itzel Sandre", role: "visualizador", center: "CIPI"  },
-  "GstGhEoU7AbfbNwU8Lq2KZ2wiL52": { name: "Maricruz Zorrosa",  role: "visualizador", center: "CITIO" },
-  "mUmYTTlSDwTcu2MY1kOoRhP1rMt2": { name: "Elizabet Sorroza",  role: "visualizador", center: "CITIO" },
-  "yX2tnwdkAQexFWQ8suiNn6jpqp43": { name: "Jesus Tapia",       role: "visualizador", center: "CITIO" },
-  
-};
+// El perfil (name/role/center) ya NO vive hardcodeado aquí -- se lee del
+// documento users/{uid} en Firestore, el mismo que ya usan las reglas de
+// seguridad (firestore.rules) para autorizar cada escritura. Antes había dos
+// fuentes de verdad (este mapa + Firestore) que había que mantener
+// sincronizadas a mano; ahora dar de alta a alguien es solo crear su usuario
+// en Firebase Authentication + su documento en Firestore, sin tocar código.
+//
+// Para dar de alta o migrar usuarios existentes, ver scripts/migrate-users-to-firestore.mjs.
 
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null);
@@ -27,12 +20,18 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-   const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        const p = PROFILES[firebaseUser.uid] || null;
-        console.log("Perfil:", p);
-        setProfile(p);
+        try {
+          const snap = await getDoc(doc(db, "users", firebaseUser.uid));
+          const p = snap.exists() ? snap.data() : null;
+          console.log("Perfil:", p);
+          setProfile(p);
+        } catch (e) {
+          console.error("Error al leer el perfil de Firestore:", e);
+          setProfile(null);
+        }
       } else {
         setUser(null);
         setProfile(null);
