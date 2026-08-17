@@ -789,9 +789,9 @@ const handleDeleteScheme = async (id) => {
       {e.status === "confirmed" && <span style={{ marginLeft:8, fontSize:11, color:"#1D9E75" }}>✓ Confirmada</span>}
       {e.rescheduled && <span style={{ marginLeft:8, fontSize:11, color:"#ffb347" }}>↻ Reagendada</span>}
     </div>
-    {!isVisualizador && e.status !== "confirmed" && e.date >= today && (
+    {!isVisualizador && e.status !== "confirmed" && (
       <button onClick={async () => {
-        const newDate = prompt(`Nueva fecha para ${e.patientName} ${e.label}:`, e.date);
+        const newDate = prompt(`${e.date < today ? "Corregir" : "Nueva"} fecha para ${e.patientName} ${e.label}:`, e.date);
         if (!newDate || newDate === e.date) return;
         const t = await user.getIdToken(true);
 
@@ -822,7 +822,7 @@ const handleDeleteScheme = async (id) => {
         }
         load();
       }} style={{ padding:"4px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
-        ↻ Reagendar
+        {e.date < today ? "↻ Corregir fecha" : "↻ Reagendar"}
       </button>
     )}
     </div>
