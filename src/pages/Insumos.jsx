@@ -342,11 +342,15 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           <span style={{ fontSize:11, color:"#555" }}>{material.items.length} art.</span>
         )}
         {material.unmatched.length > 0 && <span style={{ fontSize:11, color:"#ffb347" }}>⚠️ {material.unmatched.length}</span>}
-        {(() => {
+        {!s.materialSolicitudGuardada && (() => {
           // Estas tres cosas se calculan pero no se agregan solas a la lista
           // de material -- si no se resuelven en la captura individual (modal
           // 🧰), el consolidado y el PDF a farmacia salen incompletos sin que
-          // se note, salvo por este badge.
+          // se note, salvo por este badge. Una vez que la solicitud ya se
+          // guardó, se deja de mostrar -- si no, quedaría colgado para
+          // siempre (ej. unmatchedSolutions nunca se "resuelve" solo aunque
+          // la enfermera haya agregado la solución a mano) y crearía
+          // confusión de pendiente falso sobre algo que ya se revisó.
           const pending = [
             material.pendingEquipo && "sin elegir equipo de infusión",
             material.pendingAlternatives?.length > 0 && `${material.pendingAlternatives.length} alternativa(s) de punción sin elegir`,
