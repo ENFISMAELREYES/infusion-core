@@ -376,6 +376,23 @@ export default function Inventario() {
       });
       await checkOk(evRes, "Registro de la anulación");
 
+      // Si este movimiento venía de "Dar de baja inventario" de una sesión
+      // (tiene sessionId), esa sesión debe volver a quedar disponible para
+      // dar de baja -- si no, se queda marcada como "ya dada de baja" sin
+      // que el inventario realmente la refleje.
+      if (ev.sessionId && ev.type === "salida") {
+        const sessRes = await fetch(`${FIRESTORE_BASE_URL}/sessions/${ev.sessionId}?updateMask.fieldPaths=inventorySalidaDone&updateMask.fieldPaths=inventorySalidaAt`, {
+          method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            inventorySalidaDone: { booleanValue: false },
+            inventorySalidaAt: { nullValue: null },
+          }}),
+        });
+        // No detenemos todo el flujo si esto falla (la anulación del
+        // inventario ya se hizo bien) -- solo avisamos aparte.
+        if (!sessRes.ok) console.error("No se pudo reabrir la sesión ligada a este movimiento.");
+      }
+
       load();
     } catch (e) {
       alert("Error al anular el movimiento: " + e.message);
