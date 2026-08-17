@@ -2328,19 +2328,27 @@ const PREMEDICACION_DRUGS = new Set([
   // nombre de la presentación coincidiera por casualidad con algo ya en la
   // lista de insumos, esto asegura que el medicamento tenga la última
   // palabra y no quede pisado por un ajuste de insumos.
+  //
+  // Se acumulan primero en pieceTotals (por artículo) en vez de escribir
+  // directo en combined -- si el mismo medicamento aparece dos veces en la
+  // sesión (ej. dosis dividida en dos bolsas) y ambas entradas necesitan el
+  // mismo frasco, antes la segunda pisaba la cantidad de la primera en vez
+  // de sumarla, pidiendo menos medicamento del que en realidad se necesita.
+  const pieceTotals = {};
   (session.meds || []).forEach((m, idx) => {
     if (!m.name || !m.dose) return;
     const medKey = `${idx}_${m.name}`;
     const overridden = session.pieceOverrides?.[medKey];
     if (overridden) {
-      overridden.forEach(({ item, count }) => {
-        if (count > 0) combined[item] = count;
-        else delete combined[item];
-      });
+      overridden.forEach(({ item, count }) => { pieceTotals[item] = (pieceTotals[item] || 0) + Math.max(0, count); });
     } else {
       const auto = computeMedicationPieces(m.name, m.dose, extraCatalog, extraDefaults);
-      if (auto) auto.pieces.forEach(({ item, count }) => { if (count > 0) combined[item] = count; });
+      if (auto) auto.pieces.forEach(({ item, count }) => { pieceTotals[item] = (pieceTotals[item] || 0) + count; });
     }
+  });
+  Object.entries(pieceTotals).forEach(([item, total]) => {
+    if (total > 0) combined[item] = total;
+    else delete combined[item];
   });
 
   return {
