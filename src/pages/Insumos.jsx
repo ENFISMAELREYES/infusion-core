@@ -342,6 +342,23 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           <span style={{ fontSize:11, color:"#555" }}>{material.items.length} art.</span>
         )}
         {material.unmatched.length > 0 && <span style={{ fontSize:11, color:"#ffb347" }}>⚠️ {material.unmatched.length}</span>}
+        {(() => {
+          // Estas tres cosas se calculan pero no se agregan solas a la lista
+          // de material -- si no se resuelven en la captura individual (modal
+          // 🧰), el consolidado y el PDF a farmacia salen incompletos sin que
+          // se note, salvo por este badge.
+          const pending = [
+            material.pendingEquipo && "sin elegir equipo de infusión",
+            material.pendingAlternatives?.length > 0 && `${material.pendingAlternatives.length} alternativa(s) de punción sin elegir`,
+            material.unmatchedSolutions?.length > 0 && `${material.unmatchedSolutions.length} solución(es) sin calcular`,
+          ].filter(Boolean);
+          if (pending.length === 0) return null;
+          return (
+            <span title={pending.join(" · ")} style={{ fontSize:11, color:"#ff6b6b", background:"rgba(255,107,107,0.1)", padding:"2px 8px", borderRadius:99, fontWeight:600 }}>
+              🧯 material incompleto
+            </span>
+          );
+        })()}
         {note && <span style={{ fontSize:11, color:"#4fc3f7" }}>📝</span>}
         {anexos.length > 0 && <span style={{ fontSize:11, color:"#AFA9EC" }}>📎 {anexos.length}</span>}
 
@@ -638,10 +655,15 @@ export default function Insumos() {
   };
   const perPatient = filtered.map(s => {
     if (s.excludeFromOrder) {
-      return { session: s, material: { items: [], unmatched: [] }, note: s.materialNote || "" };
+      return { session: s, material: { items: [], unmatched: [], unmatchedSolutions: [], pendingAlternatives: [], pendingEquipo: false }, note: s.materialNote || "" };
     }
     const preview = computeSessionMaterial(s, calcOverrides);
-    return { session: s, material: { items: preview.items, unmatched: preview.unmatched }, note: s.materialNote || "" };
+    // pendingEquipo/pendingAlternatives/unmatchedSolutions se propagan hasta
+    // PatientMaterialRow -- antes se descartaban aquí, así que una sesión sin
+    // equipo elegido, sin calibre de catéter elegido, o con una dilución que
+    // no calzó con ninguna solución conocida, salía del consolidado (y del
+    // PDF a farmacia) sin ese material y sin ninguna señal de que faltaba.
+    return { session: s, material: { items: preview.items, unmatched: preview.unmatched, unmatchedSolutions: preview.unmatchedSolutions, pendingAlternatives: preview.pendingAlternatives, pendingEquipo: preview.pendingEquipo }, note: s.materialNote || "" };
   });
 
   const grandTotal = {};
