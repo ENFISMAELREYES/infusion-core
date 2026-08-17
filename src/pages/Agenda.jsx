@@ -320,12 +320,27 @@ function SchemeForm({ schemes, sessions, onSave, onCancel, editing }) {
   const labelStyle = { fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 };
 
  const [form, setForm] = useState(editing || { patientName:"", schemeId:"", startDate:"", currentCycle:1, totalCyclesOverride:"", notes:"", active:true, center:"CITIO", schemeStatus:"activo" });
+  // Si estamos editando un esquema ya existente, no hay que autocompletar --
+  // el centro que ya tiene guardado manda, no el de sus sesiones.
+  const [centerTouched, setCenterTouched] = useState(!!editing);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const selectedScheme = schemes.find(s => s.id === form.schemeId);
 
   // Autocompletado de pacientes
   const patients = [...new Set(sessions.map(s => s.patientName).filter(Boolean))].sort();
+
+  // Autocompletar el centro con el que ya tiene ese paciente en sus sesiones
+  // -- antes siempre arrancaba en CITIO por defecto sin importar el paciente,
+  // así que había que acordarse de revisarlo y cambiarlo a mano cada vez.
+  // Solo autocompleta mientras el jefe no lo haya tocado él mismo a mano.
+  useEffect(() => {
+    if (editing || centerTouched || !form.patientName.trim()) return;
+    const matches = sessions.filter(s => s.patientName?.toLowerCase() === form.patientName.trim().toLowerCase() && s.center);
+    if (matches.length === 0) return;
+    const latest = matches.sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
+    set("center", latest.center);
+  }, [form.patientName]);
 
   return (
     <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:14, padding:"20px" }}>
@@ -370,7 +385,7 @@ function SchemeForm({ schemes, sessions, onSave, onCancel, editing }) {
         </div>
         <div>
   <label style={labelStyle}>Centro</label>
-  <select value={form.center || "CITIO"} onChange={e => set("center", e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
+  <select value={form.center || "CITIO"} onChange={e => { setCenterTouched(true); set("center", e.target.value); }} style={{ ...inputStyle, cursor:"pointer" }}>
     <option value="CITIO">CITIO</option>
     <option value="CIPI">CIPI</option>
   </select>
@@ -508,6 +523,26 @@ setAppointments(appts);
     try {
       const t = await user.getIdToken(true);
       await savePatientScheme(t, { ...data, updatedAt: new Date().toISOString() }, schemes);
+      // Si se edita el centro de un esquema ya existente, hay que reflejarlo
+      // también en las citas (appointments) ya generadas -- cada una guarda
+      // su propio campo "center" tomado al crearse, así que solo actualizar
+      // el documento del esquema no bastaba: el calendario, la lista y
+      // "Consulta" seguían mostrando el centro viejo (parecía que el cambio
+      // "no pegaba"), aunque "Vista pacientes" sí se veía bien porque esa
+      // lee el centro directo del esquema, no de las citas.
+      if (data.id) {
+        const originalPs = patientSchemes.find(p => p.id === data.id);
+        if (originalPs && data.center && data.center !== originalPs.center) {
+          const relatedAppts = appointments.filter(a => a.patientSchemeId === data.id);
+          for (const appt of relatedAppts) {
+            await fetch(
+              `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/appointments/${appt.id}?updateMask.fieldPaths=center`,
+              { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${t}` },
+                body: JSON.stringify({ fields: { center: { stringValue: data.center } } }) }
+            );
+          }
+        }
+      }
       // Actualizar citas futuras si el esquema cambia de estatus
       if (data.id && data.schemeStatus) {
         const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
