@@ -140,9 +140,14 @@ async function addMoreCycles(token, ps, scheme, additionalCycles) {
       body: JSON.stringify({ fields: { totalCyclesOverride: toFV(newTotal) } }) }
   );
 
-  // Generar solo las citas de los ciclos nuevos
+  // Generar solo las citas de los ciclos nuevos -- ps.startDate ancla al
+  // ciclo ps.currentCycle (no necesariamente al 1), así que hay que calcular
+  // TODAS las fechas desde ese mismo ancla y quedarnos solo con los ciclos
+  // más allá de effectiveCycles, en vez de pasarle effectiveCycles+1 como si
+  // fuera el ciclo que ancla la fecha (eso desfasaría todas las fechas).
   const effectiveScheme = { ...scheme, totalCycles: newTotal };
-  const newDates = calcDates(ps.startDate, effectiveScheme, effectiveCycles + 1);
+  const allDates = calcDates(ps.startDate, effectiveScheme, ps.currentCycle || 1);
+  const newDates = allDates.filter(d => d.cycle > effectiveCycles);
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
   for (const d of newDates) {
     const apptFields = {
@@ -171,12 +176,20 @@ async function deletePatientScheme(token, id) {
   );
 }
 
+// startDate ancla al ciclo "currentCycle" (no siempre al ciclo 1) -- así se
+// puede asignar un esquema a un paciente que ya lleva tratamiento, usando la
+// fecha REAL del ciclo en el que está hoy, en vez de tener que reconstruir
+// la fecha teórica de su primera infusión (que casi nunca coincide, porque
+// en la práctica los ciclos se corren de fecha por vacaciones, laboratorios,
+// retrasos, etc.). Todo llamador de calcDates debe pasar el mismo par
+// (startDate, currentCycle) que se guardó junto -- si startDate ancla al
+// ciclo 3 pero se le pasa currentCycle=1, las fechas salen desfasadas.
 function calcDates(startDate, scheme, currentCycle) {
   const dates = [];
   const start = new Date(startDate + "T12:00:00");
   for (let cycle = currentCycle; cycle <= scheme.totalCycles; cycle++) {
     const cycleStart = new Date(start);
-    cycleStart.setDate(start.getDate() + (cycle - 1) * scheme.cycleDurationDays);
+    cycleStart.setDate(start.getDate() + (cycle - currentCycle) * scheme.cycleDurationDays);
     for (const day of scheme.administrationDays) {
       const d = new Date(cycleStart);
       d.setDate(cycleStart.getDate() + (day - 1));
@@ -343,8 +356,9 @@ function SchemeForm({ schemes, sessions, onSave, onCancel, editing }) {
         )}
 
         <div>
-          <label style={labelStyle}>Fecha de inicio (primera infusión)</label>
+          <label style={labelStyle}>Fecha de inicio del ciclo actual</label>
           <input type="date" value={form.startDate} onChange={e => set("startDate", e.target.value)} style={inputStyle} />
+          <div style={{ fontSize:11, color:"#555", marginTop:4 }}>La fecha real del día 1 del ciclo que pongas abajo -- no tiene que ser la primera infusión histórica. Para un paciente que ya lleva tratamiento, usa la fecha real de su ciclo actual (así las citas futuras salen bien aunque ciclos anteriores se hayan corrido de fecha).</div>
         </div>
         <div>
           <label style={labelStyle}>Ciclo actual</label>
@@ -972,7 +986,7 @@ const handleDeleteScheme = async (id) => {
                 <div key={ps.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:12 }}>
                   <span style={{ flex:1, color:"#f0f0f0", fontWeight:600 }}>{ps.patientName}</span>
                   <span style={{ fontSize:10, padding:"1px 8px", borderRadius:99, background: ps.center==="CITIO" ? "rgba(79,195,247,0.12)" : "rgba(175,169,236,0.12)", color: ps.center==="CITIO" ? "#4fc3f7" : "#AFA9EC" }}>{ps.center}</span>
-                  <span style={{ color:"#666", fontFamily:"'IBM Plex Mono', monospace" }}>Inicio: {ps.startDate}</span>
+                  <span style={{ color:"#666", fontFamily:"'IBM Plex Mono', monospace" }}>Ancla: {ps.startDate} (C{ps.currentCycle||1})</span>
                   <span style={{ color:"#666", fontFamily:"'IBM Plex Mono', monospace" }}>Fin: {lastDate || "—"}</span>
                   <span style={{ fontSize:10, color:"#1D9E75" }}>{confirmed.length}/{myAppts.length} confirmadas</span>
                 </div>
