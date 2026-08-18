@@ -58,7 +58,7 @@ function AppRoutes() {
         <Route path="reportes" element={<PrivateRoute roles={["jefe"]}><Reportes /></PrivateRoute>} />
         <Route path="calculadoras" element={<PrivateRoute roles={["jefe","enfermera"]}><Calculadoras /></PrivateRoute>} />
        <Route path="agenda" element={<PrivateRoute roles={["jefe","visualizador","enfermera"]}><Agenda /></PrivateRoute>} />
-        <Route path="insumos" element={<PrivateRoute roles={["jefe","enfermera"]}><Insumos /></PrivateRoute>} />
+        <Route path="insumos" element={<PrivateRoute roles={["jefe","enfermera","visualizador"]}><Insumos /></PrivateRoute>} />
         <Route path="auditoria" element={<PrivateRoute roles={["jefe"]}><Auditoria /></PrivateRoute>} />
         <Route path="inventario" element={<PrivateRoute roles={["jefe","enfermera"]}><Inventario /></PrivateRoute>} />
       </Route>

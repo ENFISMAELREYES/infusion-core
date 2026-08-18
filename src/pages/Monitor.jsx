@@ -140,11 +140,12 @@ function MedTimeline({ meds, medEvents }) {
   );
 }
 
-function PatientRow({ s }) {
+function PatientRow({ s, onNoShow, isJefe }) {
   const st = getStatus(s);
   const pct = getProgress(s);
   const me = s.medEvents || {};
   const activeMed = (s.meds||[]).find(m => me[`med_${m.id}`]?.inicio && !me[`med_${m.id}`]?.fin);
+  const canMarkNoShow = isJefe && !s.events?.ingreso; // solo jefe, y solo si aún no ha iniciado
 
   return (
     <div style={{
@@ -161,6 +162,12 @@ function PatientRow({ s }) {
             )}
             <span style={{ fontSize:14, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
             <span style={{ fontSize:10, padding:"2px 8px", borderRadius:99, background:`${st.color}18`, color:st.color, border:`1px solid ${st.color}44` }}>{st.label}</span>
+            {canMarkNoShow && (
+              <button onClick={() => onNoShow(s)} title="Marcar que el paciente no asistirá hoy -- se quita de esta lista"
+                style={{ marginLeft:"auto", fontSize:10, fontWeight:600, padding:"2px 8px", borderRadius:99, cursor:"pointer", background:"rgba(255,107,107,0.08)", border:"1px solid rgba(255,107,107,0.2)", color:"#ff6b6b" }}>
+                🚫 No asistirá hoy
+              </button>
+            )}
           </div>
           <div style={{ fontSize:11, color:"#666" }}>{s.diagnosis} · {s.cycle}</div>
           {s.sessionType === "procedimiento" && s.procedureType && (
@@ -361,10 +368,13 @@ function PatientRow({ s }) {
 }
 
 export default function Monitor() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const isJefe = profile?.role === "jefe";
+  const isVisualizador = profile?.role === "visualizador";
   const [sessions, setSessions] = useState([]);
   const [clock, setClock] = useState(new Date().toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false }));
   const [filter, setFilter] = useState("Todos");
+  const [showNoShow, setShowNoShow] = useState(false);
   const today = getToday();
 
   const load = async () => {
@@ -388,14 +398,40 @@ export default function Monitor() {
   }, []);
 
   const centers = ["Todos", "CIPI", "CITIO"];
-  const filtered = filter === "Todos" ? sessions : sessions.filter(s => s.center === filter);
-  const ns = sessions.filter(s => s.center === "CIPI");
-  const ss = sessions.filter(s => s.center === "CITIO");
+  // Para visualizador: además de "confirmed", cuenta como asistencia
+  // comprobada que la sesión ya tenga ingreso registrado o esté en curso/
+  // completada -- si ya inició es prueba de que el paciente sí llegó, sin
+  // importar si el campo "confirmed" se activó a tiempo o no.
+  const attendedProof = (s) => s.confirmed || !!s.events?.ingreso || s.status === "en_curso" || s.status === "completado";
+  const visibleSessions = sessions.filter(s => !s.noShowToday && (!isVisualizador || attendedProof(s)));
+  const noShowSessions = sessions.filter(s => s.noShowToday);
+  const filtered = filter === "Todos" ? visibleSessions : visibleSessions.filter(s => s.center === filter);
+  const ns = visibleSessions.filter(s => s.center === "CIPI");
+  const ss = visibleSessions.filter(s => s.center === "CITIO");
   const stats = (g) => ({
     enCurso:   g.filter(s => s.status === "en_curso").length,
     retirados: g.filter(s => s.status === "completado").length,
     enEspera:  g.filter(s => !s.events?.ingreso).length,
   });
+
+  // Marca (o desmarca) una sesión como "no asistirá hoy" -- la quita de la
+  // vista principal sin borrar nada; se va a la lista de "Programados" desde
+  // la perspectiva de enfermería, y aquí queda visible aparte para revertir
+  // por si se marcó por error.
+  const toggleNoShow = async (session) => {
+    const willMark = !session.noShowToday;
+    try {
+      const token = await user.getIdToken(true);
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${session.id}?updateMask.fieldPaths=noShowToday&updateMask.fieldPaths=noShowMarkedAt&updateMask.fieldPaths=noShowMarkedBy`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            noShowToday: { booleanValue: willMark },
+            noShowMarkedAt: willMark ? { stringValue: new Date().toISOString() } : { nullValue: null },
+            noShowMarkedBy: willMark ? { stringValue: user?.email || "" } : { nullValue: null },
+          }}) });
+      setSessions(prev => prev.map(x => x.id === session.id ? { ...x, noShowToday: willMark } : x));
+    } catch(e) { alert("Error: " + e.message); }
+  };
 
   return (
     <div style={{ padding:"24px 28px", maxWidth:1100, margin:"0 auto" }}>
@@ -442,8 +478,31 @@ export default function Monitor() {
           <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:13 }}>
             No hay pacientes registrados hoy.
           </div>
-        ) : filtered.map(s => <PatientRow key={s.id} s={s} />)}
+        ) : filtered.map(s => <PatientRow key={s.id} s={s} onNoShow={toggleNoShow} isJefe={isJefe} />)}
       </div>
+
+      {isJefe && noShowSessions.length > 0 && (
+        <div style={{ marginTop:16 }}>
+          <button onClick={() => setShowNoShow(v => !v)} style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,107,107,0.06)", border:"1px solid rgba(255,107,107,0.2)", color:"#ff6b6b" }}>
+            🚫 {noShowSessions.length} no asistirá{noShowSessions.length!==1?"n":""} hoy {showNoShow ? "▲" : "▼"}
+          </button>
+          {showNoShow && (
+            <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:8 }}>
+              {noShowSessions.map(s => (
+                <div key={s.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 14px", borderRadius:10, background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", opacity:0.7 }}>
+                  <span style={{ flex:1, fontSize:12, color:"#999" }}>{s.patientName}</span>
+                  <span style={{ fontSize:10, color:"#666" }}>{s.cycle}</span>
+                  <span style={{ fontSize:10, color:"#666" }}>{s.center}</span>
+                  <span style={{ fontSize:10, color:"#555" }} title={s.noShowMarkedAt ? new Date(s.noShowMarkedAt).toLocaleString("es-MX") : ""}>Marcado por: {s.noShowMarkedBy || "—"}</span>
+                  <button onClick={() => toggleNoShow(s)} style={{ fontSize:10, fontWeight:600, padding:"3px 8px", borderRadius:7, cursor:"pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
+                    ↺ Deshacer
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

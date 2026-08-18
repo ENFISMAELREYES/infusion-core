@@ -109,6 +109,20 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   const anexos = s.anexos || [];
   const isCipi = s.center === "CIPI";
   const [cipiVariant, setCipiVariant] = useState(s.cipiVariant || "PRO");
+
+  const toggleConfirm = async () => {
+    const willConfirm = !s.confirmed;
+    try {
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=confirmed&updateMask.fieldPaths=confirmedAt&updateMask.fieldPaths=confirmedBy`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            confirmed: { booleanValue: willConfirm },
+            confirmedAt: willConfirm ? { stringValue: new Date().toISOString() } : { nullValue: null },
+            confirmedBy: willConfirm ? { stringValue: user?.email || "" } : { nullValue: null },
+          }}) });
+      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, confirmed: willConfirm } : x));
+    } catch (e) { alert("Error al confirmar: " + e.message); }
+  };
   const [docsRevealed, setDocsRevealed] = useState(medsHecho || materialHecho || anexos.length > 0);
   const [showAnexoModal, setShowAnexoModal] = useState(false);
   const [anexoItems, setAnexoItems] = useState([]);
@@ -313,13 +327,42 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           style={{ width:20, height:20, borderRadius:"50%", objectFit:"cover", opacity:0.9, flexShrink:0 }} />
         <span style={{ fontSize:11, color:"#666", background:"rgba(255,255,255,0.05)", padding:"2px 8px", borderRadius:99 }}>{s.center}</span>
         <span style={{ fontSize:10, color:"#555" }}>{s.date}</span>
+        <button onClick={e => { e.stopPropagation(); toggleConfirm(); }}
+          title={s.confirmed ? `Confirmó ${s.confirmedBy || ""}${s.confirmedAt ? " · " + new Date(s.confirmedAt).toLocaleString("es-MX") : ""} -- clic para quitar` : "Marcar que el paciente confirmó que asistirá"}
+          style={{ fontSize:10, fontWeight:600, padding:"2px 8px", borderRadius:99, cursor:"pointer", border:"none",
+            background: s.confirmed ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
+            color: s.confirmed ? "#00d4aa" : "#ffb347" }}>
+          {s.confirmed ? "✓ Confirmada" : "⏳ Sin confirmar"}
+        </button>
         <span style={{ flex:1, fontSize:13, color: s.excludeFromOrder ? "#555" : "#f0f0f0", fontWeight:600, minWidth:120, textDecoration: s.excludeFromOrder ? "line-through" : "none" }}>{s.patientName}</span>
+        <span style={{ fontSize:11, color:"#666" }}>{s.cycle}</span>
         {s.excludeFromOrder ? (
           <span style={{ fontSize:11, color:"#888" }}>Material ya cubierto</span>
         ) : (
           <span style={{ fontSize:11, color:"#555" }}>{material.items.length} art.</span>
         )}
         {material.unmatched.length > 0 && <span style={{ fontSize:11, color:"#ffb347" }}>⚠️ {material.unmatched.length}</span>}
+        {!s.materialSolicitudGuardada && (() => {
+          // Estas tres cosas se calculan pero no se agregan solas a la lista
+          // de material -- si no se resuelven en la captura individual (modal
+          // 🧰), el consolidado y el PDF a farmacia salen incompletos sin que
+          // se note, salvo por este badge. Una vez que la solicitud ya se
+          // guardó, se deja de mostrar -- si no, quedaría colgado para
+          // siempre (ej. unmatchedSolutions nunca se "resuelve" solo aunque
+          // la enfermera haya agregado la solución a mano) y crearía
+          // confusión de pendiente falso sobre algo que ya se revisó.
+          const pending = [
+            material.pendingEquipo && "sin elegir equipo de infusión",
+            material.pendingAlternatives?.length > 0 && `${material.pendingAlternatives.length} alternativa(s) de punción sin elegir`,
+            material.unmatchedSolutions?.length > 0 && `${material.unmatchedSolutions.length} solución(es) sin calcular`,
+          ].filter(Boolean);
+          if (pending.length === 0) return null;
+          return (
+            <span title={pending.join(" · ")} style={{ fontSize:11, color:"#ff6b6b", background:"rgba(255,107,107,0.1)", padding:"2px 8px", borderRadius:99, fontWeight:600 }}>
+              🧯 material incompleto
+            </span>
+          );
+        })()}
         {note && <span style={{ fontSize:11, color:"#4fc3f7" }}>📝</span>}
         {anexos.length > 0 && <span style={{ fontSize:11, color:"#AFA9EC" }}>📎 {anexos.length}</span>}
 
@@ -531,17 +574,18 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
 export default function Insumos() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
+  const isVisualizador = profile?.role === "visualizador";
   // Solo Paola Vargas puede ver ambos centros siendo enfermera; el resto solo
-  // ve el material/inventario de su propio centro asignado.
-  const canSeeAllCenters = isJefe || profile?.name === "Paola Vargas";
+  // ve el material/inventario de su propio centro asignado. Visualizador ve
+  // todos los centros, igual que el jefe (pero en modo de solo lectura).
+  const canSeeAllCenters = isJefe || isVisualizador || profile?.name === "Paola Vargas";
   const [tab, setTab] = useState("consolidado");
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
-  const allowedCenters = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI PRO","CIPI PED"] : [profile?.center || "CITIO"]);
-  const [centerFilter, setCenterFilter] = useState(() => canSeeAllCenters ? "Todos" : (allowedCenters?.[0] || "CITIO"));
+  const [centerFilter, setCenterFilter] = useState(() => canSeeAllCenters ? "Todos" : (profile?.center || "CITIO"));
   useEffect(() => {
-    if (allowedCenters && !allowedCenters.includes(centerFilter)) {
-      setCenterFilter(allowedCenters[0]);
+    if (!canSeeAllCenters && profile?.center && centerFilter !== profile.center) {
+      setCenterFilter(profile.center);
     }
   }, [profile, canSeeAllCenters]);
   const [dateFilter, setDateFilter] = useState("rango"); // "hoy" | "rango" | "todas"
@@ -588,7 +632,11 @@ export default function Insumos() {
     // a fechas pasadas no aparecía nada (nunca se habían traído del todo).
     const fromDate = (() => { const d = new Date(); d.setDate(d.getDate() - 180); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); })();
     const [s, ov] = await Promise.all([fetchUpcomingSessions(token, fromDate), fetchOverrides(token)]);
-    setSessions(s.filter(x => Array.isArray(x.meds) && x.meds.length > 0));
+    // Antes se excluía cualquier sesión sin medicamentos -- los procedimientos
+    // suelen no llevar medicamentos capturados de la misma forma, pero sí
+    // pueden necesitar material (insumos del procedimiento), así que siempre
+    // se incluyen sin importar si su lista de meds está vacía.
+    setSessions(s.filter(x => (Array.isArray(x.meds) && x.meds.length > 0) || x.sessionType === "procedimiento"));
     setOverrides(ov);
     setLoading(false);
     setHasLoadedOnce(true);
@@ -602,10 +650,7 @@ export default function Insumos() {
     ))
     : dateFilter === "hoy" ? sessions.filter(s => s.date === selectedDay)
     : sessions.filter(s => s.date >= rangeFrom && s.date <= rangeTo && !s.materialSolicitudGuardada); // "rango"
-  const filtered = centerFilter === "Todos" ? dateFiltered
-    : centerFilter === "CIPI PRO" ? dateFiltered.filter(s => s.center === "CIPI" && (s.cipiVariant || "PRO") === "PRO")
-    : centerFilter === "CIPI PED" ? dateFiltered.filter(s => s.center === "CIPI" && s.cipiVariant === "PED")
-    : dateFiltered.filter(s => s.center === centerFilter);
+  const filtered = centerFilter === "Todos" ? dateFiltered : dateFiltered.filter(s => s.center === centerFilter);
   const calcOverrides = {
     extraDefaults: overrides.extraDefaults,
     extraCatalog: overrides.extraCatalog,
@@ -614,10 +659,15 @@ export default function Insumos() {
   };
   const perPatient = filtered.map(s => {
     if (s.excludeFromOrder) {
-      return { session: s, material: { items: [], unmatched: [] }, note: s.materialNote || "" };
+      return { session: s, material: { items: [], unmatched: [], unmatchedSolutions: [], pendingAlternatives: [], pendingEquipo: false }, note: s.materialNote || "" };
     }
     const preview = computeSessionMaterial(s, calcOverrides);
-    return { session: s, material: { items: preview.items, unmatched: preview.unmatched }, note: s.materialNote || "" };
+    // pendingEquipo/pendingAlternatives/unmatchedSolutions se propagan hasta
+    // PatientMaterialRow -- antes se descartaban aquí, así que una sesión sin
+    // equipo elegido, sin calibre de catéter elegido, o con una dilución que
+    // no calzó con ninguna solución conocida, salía del consolidado (y del
+    // PDF a farmacia) sin ese material y sin ninguna señal de que faltaba.
+    return { session: s, material: { items: preview.items, unmatched: preview.unmatched, unmatchedSolutions: preview.unmatchedSolutions, pendingAlternatives: preview.pendingAlternatives, pendingEquipo: preview.pendingEquipo }, note: s.materialNote || "" };
   });
 
   const grandTotal = {};
@@ -782,6 +832,83 @@ export default function Insumos() {
 
   if (loading && !hasLoadedOnce) return <div style={{ padding:40, color:"#666", textAlign:"center" }}>Cargando…</div>;
 
+  // Vista simplificada de solo lectura para "visualizador" -- sin cálculo de
+  // material, sin botones de compra ni edición. Solo confirma quién asistirá
+  // hoy/mañana/el día que elija, para dar seguimiento sin poder tocar nada.
+  if (isVisualizador) {
+    const dayList = sessions.filter(s => s.date === selectedDay && (centerFilter === "Todos" ||
+      (centerFilter === "CIPI PRO" ? (s.center === "CIPI" && (s.cipiVariant || "PRO") === "PRO") :
+       centerFilter === "CIPI PED" ? (s.center === "CIPI" && s.cipiVariant === "PED") :
+       s.center === centerFilter)));
+    const confirmedCount = dayList.filter(s => s.confirmed).length;
+    return (
+      <div style={{ padding:"24px 28px", maxWidth:640, margin:"0 auto" }}>
+        <div style={{ marginBottom:20 }}>
+          <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Confirmaciones</h1>
+          <p style={{ fontSize:13, color:"#555" }}>Solo lectura — quién ha confirmado su asistencia</p>
+        </div>
+
+        <div style={{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap" }}>
+          {["Todos","CITIO","CIPI PRO","CIPI PED"].map(c => (
+            <button key={c} onClick={() => setCenterFilter(c)} style={{
+              padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
+              background: centerFilter===c ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
+              border: `1px solid ${centerFilter===c ? "rgba(0,212,170,0.3)" : "rgba(255,255,255,0.08)"}`,
+              color: centerFilter===c ? "#00d4aa" : "#666",
+            }}>{c}</button>
+          ))}
+        </div>
+
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+          <button onClick={() => { const d = new Date(selectedDay+"T12:00:00"); d.setDate(d.getDate()-1); setSelectedDay(d.toLocaleDateString("en-CA")); }}
+            style={{ padding:"5px 10px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>◀</button>
+          <input type="date" value={selectedDay} onChange={e => setSelectedDay(e.target.value)}
+            style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"5px 8px", color:"#f0f0f0", fontSize:12 }} />
+          <button onClick={() => { const d = new Date(selectedDay+"T12:00:00"); d.setDate(d.getDate()+1); setSelectedDay(d.toLocaleDateString("en-CA")); }}
+            style={{ padding:"5px 10px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>▶</button>
+        </div>
+
+        {dayList.length > 0 && (
+          <div style={{ marginBottom:16, padding:"8px 14px", borderRadius:10, background: confirmedCount===dayList.length ? "rgba(0,212,170,0.08)" : "rgba(255,179,71,0.08)", border:`1px solid ${confirmedCount===dayList.length ? "rgba(0,212,170,0.25)" : "rgba(255,179,71,0.25)"}` }}>
+            <span style={{ fontSize:13, fontWeight:600, color: confirmedCount===dayList.length ? "#00d4aa" : "#ffb347" }}>
+              {confirmedCount===dayList.length ? "✓" : "⏳"} {confirmedCount} de {dayList.length} confirmadas para {selectedDay}
+            </span>
+          </div>
+        )}
+
+        {dayList.length === 0 ? (
+          <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
+            Sin sesiones capturadas para esta fecha.
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {dayList.map(s => (
+              <div key={s.id} style={{ padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
+                  <span style={{ fontSize:11, color:"#888" }}>{s.cycle}</span>
+                  <span style={{ fontSize:11, color:"#666" }}>{s.center}{s.cipiVariant ? ` ${s.cipiVariant}` : ""}</span>
+                  <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
+                    background: s.confirmed ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
+                    color: s.confirmed ? "#00d4aa" : "#ffb347" }}>
+                    {s.confirmed ? "✓ Confirmada" : "⏳ Sin confirmar"}
+                  </span>
+                </div>
+                {(s.meds || []).length > 0 && (
+                  <div style={{ marginTop:6, paddingTop:6, borderTop:"1px solid rgba(255,255,255,0.05)", display:"flex", flexWrap:"wrap", gap:6 }}>
+                    {(s.meds || []).map((m,i) => (
+                      <span key={i} style={{ fontSize:11, color:"#AFA9EC", background:"rgba(175,169,236,0.08)", padding:"2px 8px", borderRadius:99 }}>{m.name}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding:"24px 28px", maxWidth:820, margin:"0 auto" }}>
       <div style={{ marginBottom:20 }}>
@@ -803,7 +930,7 @@ export default function Insumos() {
       {tab === "consolidado" && (
         <div>
           <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
-            {(canSeeAllCenters ? ["Todos","CITIO","CIPI PRO","CIPI PED"] : allowedCenters).map(c => (
+            {(canSeeAllCenters ? ["Todos","CITIO","CIPI"] : [profile?.center || "CITIO"]).map(c => (
               <button key={c} onClick={() => setCenterFilter(c)} style={{
                 padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
                 background: centerFilter===c ? "rgba(79,195,247,0.12)" : "rgba(255,255,255,0.04)",
@@ -858,6 +985,17 @@ export default function Insumos() {
             <span style={{ marginLeft:"auto", fontSize:12, color:"#555", alignSelf:"center" }}>{perPatient.length} sesión{perPatient.length!==1?"es":""}</span>
           </div>
 
+          {dateFilter === "hoy" && perPatient.length > 0 && (() => {
+            const confirmedCount = perPatient.filter(({ session: s }) => s.confirmed).length;
+            return (
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16, padding:"8px 14px", borderRadius:10, background: confirmedCount===perPatient.length ? "rgba(0,212,170,0.08)" : "rgba(255,179,71,0.08)", border:`1px solid ${confirmedCount===perPatient.length ? "rgba(0,212,170,0.25)" : "rgba(255,179,71,0.25)"}` }}>
+                <span style={{ fontSize:13, fontWeight:600, color: confirmedCount===perPatient.length ? "#00d4aa" : "#ffb347" }}>
+                  {confirmedCount===perPatient.length ? "✓" : "⏳"} {confirmedCount} de {perPatient.length} confirmadas para {selectedDay}
+                </span>
+              </div>
+            );
+          })()}
+
           <div style={{ background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.2)", borderRadius:14, padding:16, marginBottom:20 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:8 }}>
               <div style={{ fontSize:13, color:"#00d4aa", fontWeight:600 }}>Total consolidado ({grandTotalList.length} artículos)</div>
@@ -865,21 +1003,14 @@ export default function Insumos() {
                 {[["💊 Medicamentos", grandTotalMeds], ["🧰 Material", grandTotalMaterial], ["📎 Todo", grandTotalList]].map(([label, list]) => (
                   <button key={label} onClick={() => {
                       const rows = list.map(t => `<tr><td>${t.item}</td><td style="text-align:right;font-weight:bold;">${t.qty}</td></tr>`).join("");
-                      const logoFile = centerFilter === "CITIO" ? "logo-citio-icon.png" : "logo-cipi-icon.png";
-                      const logoUrl = `${window.location.origin}/${logoFile}`;
                       const win = window.open("", "_blank", "width=700,height=900");
                       win.document.write(`<!DOCTYPE html><html><head><title>Total consolidado</title><style>
                         body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;}
-                        .header{display:flex;align-items:center;gap:12px;margin-bottom:4px;}
-                        .header img{height:44px;width:auto;}
-                        h1{font-size:18px;margin:0;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
+                        h1{font-size:18px;margin-bottom:2px;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
                         table{width:100%;border-collapse:collapse;font-size:12px;}
                         td{padding:6px 8px;border-bottom:1px solid #ddd;}
                       </style></head><body>
-                        <div class="header">
-                          <img src="${logoUrl}" onerror="this.style.display='none'" />
-                          <h1>Total consolidado -- ${label.replace(/^\S+\s/, "")}</h1>
-                        </div>
+                        <h1>Total consolidado -- ${label.replace(/^\S+\s/, "")}</h1>
                         <p>${centerFilter} · ${dateFilter === "todas" ? (todasMode === "todo" ? "Con solicitud generada (todas las fechas)" : todasMode === "rango" ? `Con solicitud generada · ${rangeFrom} a ${rangeTo}` : `Con solicitud generada · ${selectedDay}`) : dateFilter === "hoy" ? selectedDay : `${rangeFrom} a ${rangeTo}`} · Generado ${new Date().toLocaleString("es-MX")}</p>
                         <table>${rows}</table>
                         <script>window.onload = () => window.print();<\/script>

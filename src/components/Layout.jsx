@@ -30,6 +30,7 @@ const NAV = {
     { to:"/monitor",   icon:"◎", label:"Monitor"   },
     { to:"/catalogo",  icon:"◈", label:"Catálogo"  },
     { to:"/agenda",    icon:"📅", label:"Agenda"    },
+    { to:"/insumos",   icon:"🧰", label:"Confirmaciones" },
   ],
 };
 

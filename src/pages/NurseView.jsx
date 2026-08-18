@@ -387,6 +387,22 @@ function PendingSessionCard({ session, user, onRefresh }) {
     } catch(e) { alert("Error: " + e.message); }
   };
 
+  // Confirmar/quitar confirmación de asistencia -- la enfermera es quien
+  // tiene el contacto directo con el paciente, así que es quien más
+  // naturalmente marca esto (aunque también se puede ver/editar en Insumos).
+  const toggleConfirm = async () => {
+    const willConfirm = !session.confirmed;
+    try {
+      const token = await user.getIdToken(true);
+      await patchSession(token, session.id, {
+        confirmed: willConfirm,
+        confirmedAt: willConfirm ? new Date().toISOString() : null,
+        confirmedBy: willConfirm ? (user?.email || "") : null,
+      });
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+  };
+
   const startEditMed = (m) => {
     setEditingMedId(m.id);
     setMedDraft({
@@ -513,6 +529,14 @@ function PendingSessionCard({ session, user, onRefresh }) {
             </div>
           ))}
 
+          {/* Asistencia */}
+          <button onClick={toggleConfirm} style={{ width:"100%", padding:"9px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer",
+            background: session.confirmed ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
+            border: `1px solid ${session.confirmed ? "rgba(0,212,170,0.3)" : "rgba(255,179,71,0.25)"}`,
+            color: session.confirmed ? "#00d4aa" : "#ffb347" }}>
+            {session.confirmed ? "✓ Confirmó asistencia" : "⏳ Marcar como confirmada"}
+          </button>
+
           {/* Reagendar */}
           <div>
             <div style={{ fontSize:11, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Reagendar</div>
@@ -589,6 +613,24 @@ function SessionCard({ session, token, onRefresh, user }) {
   const medEvents  = session.medEvents || {};
   const washEvents = session.washEvents || {};
 
+  // Marcar que el paciente no asistirá hoy -- solo tiene sentido antes de
+  // que se registre el ingreso (si ya inició, obviamente sí llegó).
+  const toggleNoShow = async () => {
+    const willMark = !session.noShowToday;
+    try {
+      const freshToken = await user.getIdToken(true);
+      const fields = {
+        noShowToday: { booleanValue: willMark },
+        noShowMarkedAt: willMark ? { stringValue: new Date().toISOString() } : { nullValue: null },
+        noShowMarkedBy: willMark ? { stringValue: user?.email || "" } : { nullValue: null },
+      };
+      const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${k}`).join("&");
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${session.id}?${mask}`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` }, body: JSON.stringify({ fields }) });
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+  };
+
  const recordEvent = async (key) => {
     try {
       const freshToken = await user.getIdToken(true);
@@ -596,6 +638,16 @@ function SessionCard({ session, token, onRefresh, user }) {
       const updates = { [`events.${key}`]: t };
       if (key === "ingreso") {
         updates.status = "en_curso";
+        // Si registró ingreso es porque el paciente sí llegó -- se confirma
+        // solo, aunque nadie hubiera marcado la confirmación antes. Así
+        // aparece correctamente en Monitor (que para visualizador solo
+        // muestra confirmados) sin que enfermería tenga que acordarse de
+        // confirmar aparte.
+        if (!session.confirmed) {
+          updates.confirmed = true;
+          updates.confirmedAt = new Date().toISOString();
+          updates.confirmedBy = user?.email || "";
+        }
 
         // Confirmar cita en agenda si existe
         try {
@@ -866,6 +918,15 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
         </div>
         {events.ingreso && <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace" }}>{pct}%</div>}
         {!session.authorized && <span style={{ fontSize:11, color:"#ffb347", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", padding:"3px 10px", borderRadius:99 }}>⏳ Sin autorizar</span>}
+        {!events.ingreso && (
+          <button onClick={e => { e.stopPropagation(); toggleNoShow(); }}
+            title="Marcar que el paciente no asistirá hoy -- se quita del Monitor"
+            style={{ fontSize:11, fontWeight:600, padding:"3px 10px", borderRadius:99, cursor:"pointer", border:"none",
+              background: session.noShowToday ? "rgba(255,107,107,0.15)" : "rgba(255,107,107,0.08)",
+              color:"#ff6b6b" }}>
+            {session.noShowToday ? "🚫 No asistirá (marcado)" : "🚫 No asistirá hoy"}
+          </button>
+        )}
         <span style={{ color:"#555" }}>{open?"▲":"▼"}</span>
       </div>
 
