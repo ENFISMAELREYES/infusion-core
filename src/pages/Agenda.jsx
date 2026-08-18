@@ -528,6 +528,7 @@ const [editingScheme, setEditingScheme] = useState(null);
   const [editing, setEditing]               = useState(null);
   const [selectedDate, setSelectedDate]     = useState(null);
   const [expandedScheme, setExpandedScheme] = useState(null);
+  const [expandedPatientCards, setExpandedPatientCards] = useState(null); // id de patientScheme con la vista de tarjetas abierta
   const [selectedEvents, setSelectedEvents] = useState([]);
   const [searchQuery, setSearchQuery]       = useState("");
   const [searchCenter, setSearchCenter]     = useState("Todos");
@@ -623,6 +624,39 @@ setAppointments(appts);
       await deletePatientScheme(t, id);
       load();
     } catch(e) { alert("Error: " + e.message); }
+  };
+
+  // Corrige la fecha de UNA cita (real o estimada) y recorre automáticamente
+  // el resto de citas futuras del mismo esquema por el mismo desfase.
+  // Compartida entre el panel de detalle del calendario y la vista de
+  // tarjetas por paciente en "Esquemas", para no duplicar esta lógica.
+  const correctAppointmentDate = async (appt) => {
+    const label = `C${appt.cycle}D${appt.day}`;
+    const newDate = prompt(`${appt.date < today ? "Corregir" : "Nueva"} fecha para ${appt.patientName} ${label}:`, appt.date);
+    if (!newDate || newDate === appt.date) return;
+    const t = await user.getIdToken(true);
+
+    const oldD = new Date(appt.date + "T12:00:00");
+    const newD = new Date(newDate + "T12:00:00");
+    const diffDays = Math.round((newD - oldD) / (1000 * 60 * 60 * 24));
+
+    await rescheduleAppointment(t, appt.id, newDate, appt.originalDate || appt.date, appt.estimated);
+
+    if (diffDays !== 0) {
+      const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+      const futureAppts = appointments.filter(a =>
+        a.patientSchemeId === appt.patientSchemeId &&
+        a.id !== appt.id &&
+        a.date > todayStr &&
+        a.status !== "confirmed"
+      );
+      for (const fa of futureAppts) {
+        const faDate = new Date(fa.date + "T12:00:00");
+        faDate.setDate(faDate.getDate() + diffDays);
+        await rescheduleAppointment(t, fa.id, faDate.toISOString().split("T")[0], fa.originalDate || fa.date, fa.estimated);
+      }
+    }
+    load();
   };
 
   const handleSaveScheme = async (data) => {
@@ -862,38 +896,8 @@ const handleDeleteScheme = async (id) => {
       {e.estimated && <span title="Ciclo calculado hacia atrás -- no es la fecha real" style={{ marginLeft:8, fontSize:11, color:"#AFA9EC" }}>≈ Estimada</span>}
     </div>
     {!isVisualizador && e.status !== "confirmed" && (
-      <button onClick={async () => {
-        const newDate = prompt(`${e.date < today ? "Corregir" : "Nueva"} fecha para ${e.patientName} ${e.label}:`, e.date);
-        if (!newDate || newDate === e.date) return;
-        const t = await user.getIdToken(true);
-
-        // Calcular desfase en días
-        const oldD = new Date(e.date + "T12:00:00");
-        const newD = new Date(newDate + "T12:00:00");
-        const diffDays = Math.round((newD - oldD) / (1000 * 60 * 60 * 24));
-
-        // Reagendar esta cita, preservando su fecha original real (si ya se había reagendado antes)
-        await rescheduleAppointment(t, e.apptId, newDate, e.originalDate || e.date, e.estimated);
-
-        // Mover automáticamente el resto del bloque (citas futuras del mismo esquema),
-        // manteniendo el mismo desfase, para que nunca queden desincronizadas entre sí.
-        if (diffDays !== 0) {
-          const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-          const futureAppts = appointments.filter(a =>
-            a.patientSchemeId === e.patientSchemeId &&
-            a.id !== e.apptId &&
-            a.date > todayStr &&
-            a.status !== "confirmed"
-          );
-          for (const appt of futureAppts) {
-            const apptDate = new Date(appt.date + "T12:00:00");
-            apptDate.setDate(apptDate.getDate() + diffDays);
-            const newApptDate = apptDate.toISOString().split("T")[0];
-            await rescheduleAppointment(t, appt.id, newApptDate, appt.originalDate || appt.date);
-          }
-        }
-        load();
-      }} style={{ padding:"4px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+      <button onClick={() => correctAppointmentDate({ id: e.apptId, date: e.date, cycle: e.cycle, day: e.day, patientName: e.patientName, patientSchemeId: e.patientSchemeId, originalDate: e.originalDate, estimated: e.estimated })}
+        style={{ padding:"4px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
         {e.date < today ? "↻ Corregir fecha" : "↻ Reagendar"}
       </button>
     )}
@@ -1054,13 +1058,61 @@ const handleDeleteScheme = async (id) => {
               const activeAppts = myAppts.filter(a => a.status !== "cancelada");
               const confirmed = myAppts.filter(a => a.status === "confirmed");
               const lastDate = activeAppts.length ? activeAppts[activeAppts.length-1].date : null;
+              const cardsOpen = expandedPatientCards === ps.id;
+              const STATUS_LABEL = {
+                confirmed:  { label:"Finalizado",  color:"#1D9E75" },
+                past:       { label:"Sin confirmar", color:"#ffb347" },
+                scheduled:  { label:"Programada",  color:"#4fc3f7" },
+                suspendida: { label:"Suspendida",  color:"#ffb347" },
+                cancelada:  { label:"Cancelada",   color:"#ff6b6b" },
+              };
               return (
-                <div key={ps.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:12 }}>
+                <div key={ps.id}>
+                <div onClick={() => myAppts.length && setExpandedPatientCards(cardsOpen ? null : ps.id)}
+                  style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", borderRadius:8, background:"rgba(255,255,255,0.02)", fontSize:12, cursor: myAppts.length ? "pointer" : "default" }}>
                   <span style={{ flex:1, color:"#f0f0f0", fontWeight:600 }}>{ps.patientName}</span>
                   <span style={{ fontSize:10, padding:"1px 8px", borderRadius:99, background: ps.center==="CITIO" ? "rgba(79,195,247,0.12)" : "rgba(175,169,236,0.12)", color: ps.center==="CITIO" ? "#4fc3f7" : "#AFA9EC" }}>{ps.center}</span>
                   <span style={{ color:"#666", fontFamily:"'IBM Plex Mono', monospace" }}>Ancla: {ps.startDate} (C{ps.currentCycle||1})</span>
                   <span style={{ color:"#666", fontFamily:"'IBM Plex Mono', monospace" }}>Fin: {lastDate || "—"}</span>
                   <span style={{ fontSize:10, color:"#1D9E75" }}>{confirmed.length}/{myAppts.length} confirmadas</span>
+                  {myAppts.length > 0 && <span style={{ color:"#555" }}>{cardsOpen ? "▲" : "▼"}</span>}
+                  {isJefe && (
+                    <button onClick={e => { e.stopPropagation(); handleDelete(ps.id); }}
+                      title="Quitar este esquema del paciente (para poder asignarle otro)"
+                      style={{ padding:"3px 9px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
+                      🗑 Quitar
+                    </button>
+                  )}
+                </div>
+
+                {cardsOpen && (
+                  <div style={{ marginTop:8, marginBottom:4, display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(140px, 1fr))", gap:8 }}>
+                    {myAppts.map(a => {
+                      const sm = STATUS_LABEL[a.status] || STATUS_LABEL.scheduled;
+                      const d = new Date(a.date + "T12:00:00");
+                      return (
+                        <div key={a.id} style={{ padding:"10px 12px", borderRadius:10, background: `${sm.color}0d`, border:`1px solid ${sm.color}44` }}>
+                          <div style={{ fontSize:11, fontWeight:600, color: sm.color, marginBottom:6 }}>
+                            Ciclo {a.cycle} · Día {a.day} {a.estimated && <span title="Estimado -- no es la fecha real">≈</span>}
+                          </div>
+                          <div style={{ fontSize:20, fontWeight:700, color:"#f0f0f0", lineHeight:1.1 }}>{String(d.getDate()).padStart(2,"0")}</div>
+                          <div style={{ fontSize:10, color:"#888", textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>
+                            {d.toLocaleDateString("es-MX", { month:"short", year:"numeric" })}
+                          </div>
+                          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:6 }}>
+                            <span style={{ fontSize:9, padding:"2px 8px", borderRadius:99, background:`${sm.color}22`, color:sm.color, fontWeight:600 }}>{sm.label}</span>
+                            {!isVisualizador && isJefe && a.status !== "confirmed" && (
+                              <button onClick={() => correctAppointmentDate(a)} title="Corregir fecha"
+                                style={{ padding:"2px 6px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"#ccc" }}>
+                                ✏️
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 </div>
               );
             })}
