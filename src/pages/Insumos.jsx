@@ -836,11 +836,19 @@ export default function Insumos() {
   // material, sin botones de compra ni edición. Solo confirma quién asistirá
   // hoy/mañana/el día que elija, para dar seguimiento sin poder tocar nada.
   if (isVisualizador) {
+    // Una sesión con evidencia real de que el paciente ya se presentó (ingreso
+    // registrado, o más adelante en el flujo) cuenta como confirmada aunque
+    // nadie haya marcado el flag "confirmed" a mano -- ese flag es para
+    // avisar con anticipación que alguien SÍ va a venir, pero si la sesión ya
+    // se registró (sobre todo las de fechas pasadas), la asistencia ya es un
+    // hecho, no algo por confirmar. Mismo criterio que attendedProof en
+    // Monitor.jsx, para no tener dos definiciones distintas de "asistió".
+    const attended = (s) => s.confirmed || !!s.events?.ingreso || s.status === "en_curso" || s.status === "completado";
     const dayList = sessions.filter(s => s.date === selectedDay && (centerFilter === "Todos" ||
       (centerFilter === "CIPI PRO" ? (s.center === "CIPI" && (s.cipiVariant || "PRO") === "PRO") :
        centerFilter === "CIPI PED" ? (s.center === "CIPI" && s.cipiVariant === "PED") :
        s.center === centerFilter)));
-    const confirmedCount = dayList.filter(s => s.confirmed).length;
+    const confirmedCount = dayList.filter(attended).length;
     return (
       <div style={{ padding:"24px 28px", maxWidth:640, margin:"0 auto" }}>
         <div style={{ marginBottom:20 }}>
@@ -888,10 +896,11 @@ export default function Insumos() {
                   <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
                   <span style={{ fontSize:11, color:"#888" }}>{s.cycle}</span>
                   <span style={{ fontSize:11, color:"#666" }}>{s.center}{s.cipiVariant ? ` ${s.cipiVariant}` : ""}</span>
-                  <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
-                    background: s.confirmed ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
-                    color: s.confirmed ? "#00d4aa" : "#ffb347" }}>
-                    {s.confirmed ? "✓ Confirmada" : "⏳ Sin confirmar"}
+                  <span title={!s.confirmed && attended(s) ? "Nadie marcó \"confirmada\" a mano, pero la sesión ya tiene ingreso/estatus registrado en Historial -- se cuenta como asistida." : undefined}
+                    style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
+                    background: attended(s) ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
+                    color: attended(s) ? "#00d4aa" : "#ffb347" }}>
+                    {s.confirmed ? "✓ Confirmada" : attended(s) ? "✓ Asistió" : "⏳ Sin confirmar"}
                   </span>
                 </div>
                 {(s.meds || []).length > 0 && (
