@@ -621,6 +621,35 @@ setAppointments(appts);
     if (!confirm("¿Eliminar este esquema del paciente?")) return;
     try {
       const t = await user.getIdToken(true);
+      const ps = patientSchemes.find(p => p.id === id);
+
+      // Sin esto, las citas de este esquema quedaban huérfanas (con un
+      // patientSchemeId que ya no existe) y seguían apareciendo en el
+      // calendario/consulta como si el esquema siguiera activo.
+      const relatedAppts = appointments.filter(a => a.patientSchemeId === id);
+      for (const appt of relatedAppts) {
+        await fetch(
+          `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/appointments/${appt.id}`,
+          { method:"DELETE", headers:{ "Authorization":`Bearer ${t}` } }
+        );
+      }
+
+      // Las sesiones que se vincularon a este esquema (🔗 en Catálogo) guardan
+      // su propia copia de schemeId/schemeName -- sin limpiarla, Catálogo
+      // seguía mostrando la relación aunque el esquema ya no existiera.
+      // schemeId en sessions es el PROTOCOLO (ej. "BEP"), compartido entre
+      // varios pacientes, así que se filtra también por nombre de paciente.
+      if (ps) {
+        const relatedSessions = sessions.filter(s => s.patientName === ps.patientName && s.schemeId === ps.schemeId);
+        for (const s of relatedSessions) {
+          await fetch(
+            `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=schemeId&updateMask.fieldPaths=schemeName`,
+            { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${t}` },
+              body: JSON.stringify({ fields: { schemeId: { nullValue: null }, schemeName: { nullValue: null } } }) }
+          );
+        }
+      }
+
       await deletePatientScheme(t, id);
       load();
     } catch(e) { alert("Error: " + e.message); }
