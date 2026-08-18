@@ -66,9 +66,15 @@ async function savePatientScheme(token, data, schemes) {
       if (scheme) {
         const effectiveCycles = data.totalCyclesOverride || scheme.totalCycles;
         const effectiveScheme = { ...scheme, totalCycles: effectiveCycles };
-        const dates = calcDates(data.startDate, effectiveScheme, data.currentCycle || 1);
+        const currentCycle = data.currentCycle || 1;
+        const dates = calcDates(data.startDate, effectiveScheme, currentCycle);
+        // Si el esquema arranca mid-tratamiento (ciclo actual > 1), también
+        // se generan los ciclos anteriores -- estimados, ya que no se conoce
+        // su fecha real -- para que no queden invisibles en el calendario y
+        // se puedan corregir uno por uno con "↻ Corregir fecha".
+        const pastDates = currentCycle > 1 ? calcPastDates(data.startDate, effectiveScheme, currentCycle) : [];
         const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-        for (const d of dates) {
+        for (const d of [...pastDates, ...dates]) {
           const apptFields = {
             patientSchemeId: toFV(psId),
             patientName:     toFV(data.patientName),
@@ -79,6 +85,7 @@ async function savePatientScheme(token, data, schemes) {
             label:           toFV(d.label),
             status:          toFV(d.date < today ? "past" : "scheduled"),
             center:          toFV(data.center || ""),
+            estimated:       toFV(!!d.estimated),
             createdAt:       toFV(new Date().toISOString()),
           };
           await fetch(
@@ -107,16 +114,21 @@ async function fetchAppointments(token) {
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
 
-async function rescheduleAppointment(token, apptId, newDate, existingOriginalDate) {
+// clearEstimated: cuando se corrige una cita que era estimada (ciclo pasado
+// calculado hacia atrás, sin fecha real), la fecha nueva SÍ es real -- se
+// apaga el flag para que deje de mostrarse con "≈" en el calendario.
+async function rescheduleAppointment(token, apptId, newDate, existingOriginalDate, clearEstimated) {
+  const fieldPaths = ["date", "rescheduled", "originalDate"];
+  const fields = {
+    date:         { stringValue: newDate },
+    rescheduled:  { booleanValue: true },
+    originalDate: { stringValue: existingOriginalDate },
+  };
+  if (clearEstimated) { fieldPaths.push("estimated"); fields.estimated = { booleanValue: false }; }
+  const mask = fieldPaths.map(f => `updateMask.fieldPaths=${f}`).join("&");
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/appointments/${apptId}?updateMask.fieldPaths=date&updateMask.fieldPaths=rescheduled&updateMask.fieldPaths=originalDate`,
-    { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-      body: JSON.stringify({ fields: {
-        date:         { stringValue: newDate },
-        rescheduled:  { booleanValue: true },
-        originalDate: { stringValue: existingOriginalDate },
-      }})
-    }
+    `https://firestore.googleapis.com/v1/projects/infusion-core/databases/${DATABASE_ID}/documents/appointments/${apptId}?${mask}`,
+    { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields }) }
   );
 }
 
@@ -204,6 +216,27 @@ function calcDates(startDate, scheme, currentCycle) {
   return dates.sort((a, b) => a.date.localeCompare(b.date));
 }
 
+// Genera fechas ESTIMADAS para los ciclos anteriores al ciclo ancla (del 1 a
+// currentCycle-1), yendo hacia atrás desde startDate con la misma cadencia
+// del esquema. No son un dato real -- es lo mejor que se puede calcular sin
+// conocer las fechas verdaderas de esos ciclos -- por eso se marcan con
+// estimated:true, para distinguirlas en el calendario y poder corregirlas
+// con "↻ Corregir fecha" en cuanto se tenga la fecha real de cada una.
+function calcPastDates(startDate, scheme, currentCycle) {
+  const dates = [];
+  const start = new Date(startDate + "T12:00:00");
+  for (let cycle = 1; cycle < currentCycle; cycle++) {
+    const cycleStart = new Date(start);
+    cycleStart.setDate(start.getDate() + (cycle - currentCycle) * scheme.cycleDurationDays);
+    for (const day of scheme.administrationDays) {
+      const d = new Date(cycleStart);
+      d.setDate(cycleStart.getDate() + (day - 1));
+      dates.push({ date: d.toISOString().split("T")[0], cycle, day, label: `C${cycle}D${day}`, estimated: true });
+    }
+  }
+  return dates.sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function CalendarView({ appointments, schemes, selectedMonth, onSelectDate }) {
   const year  = selectedMonth.getFullYear();
   const month = selectedMonth.getMonth();
@@ -247,8 +280,9 @@ function CalendarView({ appointments, schemes, selectedMonth, onSelectDate }) {
               }}>
               <div style={{ fontSize:12, color: isToday ? "#00d4aa" : "#888", fontWeight: isToday ? 700 : 400, marginBottom:3 }}>{day}</div>
               {events.slice(0,3).map((e, j) => (
-                <div key={j} style={{ fontSize:9, padding:"1px 4px", borderRadius:4, background: e.status==="confirmed" ? "rgba(29,158,117,0.2)" : e.center==="CITIO" ? "rgba(79,195,247,0.15)" : "rgba(175,169,236,0.15)", color: e.status==="confirmed" ? "#1D9E75" : e.center==="CITIO" ? "#4fc3f7" : "#AFA9EC", marginBottom:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                  {e.label} {e.patientName?.split(" ")[0]}
+                <div key={j} title={e.estimated ? "Fecha estimada -- corrígela cuando tengas la fecha real" : undefined}
+                  style={{ fontSize:9, padding:"1px 4px", borderRadius:4, background: e.status==="confirmed" ? "rgba(29,158,117,0.2)" : e.center==="CITIO" ? "rgba(79,195,247,0.15)" : "rgba(175,169,236,0.15)", color: e.status==="confirmed" ? "#1D9E75" : e.center==="CITIO" ? "#4fc3f7" : "#AFA9EC", marginBottom:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", border: e.estimated ? "1px dashed currentColor" : "none" }}>
+                  {e.estimated && "≈ "}{e.label} {e.patientName?.split(" ")[0]}
                 </div>
               ))}
               {events.length > 3 && <div style={{ fontSize:9, color:"#555" }}>+{events.length-3} más</div>}
@@ -297,13 +331,14 @@ function WeekView({ appointments, schemes, focusDate, onSelectDate }) {
             <div style={{ fontSize:17, color: isToday ? "#00d4aa" : "#f0f0f0", fontWeight:700, marginBottom:8 }}>{d.getDate()}</div>
             <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
               {events.map((e, j) => (
-                <div key={j} style={{
+                <div key={j} title={e.estimated ? "Fecha estimada -- corrígela cuando tengas la fecha real" : undefined} style={{
                   fontSize:10, padding:"3px 6px", borderRadius:5,
                   background: e.status==="confirmed" ? "rgba(29,158,117,0.2)" : e.center==="CITIO" ? "rgba(79,195,247,0.15)" : "rgba(175,169,236,0.15)",
                   color: e.status==="confirmed" ? "#1D9E75" : e.center==="CITIO" ? "#4fc3f7" : "#AFA9EC",
                   whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+                  border: e.estimated ? "1px dashed currentColor" : "none",
                 }}>
-                  {e.label} {e.patientName?.split(" ")[0]}
+                  {e.estimated && "≈ "}{e.label} {e.patientName?.split(" ")[0]}
                 </div>
               ))}
               {events.length === 0 && <div style={{ fontSize:10, color:"#333" }}>—</div>}
@@ -789,6 +824,7 @@ const handleDeleteScheme = async (id) => {
                               <span style={{ fontSize:12, color:"#666" }}>{e.schemeName}</span>
                               <span style={{ fontSize:11, color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace" }}>{e.label}</span>
                               {e.rescheduled && <span style={{ fontSize:11, color:"#ffb347" }}>↻</span>}
+                              {e.estimated && <span title="Ciclo calculado hacia atrás -- no es la fecha real" style={{ fontSize:11, color:"#AFA9EC" }}>≈</span>}
                               <span style={{ fontSize:10, padding:"2px 8px", borderRadius:99, background:`${sm.color}18`, color:sm.color, border:`1px solid ${sm.color}44`, flexShrink:0 }}>{sm.label}</span>
                             </div>
                           );
@@ -823,6 +859,7 @@ const handleDeleteScheme = async (id) => {
       <span style={{ color:"#00d4aa", marginLeft:8, fontFamily:"'IBM Plex Mono', monospace" }}>{e.label}</span>
       {e.status === "confirmed" && <span style={{ marginLeft:8, fontSize:11, color:"#1D9E75" }}>✓ Confirmada</span>}
       {e.rescheduled && <span style={{ marginLeft:8, fontSize:11, color:"#ffb347" }}>↻ Reagendada</span>}
+      {e.estimated && <span title="Ciclo calculado hacia atrás -- no es la fecha real" style={{ marginLeft:8, fontSize:11, color:"#AFA9EC" }}>≈ Estimada</span>}
     </div>
     {!isVisualizador && e.status !== "confirmed" && (
       <button onClick={async () => {
@@ -836,7 +873,7 @@ const handleDeleteScheme = async (id) => {
         const diffDays = Math.round((newD - oldD) / (1000 * 60 * 60 * 24));
 
         // Reagendar esta cita, preservando su fecha original real (si ya se había reagendado antes)
-        await rescheduleAppointment(t, e.apptId, newDate, e.originalDate || e.date);
+        await rescheduleAppointment(t, e.apptId, newDate, e.originalDate || e.date, e.estimated);
 
         // Mover automáticamente el resto del bloque (citas futuras del mismo esquema),
         // manteniendo el mismo desfase, para que nunca queden desincronizadas entre sí.
