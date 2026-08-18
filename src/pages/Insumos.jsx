@@ -582,10 +582,11 @@ export default function Insumos() {
   const [tab, setTab] = useState("consolidado");
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
-  const [centerFilter, setCenterFilter] = useState(() => canSeeAllCenters ? "Todos" : (profile?.center || "CITIO"));
+  const allowedCenters = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI PRO","CIPI PED"] : [profile?.center || "CITIO"]);
+  const [centerFilter, setCenterFilter] = useState(() => canSeeAllCenters ? "Todos" : (allowedCenters?.[0] || "CITIO"));
   useEffect(() => {
-    if (!canSeeAllCenters && profile?.center && centerFilter !== profile.center) {
-      setCenterFilter(profile.center);
+    if (allowedCenters && !allowedCenters.includes(centerFilter)) {
+      setCenterFilter(allowedCenters[0]);
     }
   }, [profile, canSeeAllCenters]);
   const [dateFilter, setDateFilter] = useState("rango"); // "hoy" | "rango" | "todas"
@@ -650,7 +651,10 @@ export default function Insumos() {
     ))
     : dateFilter === "hoy" ? sessions.filter(s => s.date === selectedDay)
     : sessions.filter(s => s.date >= rangeFrom && s.date <= rangeTo && !s.materialSolicitudGuardada); // "rango"
-  const filtered = centerFilter === "Todos" ? dateFiltered : dateFiltered.filter(s => s.center === centerFilter);
+  const filtered = centerFilter === "Todos" ? dateFiltered
+    : centerFilter === "CIPI PRO" ? dateFiltered.filter(s => s.center === "CIPI" && (s.cipiVariant || "PRO") === "PRO")
+    : centerFilter === "CIPI PED" ? dateFiltered.filter(s => s.center === "CIPI" && s.cipiVariant === "PED")
+    : dateFiltered.filter(s => s.center === centerFilter);
   const calcOverrides = {
     extraDefaults: overrides.extraDefaults,
     extraCatalog: overrides.extraCatalog,
@@ -939,7 +943,7 @@ export default function Insumos() {
       {tab === "consolidado" && (
         <div>
           <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
-            {(canSeeAllCenters ? ["Todos","CITIO","CIPI"] : [profile?.center || "CITIO"]).map(c => (
+            {(canSeeAllCenters ? ["Todos","CITIO","CIPI PRO","CIPI PED"] : allowedCenters).map(c => (
               <button key={c} onClick={() => setCenterFilter(c)} style={{
                 padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
                 background: centerFilter===c ? "rgba(79,195,247,0.12)" : "rgba(255,255,255,0.04)",
