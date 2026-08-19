@@ -15,15 +15,55 @@ service cloud.firestore {
     // Usuarios: solo el propio usuario puede leer su perfil
     match /users/{userId} {
       allow read: if isAuth() && request.auth.uid == userId;
-      allow write: if false; // Solo admin puede crear usuarios
+      allow create: if false; // Solo admin/consola crea usuarios
+      allow delete: if false;
+      // Firma en archivo: el único campo que se puede actualizar desde la
+      // app es signatureUrl/signatureHistory (nunca role/center/name, para
+      // que nadie se pueda auto-ascender a jefe editando su propio perfil).
+      // - El jefe puede escribir la firma de CUALQUIER usuario (la suya,
+      //   auto-aprobada; la de los demás, solo al aprobar una solicitud en
+      //   signature_requests).
+      // - Cualquier otro usuario puede capturar su firma la PRIMERA vez sin
+      //   pedir autorización (resource.data.signatureUrl == null); cambios
+      //   posteriores pasan por signature_requests.
+      allow update: if isAuth()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['signatureUrl', 'signatureHistory', 'signatureSetAt'])
+        && (
+          userRole() == "jefe"
+          || (request.auth.uid == userId && resource.data.signatureUrl == null)
+        );
     }
 
-    // Sesiones: enfermeras crean, todos leen, jefe autoriza
+    // Solicitudes de cambio de firma (firma en archivo): cualquiera puede
+    // crear la suya propia; solo el jefe puede aprobarla/rechazarla
+    // (actualizar status). Nunca se borran -- quedan como registro/auditoría
+    // de cada cambio de firma.
+    match /signature_requests/{id} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.uid == request.auth.uid && request.resource.data.status == "pending";
+      allow update: if isAuth() && userRole() == "jefe";
+      allow delete: if false;
+    }
+
+    // Sesiones: enfermeras crean, todos leen, jefe autoriza.
+    // El candado (no borrar) aplica solo a lo que ya quedó como registro
+    // oficial en Historial (sesiones terminadas). Las que aún están
+    // pendientes de revisar/autorizar sí se pueden eliminar -- son
+    // borradores, todavía no son el registro de asistencia del paciente.
+    // Sesiones: enfermeras crean, todos leen, jefe autoriza.
+    // Eliminar: el jefe puede borrar cualquier sesión que no sea ya el
+    // registro oficial (no "completado"). Enfermería puede borrar mientras
+    // NO se haya registrado el ingreso todavía -- sin autorizar, o
+    // autorizada pero aún no inicia el tratamiento. En cuanto hay ingreso,
+    // ya es el registro real de la visita del paciente, no se puede borrar.
     match /sessions/{sessionId} {
       allow read: if isAuth();
       allow create: if isAuth() && userRole() == "enfermera";
       allow update: if isAuth(); // enfermera actualiza eventos, jefe autoriza
-      allow delete: if false;
+      allow delete: if isAuth() && (
+        (userRole() == "jefe" && resource.data.status != "completado") ||
+        (userRole() == "enfermera" && (!("events" in resource.data) || !("ingreso" in resource.data.events)))
+      );
     }
 
     // Registro de auditoría: cualquiera autenticado puede crear un registro
@@ -50,10 +90,41 @@ service cloud.firestore {
       allow write: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera");
     }
 
+    // Contadores (número de expediente, número de sesión por centro/tipo).
+    // Sin esta regla, Firestore bloquea toda lectura/escritura por defecto,
+    // y los contadores se quedan siempre en 0 -> toda sesión nueva calcula "1".
+    match /config/{id} {
+      allow read: if isAuth();
+      allow write: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera");
+    }
+
     // Configuración del catálogo de material (solo el jefe lo edita)
     match /settings/{id} {
       allow read: if isAuth();
       allow write: if isAuth() && userRole() == "jefe";
+    }
+
+    // Inventario: existencias por almacén
+    match /inventory/{id} {
+      allow read: if isAuth();
+      allow write: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera");
+    }
+    // Movimientos de inventario, agrupados por evento. Nunca se editan ni se
+    // borran una vez creados (una anulación crea un movimiento contrario).
+    match /inventory_events/{id} {
+      allow read: if isAuth();
+      allow create: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera");
+      allow update: if false;
+      allow delete: if false;
+    }
+    // Solicitudes de compra: no tocan el inventario, solo quedan como
+    // rastreo de qué se pidió. Se puede actualizar el estatus (pendiente ->
+    // recibida), pero no se borran.
+    match /purchase_orders/{id} {
+      allow read: if isAuth();
+      allow create: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera");
+      allow update: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera");
+      allow delete: if false;
     }
   }
 }
