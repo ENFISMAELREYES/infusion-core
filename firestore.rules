@@ -30,7 +30,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['signatureUrl', 'signatureHistory', 'signatureSetAt'])
         && (
           userRole() == "jefe"
-          || (request.auth.uid == userId && resource.data.signatureUrl == null)
+          || (request.auth.uid == userId && (!('signatureUrl' in resource.data) || resource.data.signatureUrl == null))
         );
     }
 
