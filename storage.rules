@@ -1,0 +1,19 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /signatures/{sessionId}/{fileName} {
+      allow read, write: if request.auth != null;
+    }
+    // Firma en archivo ("Mi firma"): cada usuario sube su firma bajo su
+    // propio uid. Nunca se sobreescribe -- cada captura usa un nombre de
+    // archivo nuevo (timestamp), así los documentos que ya se firmaron con
+    // una versión anterior no cambian aunque la persona actualice su firma
+    // después. Solo el dueño puede escribir en su propia carpeta; leer sí
+    // queda abierto a cualquier autenticado (el jefe necesita ver la
+    // firma de otros al aprobar solicitudes de cambio, por ejemplo).
+    match /signatures/users/{uid}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}
