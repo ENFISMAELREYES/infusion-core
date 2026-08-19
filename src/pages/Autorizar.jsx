@@ -180,6 +180,12 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
             {med.dose && <span style={{ fontSize: 12, color: "#777" }}>{med.dose}</span>}
             <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 99, background: cs.dark, color: cs.border, border: `1px solid ${cs.border}44` }}>{CAT_LABEL[med.category]}</span>
             {isNew && <span style={{ fontSize: 10, color: "#00d4aa", background: "rgba(0,212,170,0.1)", border: "1px solid rgba(0,212,170,0.25)", padding: "2px 8px", borderRadius: 99 }}>Nuevo</span>}
+            {med.parallelType && med.parallelType !== "secuencial" && (
+              <span title={med.parallelType === "junto" ? "Corre al mismo tiempo que el medicamento anterior" : `Empieza ${med.startOffset} minutos después de iniciar el anterior`}
+                style={{ fontSize: 10, fontWeight: 600, color: "#ffb347", background: "rgba(255,179,71,0.1)", border: "1px solid rgba(255,179,71,0.25)", padding: "2px 8px", borderRadius: 99 }}>
+                ⚡ {med.parallelType === "junto" ? "Simultáneo con anterior" : `Inicia ${med.startOffset} min después`}
+              </span>
+            )}
           </div>
           {med.diluent && <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{med.diluent} · {med.time ? `${med.time} min` : "sin tiempo"}</div>}
         </div>

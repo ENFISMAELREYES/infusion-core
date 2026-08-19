@@ -839,7 +839,10 @@ export default function Insumos() {
   // Vista simplificada de solo lectura para "visualizador" -- sin cálculo de
   // material, sin botones de compra ni edición. Solo confirma quién asistirá
   // hoy/mañana/el día que elija, para dar seguimiento sin poder tocar nada.
-  if (isVisualizador) {
+  // Contenido de "Confirmaciones" -- compartido entre la vista de solo
+  // lectura del visualizador y la pestaña nueva que ahora también puede ver
+  // el jefe (antes solo existía para visualizador).
+  const ConfirmacionesContent = () => {
     // Una sesión con evidencia real de que el paciente ya se presentó (ingreso
     // registrado, o más adelante en el flujo) cuenta como confirmada aunque
     // nadie haya marcado el flag "confirmed" a mano -- ese flag es para
@@ -854,12 +857,7 @@ export default function Insumos() {
        s.center === centerFilter)));
     const confirmedCount = dayList.filter(attended).length;
     return (
-      <div style={{ padding:"24px 28px", maxWidth:640, margin:"0 auto" }}>
-        <div style={{ marginBottom:20 }}>
-          <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Confirmaciones</h1>
-          <p style={{ fontSize:13, color:"#555" }}>Solo lectura — quién ha confirmado su asistencia</p>
-        </div>
-
+      <div>
         <div style={{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap" }}>
           {["Todos","CITIO","CIPI PRO","CIPI PED"].map(c => (
             <button key={c} onClick={() => setCenterFilter(c)} style={{
@@ -910,7 +908,9 @@ export default function Insumos() {
                 {(s.meds || []).length > 0 && (
                   <div style={{ marginTop:6, paddingTop:6, borderTop:"1px solid rgba(255,255,255,0.05)", display:"flex", flexWrap:"wrap", gap:6 }}>
                     {(s.meds || []).map((m,i) => (
-                      <span key={i} style={{ fontSize:11, color:"#AFA9EC", background:"rgba(175,169,236,0.08)", padding:"2px 8px", borderRadius:99 }}>{m.name}</span>
+                      <span key={i} style={{ fontSize:11, color:"#AFA9EC", background:"rgba(175,169,236,0.08)", padding:"2px 8px", borderRadius:99 }}>
+                        {m.name}{m.dose && <span style={{ color:"#888" }}> · {m.dose}</span>}
+                      </span>
                     ))}
                   </div>
                 )}
@@ -918,6 +918,25 @@ export default function Insumos() {
             ))}
           </div>
         )}
+      </div>
+    );
+  };
+
+  if (isVisualizador) {
+    // Una sesión con evidencia real de que el paciente ya se presentó (ingreso
+    // registrado, o más adelante en el flujo) cuenta como confirmada aunque
+    // nadie haya marcado el flag "confirmed" a mano -- ese flag es para
+    // avisar con anticipación que alguien SÍ va a venir, pero si la sesión ya
+    // se registró (sobre todo las de fechas pasadas), la asistencia ya es un
+    // hecho, no algo por confirmar. Mismo criterio que attendedProof en
+    // Monitor.jsx, para no tener dos definiciones distintas de "asistió".
+    return (
+      <div style={{ padding:"24px 28px", maxWidth:640, margin:"0 auto" }}>
+        <div style={{ marginBottom:20 }}>
+          <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Confirmaciones</h1>
+          <p style={{ fontSize:13, color:"#555" }}>Solo lectura — quién ha confirmado su asistencia</p>
+        </div>
+        <ConfirmacionesContent />
       </div>
     );
   }
@@ -929,8 +948,8 @@ export default function Insumos() {
         <p style={{ fontSize:13, color:"#555" }}>Solicitud de material consolidada y catálogo</p>
       </div>
 
-      <div style={{ display:"flex", gap:8, marginBottom:20 }}>
-        {[["consolidado","📋 Consolidado del día"],["catalogo","⚙️ Catálogo"]].map(([id,label]) => (
+      <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
+        {[["consolidado","📋 Consolidado del día"],["catalogo","⚙️ Catálogo"],...(isJefe ? [["confirmaciones","✓ Confirmaciones"]] : [])].map(([id,label]) => (
           <button key={id} onClick={() => setTab(id)} style={{
             padding:"8px 16px", borderRadius:10, fontSize:13, fontWeight:600, cursor:"pointer",
             background: tab===id ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
@@ -939,6 +958,8 @@ export default function Insumos() {
           }}>{label}</button>
         ))}
       </div>
+
+      {tab === "confirmaciones" && isJefe && <ConfirmacionesContent />}
 
       {tab === "consolidado" && (
         <div>
