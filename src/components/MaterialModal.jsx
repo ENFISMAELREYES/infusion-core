@@ -154,6 +154,13 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
         equipoChoice: newEquipoChoice || null,
         materialSolicitudGuardada: true,
         materialSolicitudGuardadaAt: new Date().toISOString(),
+        // Cualquier edición del material invalida un checkup ya hecho -- si
+        // Paola ya lo había revisado, tiene que volver a revisarlo porque el
+        // contenido cambió.
+        materialValidatedBy: null,
+        materialValidatedByName: null,
+        materialValidatedAt: null,
+        materialValidationSignatureUrl: null,
       });
       await onRefresh();
     } catch(e) {

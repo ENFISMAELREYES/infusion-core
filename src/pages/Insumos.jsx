@@ -104,6 +104,32 @@ function CatalogSuggestions({ query, catalog, onSelect }) {
 // para agregar material extra si hubo cambios el día de la sesión o después
 // (hasta 3 anexos por sesión).
 function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user, onRefresh, setSessions, downloadPharmacyOrder, showAnexo, mode }) {
+  const { profile } = useAuth();
+  // Solo Paola (el filtro universal de todas las solicitudes) o el jefe
+  // pueden hacer el checkup de material -- mismo criterio de nombre que ya
+  // usa el resto de la app para darle a Paola permisos especiales.
+  const canValidate = profile?.role === "jefe" || profile?.name === "Paola Vargas";
+  const [savingValidation, setSavingValidation] = useState(false);
+  const validateMaterial = async (e) => {
+    e.stopPropagation();
+    setSavingValidation(true);
+    try {
+      const mask = ["materialValidatedBy","materialValidatedByName","materialValidatedAt","materialValidationSignatureUrl"].map(k => `updateMask.fieldPaths=${k}`).join("&");
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?${mask}`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            materialValidatedBy: { stringValue: user?.uid || "" },
+            materialValidatedByName: { stringValue: profile?.name || "" },
+            materialValidatedAt: { stringValue: new Date().toISOString() },
+            materialValidationSignatureUrl: profile?.signatureUrl ? { stringValue: profile.signatureUrl } : { nullValue: null },
+          }}) });
+      await onRefresh();
+    } catch (err) {
+      alert("Error al validar: " + err.message);
+    } finally {
+      setSavingValidation(false);
+    }
+  };
   const medsHecho = !!s.medsPedidoGeneradoAt;
   const materialHecho = !!s.materialPedidoGeneradoAt;
   const anexos = s.anexos || [];
@@ -363,6 +389,14 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
             </span>
           );
         })()}
+        {s.materialSolicitudGuardada && !s.excludeFromOrder && (
+          <span title={s.materialValidatedBy ? `Validado por ${s.materialValidatedByName || ""}${s.materialValidatedAt ? " · " + new Date(s.materialValidatedAt).toLocaleString("es-MX") : ""}` : "Pendiente del checkup de Paola"}
+            style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
+            background: s.materialValidatedBy ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
+            color: s.materialValidatedBy ? "#00d4aa" : "#ffb347" }}>
+            {s.materialValidatedBy ? "✓ Validado" : "⏳ Sin validar"}
+          </span>
+        )}
         {note && <span style={{ fontSize:11, color:"#4fc3f7" }}>📝</span>}
         {anexos.length > 0 && <span style={{ fontSize:11, color:"#AFA9EC" }}>📎 {anexos.length}</span>}
 
@@ -424,6 +458,17 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                     color: materialHecho ? "#666" : "#00d4aa" }}>
                   {materialHecho ? "✓ Material" : "🧰 Material"}
                 </button>
+
+                {canValidate && (
+                  <button onClick={validateMaterial} disabled={savingValidation || !!s.materialValidatedBy}
+                    title={s.materialValidatedBy ? `Ya validado por ${s.materialValidatedByName || ""}` : "Marcar que ya revisaste este material (checkup de Paola)"}
+                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: (savingValidation || s.materialValidatedBy) ? "default" : "pointer",
+                      background: s.materialValidatedBy ? "rgba(0,212,170,0.08)" : "rgba(255,179,71,0.1)",
+                      border: `1px solid ${s.materialValidatedBy ? "rgba(0,212,170,0.2)" : "rgba(255,179,71,0.25)"}`,
+                      color: s.materialValidatedBy ? "#00d4aa" : "#ffb347", opacity: savingValidation ? 0.6 : 1 }}>
+                    {savingValidation ? "Guardando…" : s.materialValidatedBy ? "✓ Validado" : "✓ Validar"}
+                  </button>
+                )}
 
                 {showAnexo && anexos.length < 3 && (
                   <button onClick={e => { e.stopPropagation(); setShowAnexoModal(true); }}
@@ -720,13 +765,24 @@ export default function Insumos() {
       : scope === "material" ? { MEDICAMENTOS: [], SOLUCIONES: groups.SOLUCIONES, INSUMOS: groups.INSUMOS }
       : groups;
 
+    // Firma a distancia: SOLICITA es quien está generando este PDF ahora
+    // mismo (el guardado/la descarga ES su firma, no hace falta que dibuje
+    // nada). Para material/insumos, VALIDA es el checkup de Paola -- si
+    // todavía no lo hizo, se imprime "PENDIENTE VALIDACIÓN" en su lugar (el
+    // PDF nunca se bloquea por falta de validación).
+    const signatures = scope === "material" ? [
+      { label: "SOLICITA", name: profile?.name || "" },
+      { label: "VALIDA", name: s.materialValidatedByName || "", signatureUrl: s.materialValidationSignatureUrl || null, pending: !s.materialValidatedBy, pendingLabel: "PENDIENTE VALIDACIÓN" },
+      { label: "RECIBE" },
+    ] : undefined;
+
     try {
       const res = await fetch("/api/generate-material-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           center: s.center, cipiVariant, patientName: s.patientName, cycle: s.cycle, date: s.date,
-          groups: sendGroups, note, scope,
+          groups: sendGroups, note, scope, signatures,
         }),
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
