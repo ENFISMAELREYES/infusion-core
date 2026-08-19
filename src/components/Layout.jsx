@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import UpdateBanner from "./UpdateBanner";
+import MySignatureModal from "./MySignatureModal";
 
 const NAV = {
   jefe: [
@@ -80,6 +81,7 @@ export default function Layout() {
           <button onClick={logout} style={{ width:"100%", padding:"9px", borderRadius:9, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", color:"#555" }}>
             Cerrar sesión
           </button>
+          {role !== "visualizador" && <MySignatureModal />}
         </div>
       </aside>
 

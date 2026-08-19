@@ -19,19 +19,23 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const loadProfile = async (uid) => {
+    try {
+      const snap = await getDoc(doc(db, "users", uid));
+      const p = snap.exists() ? snap.data() : null;
+      console.log("Perfil:", p);
+      setProfile(p);
+    } catch (e) {
+      console.error("Error al leer el perfil de Firestore:", e);
+      setProfile(null);
+    }
+  };
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        try {
-          const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-          const p = snap.exists() ? snap.data() : null;
-          console.log("Perfil:", p);
-          setProfile(p);
-        } catch (e) {
-          console.error("Error al leer el perfil de Firestore:", e);
-          setProfile(null);
-        }
+        await loadProfile(firebaseUser.uid);
       } else {
         setUser(null);
         setProfile(null);
@@ -46,9 +50,13 @@ export function AuthProvider({ children }) {
     return signInWithEmailAndPassword(auth, email, password);
   };
   const logout = () => signOut(auth);
+  // Vuelve a leer el perfil sin recargar la página -- necesario después de
+  // escribir algo en users/{uid} (ej. la firma en archivo), ya que este
+  // hook solo lee una vez al iniciar sesión, no escucha cambios en vivo.
+  const refreshProfile = () => user && loadProfile(user.uid);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, profile, loading, login, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

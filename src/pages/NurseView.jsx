@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { uploadSignature } from "../firebase";
+import { uploadSignature, uploadUserSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { computeSessionMaterial } from "../data/materialCatalog";
 
@@ -602,6 +602,7 @@ function ProcedureNote({ session, token, onRefresh, user }) {
 }
 
 function SessionCard({ session, token, onRefresh, user }) {
+  const { profile, refreshProfile } = useAuth();
   const [open, setOpen]       = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -756,18 +757,31 @@ function SessionCard({ session, token, onRefresh, user }) {
     setShowSignModal(true);
   };
 
+  // La firma de enfermería ya NO se dibuja en cada retiro -- se usa la firma
+  // en archivo de quien tiene la sesión abierta (profile.signatureUrl),
+  // congelada tal cual estaba en ese momento. Solo si todavía no tiene
+  // ninguna capturada (primera vez) se le pide dibujarla aquí mismo, y esa
+  // captura se guarda de una vez como su firma permanente para el futuro.
   const confirmSignaturesAndRetiro = async () => {
     setSigning(true);
     try {
-      if (sigPaciente || sigEnfermeria) {
-        const [urlPaciente, urlEnfermeria] = await Promise.all([
-          sigPaciente ? uploadSignature(session.id, "paciente", sigPaciente) : Promise.resolve(null),
-          sigEnfermeria ? uploadSignature(session.id, "enfermeria", sigEnfermeria) : Promise.resolve(null),
-        ]);
+      const freshToken = await user.getIdToken(true);
+      let enfermeriaUrl = profile?.signatureUrl || null;
+
+      if (!enfermeriaUrl && sigEnfermeria) {
+        enfermeriaUrl = await uploadUserSignature(user.uid, sigEnfermeria);
+        const mask = ["signatureUrl", "signatureSetAt"].map(k => `updateMask.fieldPaths=${k}`).join("&");
+        await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/users/${user.uid}?${mask}`,
+          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
+            body: JSON.stringify({ fields: { signatureUrl:{ stringValue: enfermeriaUrl }, signatureSetAt:{ stringValue: new Date().toISOString() } } }) });
+        await refreshProfile();
+      }
+
+      if (sigPaciente || enfermeriaUrl) {
+        const urlPaciente = sigPaciente ? await uploadSignature(session.id, "paciente", sigPaciente) : null;
         const fields = { "signatures.firmedAt": new Date().toISOString() };
         if (urlPaciente) fields["signatures.paciente"] = urlPaciente;
-        if (urlEnfermeria) fields["signatures.enfermeria"] = urlEnfermeria;
-        const freshToken = await user.getIdToken(true);
+        if (enfermeriaUrl) fields["signatures.enfermeria"] = enfermeriaUrl;
         await patchSession(freshToken, session.id, fields);
       }
       setShowSignModal(false);
@@ -1157,23 +1171,45 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
             </div>
 
             <SignaturePad label="Firma del paciente / familiar" onChange={setSigPaciente} />
-            <SignaturePad label="Firma de enfermería" onChange={setSigEnfermeria} />
 
-            <div style={{ display:"flex", gap:8 }}>
-              <button onClick={() => setShowSignModal(false)} disabled={signing}
-                style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: signing ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
-                Cancelar
-              </button>
-              <button onClick={confirmSignaturesAndRetiro} disabled={signing}
-                style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: signing ? "wait" : "pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: signing ? 0.5 : 1 }}>
-                {signing ? "Guardando…" : (sigPaciente && sigEnfermeria) ? "✓ Confirmar retiro" : "✓ Confirmar retiro sin firmar"}
-              </button>
-            </div>
-            {!(sigPaciente && sigEnfermeria) && (
-              <div style={{ fontSize:11, color:"#ffb347", textAlign:"center", marginTop:-8 }}>
-                Podrás registrar las firmas después desde Historial.
+            {profile?.signatureUrl ? (
+              <div>
+                <div style={{ fontSize:11, color:"#888", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>Firma de enfermería (en archivo)</div>
+                <div style={{ background:"#fff", borderRadius:10, padding:8 }}>
+                  <img src={profile.signatureUrl} alt="Tu firma" style={{ height:40, display:"block" }} />
+                </div>
               </div>
+            ) : (
+              <SignaturePad label="Firma de enfermería (se guardará como tu firma permanente)" onChange={setSigEnfermeria} />
             )}
+
+            {(() => {
+              const enfermeriaMissing = !profile?.signatureUrl && !sigEnfermeria;
+              return (
+                <>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={() => setShowSignModal(false)} disabled={signing}
+                      style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: signing ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                      Cancelar
+                    </button>
+                    <button onClick={confirmSignaturesAndRetiro} disabled={signing || enfermeriaMissing}
+                      style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (signing || enfermeriaMissing) ? "not-allowed" : "pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: (signing || enfermeriaMissing) ? 0.5 : 1 }}>
+                      {signing ? "Guardando…" : enfermeriaMissing ? "Captura tu firma para continuar" : sigPaciente ? "✓ Confirmar retiro" : "✓ Confirmar retiro sin firma del paciente"}
+                    </button>
+                  </div>
+                  {enfermeriaMissing && (
+                    <div style={{ fontSize:11, color:"#ffb347", textAlign:"center", marginTop:-8 }}>
+                      Como es tu primera vez, captura tu firma arriba -- quedará guardada para tus próximos retiros.
+                    </div>
+                  )}
+                  {!enfermeriaMissing && !sigPaciente && (
+                    <div style={{ fontSize:11, color:"#ffb347", textAlign:"center", marginTop:-8 }}>
+                      Podrás registrar la firma del paciente después desde Historial.
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

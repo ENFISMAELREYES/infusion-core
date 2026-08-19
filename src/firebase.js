@@ -27,6 +27,18 @@ export async function uploadSignature(sessionId, role, dataUrl) {
   return await getDownloadURL(storageRef);
 }
 
+// Sube la firma personal de un usuario ("Mi firma" / firma en archivo).
+// Cada captura se guarda en un archivo NUEVO (con timestamp), nunca se
+// sobreescribe -- así, si la persona actualiza su firma después, los
+// documentos que ya se firmaron con la versión anterior siguen mostrando
+// esa misma imagen (queda congelada), en vez de "cambiar" retroactivamente.
+export async function uploadUserSignature(uid, dataUrl) {
+  const path = `signatures/users/${uid}/${Date.now()}.png`;
+  const storageRef = ref(storage, path);
+  await uploadString(storageRef, dataUrl, "data_url");
+  return await getDownloadURL(storageRef);
+}
+
 export async function requestNotificationPermission(userId, token) {
   try {
     const permission = await Notification.requestPermission();

@@ -15,7 +15,34 @@ service cloud.firestore {
     // Usuarios: solo el propio usuario puede leer su perfil
     match /users/{userId} {
       allow read: if isAuth() && request.auth.uid == userId;
-      allow write: if false; // Solo admin puede crear usuarios
+      allow create: if false; // Solo admin/consola crea usuarios
+      allow delete: if false;
+      // Firma en archivo: el único campo que se puede actualizar desde la
+      // app es signatureUrl/signatureHistory (nunca role/center/name, para
+      // que nadie se pueda auto-ascender a jefe editando su propio perfil).
+      // - El jefe puede escribir la firma de CUALQUIER usuario (la suya,
+      //   auto-aprobada; la de los demás, solo al aprobar una solicitud en
+      //   signature_requests).
+      // - Cualquier otro usuario puede capturar su firma la PRIMERA vez sin
+      //   pedir autorización (resource.data.signatureUrl == null); cambios
+      //   posteriores pasan por signature_requests.
+      allow update: if isAuth()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['signatureUrl', 'signatureHistory'])
+        && (
+          userRole() == "jefe"
+          || (request.auth.uid == userId && resource.data.signatureUrl == null)
+        );
+    }
+
+    // Solicitudes de cambio de firma (firma en archivo): cualquiera puede
+    // crear la suya propia; solo el jefe puede aprobarla/rechazarla
+    // (actualizar status). Nunca se borran -- quedan como registro/auditoría
+    // de cada cambio de firma.
+    match /signature_requests/{id} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.uid == request.auth.uid && request.resource.data.status == "pending";
+      allow update: if isAuth() && userRole() == "jefe";
+      allow delete: if false;
     }
 
     // Sesiones: enfermeras crean, todos leen, jefe autoriza
