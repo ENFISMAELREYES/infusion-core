@@ -1,7 +1,7 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { patientName, center, nurseName } = req.body;
+  const { patientName, center, nurseName, title, body } = req.body;
 
   try {
     const PROJECT_ID = "infusion-core";
@@ -39,8 +39,8 @@ export default async function handler(req, res) {
           message: {
             token: fcmToken,
             notification: {
-              title: `⏳ Nueva orden — ${center}`,
-              body: `${patientName} · ${nurseName}`,
+              title: title || `⏳ Nueva orden — ${center}`,
+              body: body || `${patientName} · ${nurseName}`,
             },
             webpush: {
               notification: {
