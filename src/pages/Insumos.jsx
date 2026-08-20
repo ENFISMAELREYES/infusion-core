@@ -426,7 +426,11 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         {mode === "captura" ? (
           <div onClick={e => e.stopPropagation()}>
             <MaterialModal session={s} token={token} user={user} onRefresh={onRefresh} compact
-              label={s.materialSolicitudGuardada ? "✓ Solicitud guardada" : "🧰 Solicitar material"} />
+              label={
+                (s.materialSolicitudGuardada && s.medsSolicitudGuardada) ? "✓ Solicitud guardada" :
+                (s.materialSolicitudGuardada || s.medsSolicitudGuardada) ? "◐ Guardado parcial" :
+                "🧰 Solicitar material"
+              } />
           </div>
         ) : (
           <>
