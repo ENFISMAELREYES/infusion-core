@@ -454,6 +454,25 @@ function PendingSessionCard({ session, user, onRefresh }) {
     finally { setSaving(false); }
   };
 
+  // Antes solo se podía anexar un medicamento a una sesión del día
+  // (SessionCard) -- las pendientes/programadas solo se podían editar o
+  // eliminar, no agregar. Mismo mecanismo que ya usa SessionCard: si la
+  // sesión ya estaba autorizada, agregar un medicamento la manda de vuelta
+  // a reautorización con la nota de qué se agregó.
+  const [showAddMed, setShowAddMed] = useState(false);
+  const handleAddMed = async (newMed) => {
+    setSaving(true);
+    try {
+      const token = await user.getIdToken(true);
+      const medWithDefaults = { ...newMed, order:(session.meds||[]).length+1, parallelType:"secuencial", startOffset:null };
+      const changeNote = session.authorized ? `+ Se agregó ${newMed.name || "un medicamento"}` : undefined;
+      await updateSessionMeds(token, session.id, [...(session.meds||[]), medWithDefaults], session.authorized, changeNote);
+      setShowAddMed(false);
+      onRefresh();
+    } catch(e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
   const PARALLEL_LABEL = { secuencial: "Secuencial (uno después del otro)", junto: "Simultáneo (junto con el anterior)", offset: "Con diferencia de tiempo" };
 
   const statusColor = !session.authorized ? "#ffb347" : "#1D9E75";
@@ -528,6 +547,14 @@ function PendingSessionCard({ session, user, onRefresh }) {
               )}
             </div>
           ))}
+
+          {showAddMed ? (
+            <AddMedForm onAdd={handleAddMed} onCancel={() => setShowAddMed(false)} />
+          ) : (
+            <button onClick={() => setShowAddMed(true)} style={{ width:"100%", padding:"9px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.08)", border:"1px dashed rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+              ➕ Agregar medicamento
+            </button>
+          )}
 
           {/* Asistencia */}
           <button onClick={toggleConfirm} style={{ width:"100%", padding:"9px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer",
