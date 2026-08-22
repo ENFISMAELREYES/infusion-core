@@ -91,6 +91,13 @@ export default function Inventario() {
   // Solo Paola Vargas puede ver ambos centros siendo enfermera (incluyendo
   // Qual); el resto solo ve el inventario de su propio centro asignado.
   const canSeeAllCenters = isJefe || profile?.name === "Paola Vargas";
+  // Firma a distancia en solicitudes de compra: a diferencia del material
+  // por paciente (que solo pasa por el checkup de Paola), una solicitud de
+  // compra siempre lleva la cadena completa Paola (VALIDA) -> jefe
+  // (AUTORIZA), sea de medicamento o de insumo -- es dinero/reabasto, no
+  // solo dispensar lo que ya hay.
+  const canValidate = isJefe || profile?.name === "Paola Vargas";
+  const canAuthorize = isJefe;
   const allowedWarehouses = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI_PRO","CIPI_PED"] : ["CITIO"]);
   const [tab, setTab] = useState("existencias"); // "existencias" | "movimientos"
   const [warehouse, setWarehouse] = useState(() => canSeeAllCenters ? "CITIO" : (allowedWarehouses?.[0] || "CITIO"));
@@ -102,10 +109,13 @@ export default function Inventario() {
   const [token, setToken] = useState("");
   const [inventory, setInventory] = useState([]);
   const [events, setEvents] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [search, setSearch] = useState("");
   const [expandedEvent, setExpandedEvent] = useState(null);
+  const [expandedPO, setExpandedPO] = useState(null);
+  const [savingPOAction, setSavingPOAction] = useState(null); // id de la solicitud que se está guardando, o null
 
   const [showMoveModal, setShowMoveModal] = useState(null); // "entrada" | "salida" | null
   const [moveList, setMoveList] = useState([]); // [{item, qty}] -- varios artículos por movimiento
@@ -125,12 +135,14 @@ export default function Inventario() {
     try {
       const t = await user.getIdToken(true);
       setToken(t);
-      const [inv, ev] = await Promise.all([
+      const [inv, ev, po] = await Promise.all([
         fetchCollection(t, "inventory"),
         fetchCollection(t, "inventory_events"),
+        fetchCollection(t, "purchase_orders"),
       ]);
       setInventory(inv);
       setEvents(ev.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")));
+      setPurchaseOrders(po.sort((a, b) => (b.requestedAt || "").localeCompare(a.requestedAt || "")));
     } catch (e) {
       console.error(e);
     } finally {
@@ -494,7 +506,12 @@ export default function Inventario() {
 
   // Genera el PDF de solicitud de compra (no registra ningún movimiento de
   // inventario -- solo el documento para pedir a QualMedical; la entrada real
-  // se registra aparte cuando llega la mercancía, igual que siempre).
+  // se registra aparte cuando llega la mercancía, igual que siempre) y deja
+  // la solicitud guardada en purchase_orders para su seguimiento (pendiente
+  // -> validada por Paola -> autorizada por el jefe -> recibida). Igual que
+  // medicamentos, siempre lleva la cadena completa -- aquí no aplica la
+  // excepción de "solo checkup de Paola" que sí tiene el material por
+  // paciente, porque una compra siempre compromete dinero/reabasto.
   const generatePurchaseOrder = async () => {
     if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
     if (!purchaseConcept.trim()) { alert("Escribe el concepto de la solicitud."); return; }
@@ -509,15 +526,44 @@ export default function Inventario() {
       });
       const centerForPdf = warehouse.includes("CIPI") ? "CIPI" : "CITIO";
       const cipiVariantForPdf = warehouse === "QUAL_CIPI" || warehouse === "CIPI_PED" ? "PED" : "PRO";
+      // Recién creada, nunca pudo haberse validado/autorizado antes -- igual
+      // que un anexo nuevo, ambas firmas salen pendientes en este primer PDF.
+      const signatures = [
+        { label: "SOLICITA", name: profile?.name || "" },
+        { label: "VALIDA", pending: true, pendingLabel: "PENDIENTE VALIDACIÓN" },
+        { label: "AUTORIZA", pending: true, pendingLabel: "PENDIENTE AUTORIZACIÓN" },
+        { label: "RECIBE" },
+      ];
       const res = await fetch("/api/generate-material-order", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ center: centerForPdf, cipiVariant: cipiVariantForPdf, concepto: purchaseConcept, groups }),
+        body: JSON.stringify({ center: centerForPdf, cipiVariant: cipiVariantForPdf, concepto: purchaseConcept, groups, signatures }),
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+      const poRes = await fetch(`${FIRESTORE_BASE_URL}/purchase_orders`, {
+        method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ fields: {
+          warehouse: { stringValue: warehouse }, concepto: { stringValue: purchaseConcept },
+          items: toFV(moveList.map(({ item, qty }) => ({ item, qty }))),
+          status: { stringValue: "pendiente" },
+          requestedBy: { stringValue: user?.uid || "" }, requestedByName: { stringValue: profile?.name || "" },
+          requestedAt: { stringValue: new Date().toISOString() },
+          validatedBy: { nullValue: null }, validatedByName: { nullValue: null }, validatedAt: { nullValue: null }, validationSignatureUrl: { nullValue: null },
+          authorizedBy: { nullValue: null }, authorizedByName: { nullValue: null }, authorizedAt: { nullValue: null }, authorizationSignatureUrl: { nullValue: null },
+        }}),
+      });
+      if (poRes.ok) {
+        const doc = await poRes.json();
+        setPurchaseOrders(prev => [parseDoc(doc), ...prev]);
+      }
+      // Si falla el guardado del rastreo, no se revierte el PDF ya generado
+      // (ya se entregó/imprimió) -- solo se pierde el seguimiento en la
+      // pestaña de solicitudes, que la persona puede volver a intentar.
+
       setShowMoveModal(null); setMoveList([]); setPurchaseConcept("");
     } catch (e) {
       alert("Error al generar la solicitud de compra: " + e.message);
@@ -525,6 +571,35 @@ export default function Inventario() {
       setSaving(false);
     }
   };
+
+  const patchPurchaseOrder = async (id, changes, fieldPaths) => {
+    setSavingPOAction(id);
+    try {
+      const mask = fieldPaths.map(k => `updateMask.fieldPaths=${k}`).join("&");
+      const fields = Object.fromEntries(Object.entries(changes).map(([k,v]) => [k, toFV(v)]));
+      const res = await fetch(`${FIRESTORE_BASE_URL}/purchase_orders/${id}?${mask}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ fields }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${res.status}`); }
+      setPurchaseOrders(prev => prev.map(p => p.id === id ? { ...p, ...changes } : p));
+    } catch (e) {
+      alert("Error al guardar: " + e.message);
+    } finally {
+      setSavingPOAction(null);
+    }
+  };
+  const validatePurchaseOrder = (id) => patchPurchaseOrder(id, {
+    validatedBy: user?.uid || "", validatedByName: profile?.name || "",
+    validatedAt: new Date().toISOString(), validationSignatureUrl: profile?.signatureUrl || null,
+  }, ["validatedBy","validatedByName","validatedAt","validationSignatureUrl"]);
+  const authorizePurchaseOrder = (id) => patchPurchaseOrder(id, {
+    authorizedBy: user?.uid || "", authorizedByName: profile?.name || "",
+    authorizedAt: new Date().toISOString(), authorizationSignatureUrl: profile?.signatureUrl || null,
+  }, ["authorizedBy","authorizedByName","authorizedAt","authorizationSignatureUrl"]);
+  const markPurchaseOrderReceived = (id) => patchPurchaseOrder(id, {
+    status: "recibida", receivedAt: new Date().toISOString(),
+  }, ["status","receivedAt"]);
 
   const registerMovement = async () => {
     if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
@@ -703,7 +778,7 @@ export default function Inventario() {
       </div>
 
       <div style={{ display:"flex", gap:8, marginBottom:20, borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-        {[["existencias","Existencias"],["movimientos","Movimientos"],...(isJefe ? [["general","Vista general"]] : [])].map(([val,label]) => (
+        {[["existencias","Existencias"],["movimientos","Movimientos"],["compras","🧾 Solicitudes de compra"],...(isJefe ? [["general","Vista general"]] : [])].map(([val,label]) => (
           <button key={val} onClick={() => setTab(val)} style={{
             padding:"10px 16px", fontSize:13, fontWeight:600, cursor:"pointer", background:"none", border:"none",
             borderBottom: tab===val ? "2px solid #00d4aa" : "2px solid transparent",
@@ -848,6 +923,69 @@ export default function Inventario() {
                         🗑 Eliminar (revertir existencias)
                       </button>
                     )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {tab === "compras" && (
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {purchaseOrders.filter(po => po.warehouse === warehouse).length === 0 ? (
+            <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
+              Sin solicitudes de compra en este almacén.
+            </div>
+          ) : purchaseOrders.filter(po => po.warehouse === warehouse).map(po => {
+            const isOpen = expandedPO === po.id;
+            const poItems = Array.isArray(po.items) ? po.items : [];
+            const received = po.status === "recibida";
+            return (
+              <div key={po.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
+                <div onClick={() => setExpandedPO(isOpen ? null : po.id)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+                  <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600, minWidth:160 }}>{po.concepto}</span>
+                  <span style={{ fontSize:11, color:"#666" }}>{poItems.length} artículo{poItems.length!==1?"s":""}</span>
+                  <span style={{ fontSize:11, color:"#555" }}>{po.requestedByName || ""}{po.requestedAt ? " · " + new Date(po.requestedAt).toLocaleDateString("es-MX") : ""}</span>
+                  <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99, background: received ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.05)", color: received ? "#00d4aa" : "#888" }}>
+                    {received ? "✓ Recibida" : "⏳ Pendiente"}
+                  </span>
+                  <span title={po.authorizedBy ? `Autorizado por ${po.authorizedByName || ""}` : po.validatedBy ? `Validado por ${po.validatedByName || ""} — falta autorización del jefe` : "Pendiente del checkup de Paola"}
+                    style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
+                    background: po.authorizedBy ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
+                    color: po.authorizedBy ? "#00d4aa" : "#ffb347" }}>
+                    {po.authorizedBy ? "✓ Autorizada" : po.validatedBy ? "◐ Validada" : "⏳ Sin validar"}
+                  </span>
+                  <span style={{ color:"#555" }}>{isOpen ? "▲" : "▼"}</span>
+                </div>
+                {isOpen && (
+                  <div style={{ padding:"0 16px 14px", display:"flex", flexDirection:"column", gap:4 }}>
+                    {poItems.map((t,ti) => (
+                      <div key={ti} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#aaa", padding:"3px 0" }}>
+                        <span>{t.item}</span><span style={{ color:"#00d4aa" }}>{t.qty}</span>
+                      </div>
+                    ))}
+                    <div style={{ display:"flex", gap:8, marginTop:8, flexWrap:"wrap" }}>
+                      {canValidate && !po.validatedBy && (
+                        <button onClick={e => { e.stopPropagation(); validatePurchaseOrder(po.id); }} disabled={savingPOAction === po.id}
+                          style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+                          {savingPOAction===po.id ? "Guardando…" : "✓ Validar (checkup)"}
+                        </button>
+                      )}
+                      {canAuthorize && po.validatedBy && !po.authorizedBy && (
+                        <button onClick={e => { e.stopPropagation(); authorizePurchaseOrder(po.id); }} disabled={savingPOAction === po.id}
+                          style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                          {savingPOAction===po.id ? "Guardando…" : "✓ Autorizar"}
+                        </button>
+                      )}
+                      {!received && canValidate && (
+                        <button onClick={e => { e.stopPropagation(); markPurchaseOrderReceived(po.id); }} disabled={savingPOAction === po.id}
+                          title="Marcar que la mercancía ya llegó -- esto no registra la entrada al inventario, solo cierra el seguimiento de la solicitud (usa 'Registrar entrada' aparte para eso)"
+                          style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
+                          {savingPOAction===po.id ? "Guardando…" : "✓ Marcar recibida"}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
