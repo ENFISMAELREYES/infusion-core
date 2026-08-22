@@ -80,6 +80,23 @@ async function saveOverrides(token, data) {
 const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:12, outline:"none" };
 const labelStyle = { fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:5 };
 
+// Clasifica un artículo en Medicamentos / Soluciones / Insumos según el
+// catálogo maestro -- compartido entre el pedido a farmacia (downloadPharmacyOrder)
+// y los anexos (generateAnexo). Antes cada uno tenía su propia copia, y el
+// anexo ni siquiera clasificaba: todo se guardaba como "INSUMOS" aunque
+// fuera medicamento -- que de hecho es el caso más común en un anexo.
+const CATALOG_BY_NAME = {};
+MASTER_CATALOG.forEach(c => { CATALOG_BY_NAME[c.item.toUpperCase()] = c.category; });
+const isMedCategory = (cat) => ["Medicamentos","Oncológicos","Inmunoterapia"].includes(cat);
+function categorizeItem(itemName) {
+  const up = itemName.toUpperCase();
+  if (up.includes("CLORURO DE SODIO") || up.includes("GLUCOSA") || up.includes("HARTMANN")) return "SOLUCIONES";
+  if (CATALOG_BY_NAME[up]) return isMedCategory(CATALOG_BY_NAME[up]) ? "MEDICAMENTOS" : "INSUMOS";
+  // Respaldo: si no hay coincidencia exacta, buscar por coincidencia parcial
+  const fuzzy = MASTER_CATALOG.find(c => up.startsWith(c.item.toUpperCase()) || c.item.toUpperCase().startsWith(up));
+  return fuzzy && isMedCategory(fuzzy.category) ? "MEDICAMENTOS" : "INSUMOS";
+}
+
 // Sugerencias del catálogo existente mientras se escribe, para elegir un producto
 // ya existente en vez de teclear uno nuevo (evita duplicados).
 function CatalogSuggestions({ query, catalog, onSelect }) {
@@ -109,6 +126,10 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   // pueden hacer el checkup de material -- mismo criterio de nombre que ya
   // usa el resto de la app para darle a Paola permisos especiales.
   const canValidate = profile?.role === "jefe" || profile?.name === "Paola Vargas";
+  // Autorizar (segunda firma, solo medicamentos/anexo con medicamento) es
+  // exclusiva del jefe -- Paola solo hace el checkup/filtro, la autorización
+  // final de oncológicos siempre pasa por él.
+  const canAuthorize = profile?.role === "jefe";
   const [savingValidation, setSavingValidation] = useState(false);
   const validateMaterial = async (e) => {
     e.stopPropagation();
@@ -128,6 +149,48 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       alert("Error al validar: " + err.message);
     } finally {
       setSavingValidation(false);
+    }
+  };
+  const [savingMedsValidation, setSavingMedsValidation] = useState(false);
+  const validateMeds = async (e) => {
+    e.stopPropagation();
+    setSavingMedsValidation(true);
+    try {
+      const mask = ["medsValidatedBy","medsValidatedByName","medsValidatedAt","medsValidationSignatureUrl"].map(k => `updateMask.fieldPaths=${k}`).join("&");
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?${mask}`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            medsValidatedBy: { stringValue: user?.uid || "" },
+            medsValidatedByName: { stringValue: profile?.name || "" },
+            medsValidatedAt: { stringValue: new Date().toISOString() },
+            medsValidationSignatureUrl: profile?.signatureUrl ? { stringValue: profile.signatureUrl } : { nullValue: null },
+          }}) });
+      await onRefresh();
+    } catch (err) {
+      alert("Error al validar: " + err.message);
+    } finally {
+      setSavingMedsValidation(false);
+    }
+  };
+  const [savingMedsAuth, setSavingMedsAuth] = useState(false);
+  const authorizeMeds = async (e) => {
+    e.stopPropagation();
+    setSavingMedsAuth(true);
+    try {
+      const mask = ["medsAuthorizedBy","medsAuthorizedByName","medsAuthorizedAt","medsAuthorizationSignatureUrl"].map(k => `updateMask.fieldPaths=${k}`).join("&");
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?${mask}`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            medsAuthorizedBy: { stringValue: user?.uid || "" },
+            medsAuthorizedByName: { stringValue: profile?.name || "" },
+            medsAuthorizedAt: { stringValue: new Date().toISOString() },
+            medsAuthorizationSignatureUrl: profile?.signatureUrl ? { stringValue: profile.signatureUrl } : { nullValue: null },
+          }}) });
+      await onRefresh();
+    } catch (err) {
+      alert("Error al autorizar: " + err.message);
+    } finally {
+      setSavingMedsAuth(false);
     }
   };
   const medsHecho = !!s.medsPedidoGeneradoAt;
@@ -160,13 +223,34 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   const [invItems, setInvItems] = useState([]);
   const [savingInv, setSavingInv] = useState(false);
 
-  const toFV = (val) => {
-    if (typeof val === "string") return { stringValue: val };
-    if (typeof val === "number") return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
-    if (Array.isArray(val)) return { arrayValue: { values: val.map(toFV) } };
-    if (val && typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k,v]) => [k, toFV(v)])) } };
-    return { stringValue: String(val) };
+  // toFV se usa aquí tal cual la del módulo (arriba en el archivo) -- antes
+  // había una copia local que no manejaba boolean ni null (los serializaba
+  // como el string "true"/"null"), lo cual habría corrompido hasMed y los
+  // campos de validación/autorización del anexo en cuanto se guardaran.
+
+  const [savingAnexoAction, setSavingAnexoAction] = useState(null); // índice del anexo que se está guardando, o null
+  const patchAnexoAt = async (idx, changes) => {
+    setSavingAnexoAction(idx);
+    try {
+      const updated = anexos.map((a, i) => i === idx ? { ...a, ...changes } : a);
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=anexos`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: { anexos: toFV(updated) } }) });
+      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, anexos: updated } : x));
+    } catch (err) {
+      alert("Error al guardar el anexo: " + err.message);
+    } finally {
+      setSavingAnexoAction(null);
+    }
   };
+  const validateAnexo = (idx) => patchAnexoAt(idx, {
+    validatedBy: user?.uid || "", validatedByName: profile?.name || "",
+    validatedAt: new Date().toISOString(), validationSignatureUrl: profile?.signatureUrl || null,
+  });
+  const authorizeAnexo = (idx) => patchAnexoAt(idx, {
+    authorizedBy: user?.uid || "", authorizedByName: profile?.name || "",
+    authorizedAt: new Date().toISOString(), authorizationSignatureUrl: profile?.signatureUrl || null,
+  });
 
   const markPedidoHecho = async (field) => {
     try {
@@ -196,12 +280,29 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     setSavingAnexo(true);
     try {
       const anexoNumber = anexos.length + 1;
+      // Clasificar cada artículo del anexo -- antes se forzaba todo a
+      // "INSUMOS" aunque el anexo llevara medicamento, que de hecho es el
+      // caso más común. Si lleva medicamento, aplica la misma cadena de
+      // firmas Paola (VALIDA) -> jefe (AUTORIZA) que ya tiene la solicitud
+      // de medicamentos de la sesión, y no solo el checkup de material.
+      const anexoGroups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
+      anexoItems.forEach(it => anexoGroups[categorizeItem(it.item)].push(it));
+      const anexoHasMed = anexoGroups.MEDICAMENTOS.length > 0;
+      // Recién creado, nunca pudo haberse validado/autorizado antes -- ambas
+      // firmas salen pendientes en este primer PDF; queda el registro en el
+      // anexo (validatedBy/authorizedBy) para cuando se revise después.
+      const anexoSignatures = [
+        { label: "SOLICITA", name: profile?.name || "" },
+        { label: "VALIDA", pending: true, pendingLabel: "PENDIENTE VALIDACIÓN" },
+        ...(anexoHasMed ? [{ label: "AUTORIZA", pending: true, pendingLabel: "PENDIENTE AUTORIZACIÓN" }] : []),
+        { label: "RECIBE" },
+      ];
       const res = await fetch("/api/generate-material-order", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           center: s.center, cipiVariant, patientName: s.patientName, cycle: s.cycle, date: s.date,
-          groups: { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: anexoItems },
-          note: anexoNote, anexoNumber,
+          groups: anexoGroups,
+          note: anexoNote, anexoNumber, signatures: anexoSignatures,
         }),
       });
       if (!res.ok) throw new Error(`Error ${res.status} al generar el anexo`);
@@ -210,7 +311,11 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 60000);
 
-      const newAnexos = [...anexos, { number: anexoNumber, items: anexoItems, note: anexoNote, generatedAt: new Date().toISOString() }];
+      const newAnexos = [...anexos, { number: anexoNumber, items: anexoItems, note: anexoNote, generatedAt: new Date().toISOString(),
+        hasMed: anexoHasMed,
+        validatedBy: null, validatedByName: null, validatedAt: null, validationSignatureUrl: null,
+        authorizedBy: null, authorizedByName: null, authorizedAt: null, authorizationSignatureUrl: null,
+      }];
       await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=anexos`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
           body: JSON.stringify({ fields: { anexos: toFV(newAnexos) } }) });
@@ -397,6 +502,24 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
             {s.materialValidatedBy ? "✓ Validado" : "⏳ Sin validar"}
           </span>
         )}
+        {s.medsSolicitudGuardada && (() => {
+          // Medicamentos oncológicos llevan dos firmas: checkup de Paola
+          // (VALIDA) y autorización final del jefe (AUTORIZA) -- a
+          // diferencia del material, que solo lleva el checkup.
+          const label = s.medsAuthorizedBy ? "✓ Autorizado" : s.medsValidatedBy ? "◐ Validado" : "⏳ Sin validar";
+          const title = s.medsAuthorizedBy
+            ? `Autorizado por ${s.medsAuthorizedByName || ""}${s.medsAuthorizedAt ? " · " + new Date(s.medsAuthorizedAt).toLocaleString("es-MX") : ""}`
+            : s.medsValidatedBy
+            ? `Validado por ${s.medsValidatedByName || ""} — falta autorización del jefe`
+            : "Pendiente del checkup de Paola";
+          return (
+            <span title={title} style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
+              background: s.medsAuthorizedBy ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
+              color: s.medsAuthorizedBy ? "#00d4aa" : "#ffb347" }}>
+              💊 {label}
+            </span>
+          );
+        })()}
         {note && <span style={{ fontSize:11, color:"#4fc3f7" }}>📝</span>}
         {anexos.length > 0 && <span style={{ fontSize:11, color:"#AFA9EC" }}>📎 {anexos.length}</span>}
 
@@ -453,6 +576,28 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                     color: medsHecho ? "#666" : "#00d4aa" }}>
                   {medsHecho ? "✓ Medicamentos" : "💊 Medicamentos"}
                 </button>
+
+                {canValidate && (
+                  <button onClick={validateMeds} disabled={savingMedsValidation || !!s.medsValidatedBy}
+                    title={s.medsValidatedBy ? `Ya validado por ${s.medsValidatedByName || ""}` : "Marcar que ya revisaste estos medicamentos (checkup de Paola)"}
+                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: (savingMedsValidation || s.medsValidatedBy) ? "default" : "pointer",
+                      background: s.medsValidatedBy ? "rgba(0,212,170,0.08)" : "rgba(255,179,71,0.1)",
+                      border: `1px solid ${s.medsValidatedBy ? "rgba(0,212,170,0.2)" : "rgba(255,179,71,0.25)"}`,
+                      color: s.medsValidatedBy ? "#00d4aa" : "#ffb347", opacity: savingMedsValidation ? 0.6 : 1 }}>
+                    {savingMedsValidation ? "Guardando…" : s.medsValidatedBy ? "✓ Meds validados" : "✓ Validar meds"}
+                  </button>
+                )}
+
+                {canAuthorize && (
+                  <button onClick={authorizeMeds} disabled={savingMedsAuth || !s.medsValidatedBy || !!s.medsAuthorizedBy}
+                    title={s.medsAuthorizedBy ? `Ya autorizado por ${s.medsAuthorizedByName || ""}` : !s.medsValidatedBy ? "Falta el checkup de Paola antes de poder autorizar" : "Dar tu autorización final para estos medicamentos"}
+                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: (savingMedsAuth || !s.medsValidatedBy || s.medsAuthorizedBy) ? "default" : "pointer",
+                      background: s.medsAuthorizedBy ? "rgba(0,212,170,0.08)" : "rgba(175,169,236,0.1)",
+                      border: `1px solid ${s.medsAuthorizedBy ? "rgba(0,212,170,0.2)" : "rgba(175,169,236,0.3)"}`,
+                      color: s.medsAuthorizedBy ? "#00d4aa" : !s.medsValidatedBy ? "#555" : "#AFA9EC", opacity: savingMedsAuth ? 0.6 : (!s.medsValidatedBy ? 0.5 : 1) }}>
+                    {savingMedsAuth ? "Guardando…" : s.medsAuthorizedBy ? "✓ Meds autorizados" : "✓ Autorizar meds"}
+                  </button>
+                )}
 
                 <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant, "material"); await markPedidoHecho("materialPedidoGeneradoAt"); }}
                   title={materialHecho ? `Material solicitado ${new Date(s.materialPedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Solicitar material (días antes o el mismo día)"}
@@ -526,17 +671,46 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
               <span>{t.item}</span><span style={{ color:"#00d4aa" }}>{t.qty}</span>
             </div>
           ))}
-          {anexos.map((an,ai) => (
-            <div key={ai} style={{ marginTop:8, padding:"8px 10px", borderRadius:8, background:"rgba(175,169,236,0.06)" }}>
-              <div style={{ fontSize:11, color:"#AFA9EC", fontWeight:600, marginBottom:4 }}>Anexo {an.number} — {new Date(an.generatedAt).toLocaleDateString("es-MX")}</div>
-              {(an.items||[]).map((t,ti) => (
-                <div key={ti} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#ccc", padding:"2px 0" }}>
-                  <span>{t.item}</span><span style={{ color:"#AFA9EC" }}>{t.qty}</span>
+          {anexos.map((an,ai) => {
+            // Mismo criterio que la solicitud de la sesión: si el anexo lleva
+            // medicamento, pasa por checkup de Paola + autorización del jefe;
+            // si es solo material, únicamente por el checkup.
+            const anStatusLabel = an.hasMed
+              ? (an.authorizedBy ? "✓ Autorizado" : an.validatedBy ? "◐ Validado" : "⏳ Sin validar")
+              : (an.validatedBy ? "✓ Validado" : "⏳ Sin validar");
+            const anStatusOk = an.hasMed ? !!an.authorizedBy : !!an.validatedBy;
+            return (
+              <div key={ai} style={{ marginTop:8, padding:"8px 10px", borderRadius:8, background:"rgba(175,169,236,0.06)" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4, flexWrap:"wrap" }}>
+                  <div style={{ fontSize:11, color:"#AFA9EC", fontWeight:600, flex:1 }}>Anexo {an.number} — {new Date(an.generatedAt).toLocaleDateString("es-MX")}{an.hasMed && " 💊"}</div>
+                  <span title={an.authorizedBy ? `Autorizado por ${an.authorizedByName || ""}` : an.validatedBy ? `Validado por ${an.validatedByName || ""}${an.hasMed ? " — falta autorización del jefe" : ""}` : "Pendiente del checkup de Paola"}
+                    style={{ fontSize:10, fontWeight:600, padding:"2px 7px", borderRadius:99,
+                      background: anStatusOk ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
+                      color: anStatusOk ? "#00d4aa" : "#ffb347" }}>
+                    {anStatusLabel}
+                  </span>
+                  {canValidate && !an.validatedBy && (
+                    <button onClick={e => { e.stopPropagation(); validateAnexo(ai); }} disabled={savingAnexoAction === ai}
+                      style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:600, cursor: savingAnexoAction===ai ? "wait" : "pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+                      {savingAnexoAction===ai ? "…" : "✓ Validar"}
+                    </button>
+                  )}
+                  {an.hasMed && canAuthorize && an.validatedBy && !an.authorizedBy && (
+                    <button onClick={e => { e.stopPropagation(); authorizeAnexo(ai); }} disabled={savingAnexoAction === ai}
+                      style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:600, cursor: savingAnexoAction===ai ? "wait" : "pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                      {savingAnexoAction===ai ? "…" : "✓ Autorizar"}
+                    </button>
+                  )}
                 </div>
-              ))}
-              {an.note && <div style={{ fontSize:10, color:"#888", marginTop:4 }}>{an.note}</div>}
-            </div>
-          ))}
+                {(an.items||[]).map((t,ti) => (
+                  <div key={ti} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#ccc", padding:"2px 0" }}>
+                    <span>{t.item}</span><span style={{ color:"#AFA9EC" }}>{t.qty}</span>
+                  </div>
+                ))}
+                {an.note && <div style={{ fontSize:10, color:"#888", marginTop:4 }}>{an.note}</div>}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -731,37 +905,12 @@ export default function Insumos() {
 
   // Clasificar el consolidado general en Medicamentos vs Material (soluciones
   // + insumos), para poder imprimirlos por separado.
-  const catalogByNameGT = {};
-  MASTER_CATALOG.forEach(c => { catalogByNameGT[c.item.toUpperCase()] = c.category; });
-  const isMedItem = (itemName) => {
-    const up = itemName.toUpperCase();
-    if (up.includes("CLORURO DE SODIO") || up.includes("GLUCOSA") || up.includes("HARTMANN")) return false;
-    const cat = catalogByNameGT[up];
-    if (cat) return ["Medicamentos","Oncológicos","Inmunoterapia"].includes(cat);
-    const fuzzy = MASTER_CATALOG.find(c => up.startsWith(c.item.toUpperCase()) || c.item.toUpperCase().startsWith(up));
-    return fuzzy ? ["Medicamentos","Oncológicos","Inmunoterapia"].includes(fuzzy.category) : false;
-  };
-  const grandTotalMeds = grandTotalList.filter(t => isMedItem(t.item));
-  const grandTotalMaterial = grandTotalList.filter(t => !isMedItem(t.item));
+  const grandTotalMeds = grandTotalList.filter(t => categorizeItem(t.item) === "MEDICAMENTOS");
+  const grandTotalMaterial = grandTotalList.filter(t => categorizeItem(t.item) !== "MEDICAMENTOS");
 
   const downloadPharmacyOrder = async (s, material, note, cipiVariant, scope = "todo") => {
-    // Clasifica cada artículo en Medicamentos / Soluciones / Insumos según el catálogo maestro
-    const catalogByName = {};
-    MASTER_CATALOG.forEach(c => { catalogByName[c.item.toUpperCase()] = c.category; });
-    const categoryFor = (itemName) => {
-      const up = itemName.toUpperCase();
-      if (up.includes("CLORURO DE SODIO") || up.includes("GLUCOSA") || up.includes("HARTMANN")) return "SOLUCIONES";
-      if (catalogByName[up]) {
-        const cat = catalogByName[up];
-        return (cat === "Medicamentos" || cat === "Oncológicos" || cat === "Inmunoterapia") ? "MEDICAMENTOS" : "INSUMOS";
-      }
-      // Respaldo: si no hay coincidencia exacta, buscar por coincidencia parcial
-      const fuzzy = MASTER_CATALOG.find(c => up.startsWith(c.item.toUpperCase()) || c.item.toUpperCase().startsWith(up));
-      if (fuzzy) return (["Medicamentos","Oncológicos","Inmunoterapia"].includes(fuzzy.category)) ? "MEDICAMENTOS" : "INSUMOS";
-      return "INSUMOS";
-    };
     const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
-    material.items.forEach(t => groups[categoryFor(t.item)].push(t));
+    material.items.forEach(t => groups[categorizeItem(t.item)].push(t));
 
     // Paso 1 (medicamentos, con anticipación) vs paso 2 (material: soluciones +
     // insumos, días antes o el mismo día) vs "todo" (compatibilidad / anexos)
@@ -773,10 +922,18 @@ export default function Insumos() {
     // mismo (el guardado/la descarga ES su firma, no hace falta que dibuje
     // nada). Para material/insumos, VALIDA es el checkup de Paola -- si
     // todavía no lo hizo, se imprime "PENDIENTE VALIDACIÓN" en su lugar (el
-    // PDF nunca se bloquea por falta de validación).
+    // PDF nunca se bloquea por falta de validación). Medicamentos oncológicos
+    // llevan una firma más -- AUTORIZA, la autorización final del jefe --
+    // que solo se activa si Paola ya validó (mismo criterio que el botón
+    // "Autorizar meds": deshabilitado hasta que exista medsValidatedBy).
     const signatures = scope === "material" ? [
       { label: "SOLICITA", name: profile?.name || "" },
       { label: "VALIDA", name: s.materialValidatedByName || "", signatureUrl: s.materialValidationSignatureUrl || null, pending: !s.materialValidatedBy, pendingLabel: "PENDIENTE VALIDACIÓN" },
+      { label: "RECIBE" },
+    ] : scope === "medicamentos" ? [
+      { label: "SOLICITA", name: profile?.name || "" },
+      { label: "VALIDA", name: s.medsValidatedByName || "", signatureUrl: s.medsValidationSignatureUrl || null, pending: !s.medsValidatedBy, pendingLabel: "PENDIENTE VALIDACIÓN" },
+      { label: "AUTORIZA", name: s.medsAuthorizedByName || "", signatureUrl: s.medsAuthorizationSignatureUrl || null, pending: !s.medsAuthorizedBy, pendingLabel: "PENDIENTE AUTORIZACIÓN" },
       { label: "RECIBE" },
     ] : undefined;
 
