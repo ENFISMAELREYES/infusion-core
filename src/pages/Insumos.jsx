@@ -918,20 +918,23 @@ export default function Insumos() {
       : scope === "material" ? { MEDICAMENTOS: [], SOLUCIONES: groups.SOLUCIONES, INSUMOS: groups.INSUMOS }
       : groups;
 
-    // Firma a distancia: SOLICITA es quien está generando este PDF ahora
-    // mismo (el guardado/la descarga ES su firma, no hace falta que dibuje
-    // nada). Para material/insumos, VALIDA es el checkup de Paola -- si
-    // todavía no lo hizo, se imprime "PENDIENTE VALIDACIÓN" en su lugar (el
-    // PDF nunca se bloquea por falta de validación). Medicamentos oncológicos
-    // llevan una firma más -- AUTORIZA, la autorización final del jefe --
-    // que solo se activa si Paola ya validó (mismo criterio que el botón
-    // "Autorizar meds": deshabilitado hasta que exista medsValidatedBy).
+    // Firma a distancia: SOLICITA es quien GUARDÓ el cálculo (medsRequestedByName
+    // / materialRequestedByName, escrito por MaterialModal al guardar) -- no
+    // necesariamente quien está generando este PDF ahora mismo, ya que
+    // guardar y descargar/imprimir pueden ser acciones de personas distintas
+    // en momentos distintos. "El guardado es su firma", no la descarga. Para
+    // material/insumos, VALIDA es el checkup de Paola -- si todavía no lo
+    // hizo, se imprime "PENDIENTE VALIDACIÓN" en su lugar (el PDF nunca se
+    // bloquea por falta de validación). Medicamentos oncológicos llevan una
+    // firma más -- AUTORIZA, la autorización final del jefe -- que solo se
+    // activa si Paola ya validó (mismo criterio que el botón "Autorizar
+    // meds": deshabilitado hasta que exista medsValidatedBy).
     const signatures = scope === "material" ? [
-      { label: "SOLICITA", name: profile?.name || "" },
+      { label: "SOLICITA", name: s.materialRequestedByName || "" },
       { label: "VALIDA", name: s.materialValidatedByName || "", signatureUrl: s.materialValidationSignatureUrl || null, pending: !s.materialValidatedBy, pendingLabel: "PENDIENTE VALIDACIÓN" },
       { label: "RECIBE" },
     ] : scope === "medicamentos" ? [
-      { label: "SOLICITA", name: profile?.name || "" },
+      { label: "SOLICITA", name: s.medsRequestedByName || "" },
       { label: "VALIDA", name: s.medsValidatedByName || "", signatureUrl: s.medsValidationSignatureUrl || null, pending: !s.medsValidatedBy, pendingLabel: "PENDIENTE VALIDACIÓN" },
       { label: "AUTORIZA", name: s.medsAuthorizedByName || "", signatureUrl: s.medsAuthorizationSignatureUrl || null, pending: !s.medsAuthorizedBy, pendingLabel: "PENDIENTE AUTORIZACIÓN" },
       { label: "RECIBE" },

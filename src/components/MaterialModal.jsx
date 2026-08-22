@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { computeSessionMaterial, computeMedicationPieces, getMedicationPresentations, MASTER_CATALOG } from "../data/materialCatalog";
+import { useAuth } from "../hooks/useAuth";
 
 import { PROJECT_ID, DATABASE_ID } from "../config";
 
@@ -118,6 +119,7 @@ async function patchSession(token, sessionId, updates) {
 // Botón + modal de "Solicitar material", como unidad reutilizable. Se le pasa
 // la sesión, el token/usuario y un onRefresh (para recargar tras guardar).
 export default function MaterialModal({ session, token, user, onRefresh, compact, label }) {
+  const { profile } = useAuth();
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [catalogOverrides, setCatalogOverrides] = useState(null);
   const [excludePatientDefault, setExcludePatientDefault] = useState(!!session.excludePatientDefault);
@@ -153,6 +155,10 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
         pieceOverrides: newPieceOverrides,
         medsSolicitudGuardada: true,
         medsSolicitudGuardadaAt: new Date().toISOString(),
+        // SOLICITA es quien guarda el cálculo, no quien después descarga el
+        // PDF -- "el guardado es su firma" (pueden ser personas distintas si
+        // alguien más vuelve a generar el documento después).
+        medsRequestedBy: user?.uid || "", medsRequestedByName: profile?.name || "",
         // Cualquier edición invalida el filtro de Paola y tu autorización ya
         // hechos -- el contenido cambió, hay que volver a revisarlo.
         medsValidatedBy: null, medsValidatedByName: null, medsValidatedAt: null, medsValidationSignatureUrl: null,
@@ -181,6 +187,9 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
         equipoChoice: newEquipoChoice || null,
         materialSolicitudGuardada: true,
         materialSolicitudGuardadaAt: new Date().toISOString(),
+        // SOLICITA es quien guarda el cálculo, no quien después descarga el
+        // PDF -- mismo criterio que medicamentos.
+        materialRequestedBy: user?.uid || "", materialRequestedByName: profile?.name || "",
         // Cualquier edición del material invalida un checkup ya hecho -- si
         // Paola ya lo había revisado, tiene que volver a revisarlo porque el
         // contenido cambió.
