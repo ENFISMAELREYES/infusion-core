@@ -784,10 +784,20 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
             )}
             {anexoItems.length > 0 && (
               <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                {/* La cantidad queda editable aquí -- antes se fijaba solo al
+                    momento de dar clic en la sugerencia del catálogo (con lo
+                    que hubiera en el campo "cantidad" en ESE instante) y ya
+                    no se podía corregir después, solo quitar y volver a
+                    agregar. Si alguien daba clic en la sugerencia antes de
+                    cambiar la cantidad (el catálogo aparece apenas se
+                    escriben 2 letras), quedaba en 1 sin darse cuenta hasta
+                    ver el PDF. */}
                 {anexoItems.map((it,i) => (
                   <div key={i} style={{ display:"flex", alignItems:"center", gap:6 }}>
                     <span style={{ flex:1, fontSize:11, color:"#ccc" }}>{it.item}</span>
-                    <span style={{ fontSize:11, color:"#ffb347" }}>{it.qty}</span>
+                    <input type="number" min="1" value={it.qty}
+                      onChange={e => setAnexoItems(prev => prev.map((p,pi) => pi===i ? { ...p, qty: parseInt(e.target.value) || 1 } : p))}
+                      style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#ffb347", fontSize:11, outline:"none", textAlign:"center" }} />
                     <button onClick={() => setAnexoItems(prev => prev.filter((_,pi)=>pi!==i))} style={{ padding:"2px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
                   </div>
                 ))}
