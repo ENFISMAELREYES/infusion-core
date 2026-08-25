@@ -313,6 +313,10 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
 
       const newAnexos = [...anexos, { number: anexoNumber, items: anexoItems, note: anexoNote, generatedAt: new Date().toISOString(),
         hasMed: anexoHasMed,
+        // Se guarda quién lo solicitó -- se usa como firmante SOLICITA al
+        // reimprimir después (mismo criterio que medicamentos/material: es
+        // quien lo generó/guardó, no necesariamente quien reimprime).
+        requestedBy: user?.uid || "", requestedByName: profile?.name || "",
         validatedBy: null, validatedByName: null, validatedAt: null, validationSignatureUrl: null,
         authorizedBy: null, authorizedByName: null, authorizedAt: null, authorizationSignatureUrl: null,
       }];
@@ -366,6 +370,43 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       alert("Error al generar el anexo: " + e.message);
     } finally {
       setSavingAnexo(false);
+    }
+  };
+
+  const [reprintingAnexo, setReprintingAnexo] = useState(null); // índice del anexo que se está reimprimiendo, o null
+  // Reimprime el PDF de un anexo ya generado -- no guarda nada nuevo, solo
+  // vuelve a construirlo con el estado de firma ACTUAL (a diferencia del PDF
+  // original, que salió con VALIDA/AUTORIZA pendientes porque se imprime en
+  // el mismo instante en que se crea el anexo, antes de que exista tiempo de
+  // revisarlo).
+  const reprintAnexo = async (an) => {
+    setReprintingAnexo(an.number);
+    try {
+      const items = an.items || [];
+      const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
+      items.forEach(it => groups[categorizeItem(it.item)].push(it));
+      const signatures = [
+        { label: "SOLICITA", name: an.requestedByName || "" },
+        { label: "VALIDA", name: an.validatedByName || "", signatureUrl: an.validationSignatureUrl || null, pending: !an.validatedBy, pendingLabel: "PENDIENTE VALIDACIÓN" },
+        ...(an.hasMed ? [{ label: "AUTORIZA", name: an.authorizedByName || "", signatureUrl: an.authorizationSignatureUrl || null, pending: !an.authorizedBy, pendingLabel: "PENDIENTE AUTORIZACIÓN" }] : []),
+        { label: "RECIBE" },
+      ];
+      const res = await fetch("/api/generate-material-order", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          center: s.center, cipiVariant, patientName: s.patientName, cycle: s.cycle, date: s.date,
+          groups, note: an.note, anexoNumber: an.number, signatures,
+        }),
+      });
+      if (!res.ok) throw new Error(`Error ${res.status} al reimprimir el anexo`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      alert("Error al reimprimir el anexo: " + e.message);
+    } finally {
+      setReprintingAnexo(null);
     }
   };
 
@@ -701,6 +742,11 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                       {savingAnexoAction===ai ? "…" : "✓ Autorizar"}
                     </button>
                   )}
+                  <button onClick={e => { e.stopPropagation(); reprintAnexo(an); }} disabled={reprintingAnexo === an.number}
+                    title="Volver a generar el PDF de este anexo -- útil para obtener una copia con las firmas ya al día"
+                    style={{ padding:"2px 8px", borderRadius:6, fontSize:10, fontWeight:600, cursor: reprintingAnexo===an.number ? "wait" : "pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                    {reprintingAnexo===an.number ? "…" : "🖨️ Reimprimir"}
+                  </button>
                 </div>
                 {(an.items||[]).map((t,ti) => (
                   <div key={ti} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#ccc", padding:"2px 0" }}>
