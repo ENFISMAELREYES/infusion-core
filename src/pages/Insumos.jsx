@@ -416,8 +416,18 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     await downloadPharmacyOrder(s, combinedMaterial, note, cipiVariant, "todo");
   };
 
+  // Este botón solo está habilitado mientras !s.inventorySalidaDone -- por
+  // eso es seguro incluir aquí los anexos ya generados: ningún anexo pudo
+  // haberse descontado todavía por separado (eso solo pasa en generateAnexo
+  // cuando inventorySalidaDone YA es true). Antes solo se tomaba
+  // material.items, así que un anexo capturado con el retiro aún abierto se
+  // quedaba sin descontar para siempre -- no se restaba aquí, y tampoco se
+  // restaba solo (esa rama requiere inventorySalidaDone=true).
   const openInvModal = () => {
-    setInvItems(material.items.map(it => ({ ...it })));
+    const anexoItemsFlat = anexos.flatMap(a => a.items || []);
+    const combined = {};
+    [...material.items, ...anexoItemsFlat].forEach(({ item, qty }) => { combined[item] = (combined[item] || 0) + qty; });
+    setInvItems(Object.entries(combined).map(([item, qty]) => ({ item, qty })));
     setShowInvModal(true);
   };
   const setInvQty = (idx, qty) => setInvItems(prev => prev.map((it,i) => i===idx ? { ...it, qty: Math.max(0, qty) } : it));
