@@ -157,8 +157,12 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
         medsSolicitudGuardadaAt: new Date().toISOString(),
         // SOLICITA es quien guarda el cálculo, no quien después descarga el
         // PDF -- "el guardado es su firma" (pueden ser personas distintas si
-        // alguien más vuelve a generar el documento después).
+        // alguien más vuelve a generar el documento después). Se congela
+        // también la firma en archivo que tuviera en ESTE momento (si ya
+        // capturó "Mi firma") -- igual que VALIDA/AUTORIZA, para que un
+        // cambio de firma posterior no altere retroactivamente este PDF.
         medsRequestedBy: user?.uid || "", medsRequestedByName: profile?.name || "",
+        medsRequestedBySignatureUrl: profile?.signatureUrl || null,
         // Cualquier edición invalida el filtro de Paola y tu autorización ya
         // hechos -- el contenido cambió, hay que volver a revisarlo.
         medsValidatedBy: null, medsValidatedByName: null, medsValidatedAt: null, medsValidationSignatureUrl: null,
@@ -188,8 +192,10 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
         materialSolicitudGuardada: true,
         materialSolicitudGuardadaAt: new Date().toISOString(),
         // SOLICITA es quien guarda el cálculo, no quien después descarga el
-        // PDF -- mismo criterio que medicamentos.
+        // PDF -- mismo criterio que medicamentos, incluyendo la firma
+        // congelada en este momento.
         materialRequestedBy: user?.uid || "", materialRequestedByName: profile?.name || "",
+        materialRequestedBySignatureUrl: profile?.signatureUrl || null,
         // Cualquier edición del material invalida un checkup ya hecho -- si
         // Paola ya lo había revisado, tiene que volver a revisarlo porque el
         // contenido cambió.
