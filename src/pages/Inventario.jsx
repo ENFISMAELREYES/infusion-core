@@ -125,6 +125,7 @@ export default function Inventario() {
   const [invoiceFolio, setInvoiceFolio] = useState(""); // folio fiscal opcional, para relacionar con una factura
   const [transferTo, setTransferTo] = useState(""); // almacén destino, solo para transferencias
   const [purchaseConcept, setPurchaseConcept] = useState(""); // concepto manual para solicitud de compra
+  const [purchaseNote, setPurchaseNote] = useState(""); // nota opcional (ej. motivo del pedido, instrucciones para el proveedor)
   const [saving, setSaving] = useState(false);
   const [xmlReview, setXmlReview] = useState(null); // [{descripcion, cantidad, matchedItem}] mientras se revisa antes de agregar
   const [xmlReceptor, setXmlReceptor] = useState(""); // nombre del receptor en la factura, para confirmar que corresponde al almacén
@@ -536,7 +537,7 @@ export default function Inventario() {
       ];
       const res = await fetch("/api/generate-material-order", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ center: centerForPdf, cipiVariant: cipiVariantForPdf, concepto: purchaseConcept, groups, signatures }),
+        body: JSON.stringify({ center: centerForPdf, cipiVariant: cipiVariantForPdf, concepto: purchaseConcept, groups, signatures, note: purchaseNote.trim() }),
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
       const blob = await res.blob();
@@ -548,6 +549,7 @@ export default function Inventario() {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ fields: {
           warehouse: { stringValue: warehouse }, concepto: { stringValue: purchaseConcept },
+          note: { stringValue: purchaseNote.trim() },
           items: toFV(moveList.map(({ item, qty }) => ({ item, qty }))),
           status: { stringValue: "pendiente" },
           requestedBy: { stringValue: user?.uid || "" }, requestedByName: { stringValue: profile?.name || "" },
@@ -565,7 +567,7 @@ export default function Inventario() {
       // (ya se entregó/imprimió) -- solo se pierde el seguimiento en la
       // pestaña de solicitudes, que la persona puede volver a intentar.
 
-      setShowMoveModal(null); setMoveList([]); setPurchaseConcept("");
+      setShowMoveModal(null); setMoveList([]); setPurchaseConcept(""); setPurchaseNote("");
     } catch (e) {
       alert("Error al generar la solicitud de compra: " + e.message);
     } finally {
@@ -803,7 +805,7 @@ export default function Inventario() {
                 🔄 Transferir a {warehouse === "QUAL_CITIO" ? "Qual CIPI" : "Qual CITIO"}
               </button>
             )}
-            <button onClick={() => { setShowMoveModal("compra"); setMoveList([]); setPurchaseConcept(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.3)", color:"#ffb347" }}>
+            <button onClick={() => { setShowMoveModal("compra"); setMoveList([]); setPurchaseConcept(""); setPurchaseNote(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.3)", color:"#ffb347" }}>
               🧾 Solicitud de compra
             </button>
             {suggestedReorders.length > 0 && (
@@ -811,6 +813,7 @@ export default function Inventario() {
                   setShowMoveModal("compra");
                   setMoveList(suggestedReorders.map(i => ({ item: i.item, qty: reorderInfo(i).suggestQty })));
                   setPurchaseConcept(`Reabastecimiento sugerido ${new Date().toLocaleDateString("es-MX")}`);
+                  setPurchaseNote("");
                 }}
                 style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.3)", color:"#ff6b6b" }}>
                 🛒 Solicitar sugeridos ({suggestedReorders.length})
@@ -947,6 +950,7 @@ export default function Inventario() {
                 <div onClick={() => setExpandedPO(isOpen ? null : po.id)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
                   <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600, minWidth:160 }}>{po.concepto}</span>
                   <span style={{ fontSize:11, color:"#666" }}>{poItems.length} artículo{poItems.length!==1?"s":""}</span>
+                  {po.note && <span title={po.note} style={{ fontSize:11, color:"#4fc3f7" }}>📝</span>}
                   <span style={{ fontSize:11, color:"#555" }}>{po.requestedByName || ""}{po.requestedAt ? " · " + new Date(po.requestedAt).toLocaleDateString("es-MX") : ""}</span>
                   <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99, background: received ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.05)", color: received ? "#00d4aa" : "#888" }}>
                     {received ? "✓ Recibida" : "⏳ Pendiente"}
@@ -961,6 +965,9 @@ export default function Inventario() {
                 </div>
                 {isOpen && (
                   <div style={{ padding:"0 16px 14px", display:"flex", flexDirection:"column", gap:4 }}>
+                    {po.note && (
+                      <div style={{ fontSize:11, color:"#4fc3f7", marginBottom:6, padding:"6px 8px", background:"rgba(79,195,247,0.06)", borderRadius:6 }}>📝 {po.note}</div>
+                    )}
                     {poItems.map((t,ti) => (
                       <div key={ti} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#aaa", padding:"3px 0" }}>
                         <span>{t.item}</span><span style={{ color:"#00d4aa" }}>{t.qty}</span>
@@ -1083,6 +1090,9 @@ export default function Inventario() {
               <div>
                 <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Concepto de la solicitud</label>
                 <input placeholder="Ej. Reabastecimiento de insumos generales" value={purchaseConcept} onChange={e => setPurchaseConcept(e.target.value)} style={inputStyle} />
+                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", margin:"10px 0 4px" }}>Nota (opcional)</label>
+                <textarea placeholder="Ej. motivo del pedido, instrucciones para el proveedor..." value={purchaseNote} onChange={e => setPurchaseNote(e.target.value)}
+                  rows={2} style={{ ...inputStyle, resize:"vertical" }} />
                 <div style={{ fontSize:10, color:"#666", marginTop:4 }}>Este documento solo genera el PDF para pedirlo a QualMedical -- no descuenta ni suma nada al inventario. La entrada real se registra aparte cuando llegue la mercancía.</div>
               </div>
             )}
