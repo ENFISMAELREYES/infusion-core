@@ -529,7 +529,7 @@ export default function Inventario() {
       // Recién creada, nunca pudo haberse validado/autorizado antes -- igual
       // que un anexo nuevo, ambas firmas salen pendientes en este primer PDF.
       const signatures = [
-        { label: "SOLICITA", name: profile?.name || "" },
+        { label: "SOLICITA", name: profile?.name || "", signatureUrl: profile?.signatureUrl || null },
         { label: "VALIDA", pending: true, pendingLabel: "PENDIENTE VALIDACIÓN" },
         { label: "AUTORIZA", pending: true, pendingLabel: "PENDIENTE AUTORIZACIÓN" },
         { label: "RECIBE" },
@@ -551,6 +551,7 @@ export default function Inventario() {
           items: toFV(moveList.map(({ item, qty }) => ({ item, qty }))),
           status: { stringValue: "pendiente" },
           requestedBy: { stringValue: user?.uid || "" }, requestedByName: { stringValue: profile?.name || "" },
+          requestedBySignatureUrl: profile?.signatureUrl ? { stringValue: profile.signatureUrl } : { nullValue: null },
           requestedAt: { stringValue: new Date().toISOString() },
           validatedBy: { nullValue: null }, validatedByName: { nullValue: null }, validatedAt: { nullValue: null }, validationSignatureUrl: { nullValue: null },
           authorizedBy: { nullValue: null }, authorizedByName: { nullValue: null }, authorizedAt: { nullValue: null }, authorizationSignatureUrl: { nullValue: null },

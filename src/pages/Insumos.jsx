@@ -292,7 +292,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       // firmas salen pendientes en este primer PDF; queda el registro en el
       // anexo (validatedBy/authorizedBy) para cuando se revise después.
       const anexoSignatures = [
-        { label: "SOLICITA", name: profile?.name || "" },
+        { label: "SOLICITA", name: profile?.name || "", signatureUrl: profile?.signatureUrl || null },
         { label: "VALIDA", pending: true, pendingLabel: "PENDIENTE VALIDACIÓN" },
         ...(anexoHasMed ? [{ label: "AUTORIZA", pending: true, pendingLabel: "PENDIENTE AUTORIZACIÓN" }] : []),
         { label: "RECIBE" },
@@ -315,8 +315,10 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         hasMed: anexoHasMed,
         // Se guarda quién lo solicitó -- se usa como firmante SOLICITA al
         // reimprimir después (mismo criterio que medicamentos/material: es
-        // quien lo generó/guardó, no necesariamente quien reimprime).
+        // quien lo generó/guardó, no necesariamente quien reimprime). Se
+        // congela también su firma en archivo de ese momento.
         requestedBy: user?.uid || "", requestedByName: profile?.name || "",
+        requestedBySignatureUrl: profile?.signatureUrl || null,
         validatedBy: null, validatedByName: null, validatedAt: null, validationSignatureUrl: null,
         authorizedBy: null, authorizedByName: null, authorizedAt: null, authorizationSignatureUrl: null,
       }];
@@ -386,7 +388,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
       items.forEach(it => groups[categorizeItem(it.item)].push(it));
       const signatures = [
-        { label: "SOLICITA", name: an.requestedByName || "" },
+        { label: "SOLICITA", name: an.requestedByName || "", signatureUrl: an.requestedBySignatureUrl || null },
         { label: "VALIDA", name: an.validatedByName || "", signatureUrl: an.validationSignatureUrl || null, pending: !an.validatedBy, pendingLabel: "PENDIENTE VALIDACIÓN" },
         ...(an.hasMed ? [{ label: "AUTORIZA", name: an.authorizedByName || "", signatureUrl: an.authorizationSignatureUrl || null, pending: !an.authorizedBy, pendingLabel: "PENDIENTE AUTORIZACIÓN" }] : []),
         { label: "RECIBE" },
@@ -996,11 +998,11 @@ export default function Insumos() {
     // activa si Paola ya validó (mismo criterio que el botón "Autorizar
     // meds": deshabilitado hasta que exista medsValidatedBy).
     const signatures = scope === "material" ? [
-      { label: "SOLICITA", name: s.materialRequestedByName || "" },
+      { label: "SOLICITA", name: s.materialRequestedByName || "", signatureUrl: s.materialRequestedBySignatureUrl || null },
       { label: "VALIDA", name: s.materialValidatedByName || "", signatureUrl: s.materialValidationSignatureUrl || null, pending: !s.materialValidatedBy, pendingLabel: "PENDIENTE VALIDACIÓN" },
       { label: "RECIBE" },
     ] : scope === "medicamentos" ? [
-      { label: "SOLICITA", name: s.medsRequestedByName || "" },
+      { label: "SOLICITA", name: s.medsRequestedByName || "", signatureUrl: s.medsRequestedBySignatureUrl || null },
       { label: "VALIDA", name: s.medsValidatedByName || "", signatureUrl: s.medsValidationSignatureUrl || null, pending: !s.medsValidatedBy, pendingLabel: "PENDIENTE VALIDACIÓN" },
       { label: "AUTORIZA", name: s.medsAuthorizedByName || "", signatureUrl: s.medsAuthorizationSignatureUrl || null, pending: !s.medsAuthorizedBy, pendingLabel: "PENDIENTE AUTORIZACIÓN" },
       { label: "RECIBE" },
