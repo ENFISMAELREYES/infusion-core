@@ -126,6 +126,7 @@ export default function Inventario() {
   const [transferTo, setTransferTo] = useState(""); // almacén destino, solo para transferencias
   const [purchaseConcept, setPurchaseConcept] = useState(""); // concepto manual para solicitud de compra
   const [purchaseNote, setPurchaseNote] = useState(""); // nota opcional (ej. motivo del pedido, instrucciones para el proveedor)
+  const [editingPO, setEditingPO] = useState(null); // solicitud de compra que se está corrigiendo, o null si es una nueva
   const [saving, setSaving] = useState(false);
   const [xmlReview, setXmlReview] = useState(null); // [{descripcion, cantidad, matchedItem}] mientras se revisa antes de agregar
   const [xmlReceptor, setXmlReceptor] = useState(""); // nombre del receptor en la factura, para confirmar que corresponde al almacén
@@ -513,6 +514,12 @@ export default function Inventario() {
   // medicamentos, siempre lleva la cadena completa -- aquí no aplica la
   // excepción de "solo checkup de Paola" que sí tiene el material por
   // paciente, porque una compra siempre compromete dinero/reabasto.
+  //
+  // editingPO (null al crear una nueva, o el objeto de la solicitud que se
+  // está corrigiendo) decide si esto crea un documento nuevo o actualiza uno
+  // existente. Editar invalida la validación/autorización ya hecha -- el
+  // contenido cambió, hay que volver a revisarlo -- por lo que el PDF sale
+  // de nuevo con VALIDA/AUTORIZA pendientes, igual que la primera vez.
   const generatePurchaseOrder = async () => {
     if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
     if (!purchaseConcept.trim()) { alert("Escribe el concepto de la solicitud."); return; }
@@ -527,8 +534,9 @@ export default function Inventario() {
       });
       const centerForPdf = warehouse.includes("CIPI") ? "CIPI" : "CITIO";
       const cipiVariantForPdf = warehouse === "QUAL_CIPI" || warehouse === "CIPI_PED" ? "PED" : "PRO";
-      // Recién creada, nunca pudo haberse validado/autorizado antes -- igual
-      // que un anexo nuevo, ambas firmas salen pendientes en este primer PDF.
+      // Recién creada (o recién editada), nunca pudo haberse validado/
+      // autorizado antes -- igual que un anexo nuevo, ambas firmas salen
+      // pendientes en este PDF.
       const signatures = [
         { label: "SOLICITA", name: profile?.name || "", signatureUrl: profile?.signatureUrl || null },
         { label: "VALIDA", pending: true, pendingLabel: "PENDIENTE VALIDACIÓN" },
@@ -545,29 +553,50 @@ export default function Inventario() {
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 60000);
 
-      const poRes = await fetch(`${FIRESTORE_BASE_URL}/purchase_orders`, {
-        method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ fields: {
-          warehouse: { stringValue: warehouse }, concepto: { stringValue: purchaseConcept },
+      const itemsFv = toFV(moveList.map(({ item, qty }) => ({ item, qty })));
+      if (editingPO) {
+        const changedFields = {
+          concepto: { stringValue: purchaseConcept },
           note: { stringValue: purchaseNote.trim() },
-          items: toFV(moveList.map(({ item, qty }) => ({ item, qty }))),
-          status: { stringValue: "pendiente" },
-          requestedBy: { stringValue: user?.uid || "" }, requestedByName: { stringValue: profile?.name || "" },
-          requestedBySignatureUrl: profile?.signatureUrl ? { stringValue: profile.signatureUrl } : { nullValue: null },
-          requestedAt: { stringValue: new Date().toISOString() },
+          items: itemsFv,
           validatedBy: { nullValue: null }, validatedByName: { nullValue: null }, validatedAt: { nullValue: null }, validationSignatureUrl: { nullValue: null },
           authorizedBy: { nullValue: null }, authorizedByName: { nullValue: null }, authorizedAt: { nullValue: null }, authorizationSignatureUrl: { nullValue: null },
-        }}),
-      });
-      if (poRes.ok) {
-        const doc = await poRes.json();
-        setPurchaseOrders(prev => [parseDoc(doc), ...prev]);
+        };
+        const mask = Object.keys(changedFields).map(k => `updateMask.fieldPaths=${k}`).join("&");
+        const poRes = await fetch(`${FIRESTORE_BASE_URL}/purchase_orders/${editingPO.id}?${mask}`,
+          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields: changedFields }) });
+        if (poRes.ok) {
+          setPurchaseOrders(prev => prev.map(p => p.id === editingPO.id ? { ...p,
+            concepto: purchaseConcept, note: purchaseNote.trim(), items: moveList.map(({ item, qty }) => ({ item, qty })),
+            validatedBy: null, validatedByName: null, validatedAt: null, validationSignatureUrl: null,
+            authorizedBy: null, authorizedByName: null, authorizedAt: null, authorizationSignatureUrl: null,
+          } : p));
+        }
+      } else {
+        const poRes = await fetch(`${FIRESTORE_BASE_URL}/purchase_orders`, {
+          method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            warehouse: { stringValue: warehouse }, concepto: { stringValue: purchaseConcept },
+            note: { stringValue: purchaseNote.trim() },
+            items: itemsFv,
+            status: { stringValue: "pendiente" },
+            requestedBy: { stringValue: user?.uid || "" }, requestedByName: { stringValue: profile?.name || "" },
+            requestedBySignatureUrl: profile?.signatureUrl ? { stringValue: profile.signatureUrl } : { nullValue: null },
+            requestedAt: { stringValue: new Date().toISOString() },
+            validatedBy: { nullValue: null }, validatedByName: { nullValue: null }, validatedAt: { nullValue: null }, validationSignatureUrl: { nullValue: null },
+            authorizedBy: { nullValue: null }, authorizedByName: { nullValue: null }, authorizedAt: { nullValue: null }, authorizationSignatureUrl: { nullValue: null },
+          }}),
+        });
+        if (poRes.ok) {
+          const doc = await poRes.json();
+          setPurchaseOrders(prev => [parseDoc(doc), ...prev]);
+        }
       }
       // Si falla el guardado del rastreo, no se revierte el PDF ya generado
       // (ya se entregó/imprimió) -- solo se pierde el seguimiento en la
       // pestaña de solicitudes, que la persona puede volver a intentar.
 
-      setShowMoveModal(null); setMoveList([]); setPurchaseConcept(""); setPurchaseNote("");
+      setShowMoveModal(null); setMoveList([]); setPurchaseConcept(""); setPurchaseNote(""); setEditingPO(null);
     } catch (e) {
       alert("Error al generar la solicitud de compra: " + e.message);
     } finally {
@@ -805,7 +834,7 @@ export default function Inventario() {
                 🔄 Transferir a {warehouse === "QUAL_CITIO" ? "Qual CIPI" : "Qual CITIO"}
               </button>
             )}
-            <button onClick={() => { setShowMoveModal("compra"); setMoveList([]); setPurchaseConcept(""); setPurchaseNote(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.3)", color:"#ffb347" }}>
+            <button onClick={() => { setShowMoveModal("compra"); setMoveList([]); setPurchaseConcept(""); setPurchaseNote(""); setEditingPO(null); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.3)", color:"#ffb347" }}>
               🧾 Solicitud de compra
             </button>
             {suggestedReorders.length > 0 && (
@@ -813,7 +842,7 @@ export default function Inventario() {
                   setShowMoveModal("compra");
                   setMoveList(suggestedReorders.map(i => ({ item: i.item, qty: reorderInfo(i).suggestQty })));
                   setPurchaseConcept(`Reabastecimiento sugerido ${new Date().toLocaleDateString("es-MX")}`);
-                  setPurchaseNote("");
+                  setPurchaseNote(""); setEditingPO(null);
                 }}
                 style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.3)", color:"#ff6b6b" }}>
                 🛒 Solicitar sugeridos ({suggestedReorders.length})
@@ -993,6 +1022,18 @@ export default function Inventario() {
                           {savingPOAction===po.id ? "Guardando…" : "✓ Marcar recibida"}
                         </button>
                       )}
+                      <button onClick={e => {
+                          e.stopPropagation();
+                          setEditingPO(po);
+                          setMoveList(poItems.map(({ item, qty }) => ({ item, qty })));
+                          setPurchaseConcept(po.concepto || "");
+                          setPurchaseNote(po.note || "");
+                          setShowMoveModal("compra");
+                        }}
+                        title="Corregir concepto, nota o artículos -- vuelve a generar el PDF y reinicia la validación/autorización"
+                        style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>
+                        ✏️ Editar
+                      </button>
                     </div>
                   </div>
                 )}
@@ -1079,11 +1120,11 @@ export default function Inventario() {
       })()}
 
       {showMoveModal && (
-        <div onClick={() => !saving && (setShowMoveModal(null), setXmlReview(null), setXmlReceptor(""))}
+        <div onClick={() => !saving && (setShowMoveModal(null), setXmlReview(null), setXmlReceptor(""), setEditingPO(null))}
           style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:460, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
             <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>
-              {showMoveModal === "entrada" ? "↓ Registrar entrada" : showMoveModal === "salida" ? "↑ Registrar salida" : showMoveModal === "compra" ? "🧾 Solicitud de compra" : "🔄 Transferir"} — {warehouseLabel(warehouse)}
+              {showMoveModal === "entrada" ? "↓ Registrar entrada" : showMoveModal === "salida" ? "↑ Registrar salida" : showMoveModal === "compra" ? (editingPO ? "✏️ Editar solicitud de compra" : "🧾 Solicitud de compra") : "🔄 Transferir"} — {warehouseLabel(warehouse)}
             </div>
 
             {showMoveModal === "compra" && (
@@ -1199,14 +1240,14 @@ export default function Inventario() {
             </div>
 
             <div style={{ display:"flex", gap:8 }}>
-              <button onClick={() => setShowMoveModal(null)} disabled={saving} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, cursor: saving ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+              <button onClick={() => { setShowMoveModal(null); setEditingPO(null); }} disabled={saving} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, cursor: saving ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                 Cancelar
               </button>
               <button onClick={showMoveModal === "transferencia" ? registerTransfer : showMoveModal === "compra" ? generatePurchaseOrder : registerMovement}
                 disabled={saving || moveList.length===0 || (showMoveModal === "transferencia" && !transferTo) || (showMoveModal === "compra" && !purchaseConcept.trim())}
                 style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (saving || moveList.length===0) ? "not-allowed" : "pointer",
                 background: showMoveModal === "entrada" ? "linear-gradient(135deg,#00d4aa,#0F6E56)" : showMoveModal === "transferencia" ? "linear-gradient(135deg,#AFA9EC,#8B7FD8)" : showMoveModal === "compra" ? "linear-gradient(135deg,#ffb347,#e08e2a)" : "linear-gradient(135deg,#ff6b6b,#c94848)", border:"none", color: showMoveModal === "compra" ? "#000" : "#fff", opacity: (saving || moveList.length===0) ? 0.5 : 1 }}>
-                {saving ? (showMoveModal === "compra" ? "Generando…" : "Guardando…") : `✓ ${showMoveModal === "transferencia" ? "Transferir" : showMoveModal === "compra" ? "Generar PDF" : "Guardar"} (${moveList.length} artículo${moveList.length!==1?"s":""})`}
+                {saving ? (showMoveModal === "compra" ? "Generando…" : "Guardando…") : `✓ ${showMoveModal === "transferencia" ? "Transferir" : showMoveModal === "compra" ? (editingPO ? "Guardar cambios" : "Generar PDF") : "Guardar"} (${moveList.length} artículo${moveList.length!==1?"s":""})`}
               </button>
             </div>
           </div>
