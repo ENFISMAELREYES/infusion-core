@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { computeSessionMaterial, computeMedicationPieces, getMedicationPresentations, MASTER_CATALOG } from "../data/materialCatalog";
+import { useAuth } from "../hooks/useAuth";
 
 import { PROJECT_ID, DATABASE_ID } from "../config";
 
@@ -118,6 +119,7 @@ async function patchSession(token, sessionId, updates) {
 // Botón + modal de "Solicitar material", como unidad reutilizable. Se le pasa
 // la sesión, el token/usuario y un onRefresh (para recargar tras guardar).
 export default function MaterialModal({ session, token, user, onRefresh, compact, label }) {
+  const { profile } = useAuth();
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [catalogOverrides, setCatalogOverrides] = useState(null);
   const [excludePatientDefault, setExcludePatientDefault] = useState(!!session.excludePatientDefault);
@@ -137,8 +139,40 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
   const [pieceOverrides, setPieceOverrides] = useState(session.pieceOverrides || {});
   const [materialNote, setMaterialNote] = useState(session.materialNote || "");
   const [savingMaterial, setSavingMaterial] = useState(false);
+  const [savingMeds, setSavingMeds] = useState(false);
 
-  const saveMaterialRequest = async (newCatheterType, newCatheterGauge, newExtraItems, newExcludedItems, newExcludePatientDefault, newQtyOverrides, newPieceOverrides, newNote, newEquipoChoice) => {
+  // Medicamentos e insumos/soluciones se guardan por separado -- antes un
+  // solo "Guardar solicitud" mezclaba ambas categorías, así que no había
+  // forma de que el checkup de Paola o tu autorización aplicaran solo a
+  // medicamentos sin afectar (o ignorar) los insumos, y viceversa. El
+  // cálculo se sigue viendo junto en esta misma pantalla -- solo el
+  // guardado quedó separado.
+  const saveMedsRequest = async (newPieceOverrides) => {
+    setSavingMeds(true);
+    try {
+      const freshToken = await user.getIdToken(true);
+      await patchSession(freshToken, session.id, {
+        pieceOverrides: newPieceOverrides,
+        medsSolicitudGuardada: true,
+        medsSolicitudGuardadaAt: new Date().toISOString(),
+        // SOLICITA es quien guarda el cálculo, no quien después descarga el
+        // PDF -- "el guardado es su firma" (pueden ser personas distintas si
+        // alguien más vuelve a generar el documento después).
+        medsRequestedBy: user?.uid || "", medsRequestedByName: profile?.name || "",
+        // Cualquier edición invalida el filtro de Paola y tu autorización ya
+        // hechos -- el contenido cambió, hay que volver a revisarlo.
+        medsValidatedBy: null, medsValidatedByName: null, medsValidatedAt: null, medsValidationSignatureUrl: null,
+        medsAuthorizedBy: null, medsAuthorizedByName: null, medsAuthorizedAt: null, medsAuthorizationSignatureUrl: null,
+      });
+      await onRefresh();
+    } catch(e) {
+      alert("Error al guardar los medicamentos: " + e.message);
+    } finally {
+      setSavingMeds(false);
+    }
+  };
+
+  const saveMaterialRequest = async (newCatheterType, newCatheterGauge, newExtraItems, newExcludedItems, newExcludePatientDefault, newQtyOverrides, newNote, newEquipoChoice) => {
     setSavingMaterial(true);
     try {
       const freshToken = await user.getIdToken(true);
@@ -149,11 +183,20 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
         excludedMaterial: newExcludedItems,
         excludePatientDefault: !!newExcludePatientDefault,
         qtyOverrides: newQtyOverrides,
-        pieceOverrides: newPieceOverrides,
         materialNote: newNote || "",
         equipoChoice: newEquipoChoice || null,
         materialSolicitudGuardada: true,
         materialSolicitudGuardadaAt: new Date().toISOString(),
+        // SOLICITA es quien guarda el cálculo, no quien después descarga el
+        // PDF -- mismo criterio que medicamentos.
+        materialRequestedBy: user?.uid || "", materialRequestedByName: profile?.name || "",
+        // Cualquier edición del material invalida un checkup ya hecho -- si
+        // Paola ya lo había revisado, tiene que volver a revisarlo porque el
+        // contenido cambió.
+        materialValidatedBy: null,
+        materialValidatedByName: null,
+        materialValidatedAt: null,
+        materialValidationSignatureUrl: null,
       });
       await onRefresh();
     } catch(e) {
@@ -412,16 +455,21 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
               </div>
 
               <div style={{ display:"flex", gap:8 }}>
-                <button onClick={() => setShowMaterialModal(false)} disabled={savingMaterial}
-                  style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingMaterial ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
-                  Cancelar
+                <button onClick={async () => await saveMedsRequest(pieceOverrides)} disabled={savingMeds || session.inventorySalidaDone}
+                  title={session.inventorySalidaDone ? "Ya se dio de baja el inventario de esta sesión -- si necesitas agregar algo, usa Anexar en Insumos" : "Guarda solo las piezas de medicamento -- activa el filtro de Paola y, si aplica, tu autorización"}
+                  style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (savingMeds || session.inventorySalidaDone) ? "not-allowed" : "pointer", background: session.inventorySalidaDone ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#5DCAA5,#2f8f74)", border:"none", color: session.inventorySalidaDone ? "#666" : "#fff", opacity: savingMeds ? 0.6 : 1 }}>
+                  {savingMeds ? "Guardando…" : session.medsSolicitudGuardada ? "✓ Medicamentos guardados" : "✓ Guardar medicamentos"}
                 </button>
-                <button onClick={async () => { await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault, qtyOverrides, pieceOverrides, materialNote, equipoChoice); setShowMaterialModal(false); }} disabled={savingMaterial || session.inventorySalidaDone}
-                  title={session.inventorySalidaDone ? "Ya se dio de baja el inventario de esta sesión -- si necesitas agregar algo, usa Anexar en Insumos" : undefined}
-                  style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (savingMaterial || session.inventorySalidaDone) ? "not-allowed" : "pointer", background: session.inventorySalidaDone ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color: session.inventorySalidaDone ? "#666" : "#fff", opacity: savingMaterial ? 0.6 : 1 }}>
-                  {savingMaterial ? "Guardando…" : session.inventorySalidaDone ? "🔒 Ya se dio de baja el inventario" : "✓ Guardar solicitud"}
+                <button onClick={async () => await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault, qtyOverrides, materialNote, equipoChoice)} disabled={savingMaterial || session.inventorySalidaDone}
+                  title={session.inventorySalidaDone ? "Ya se dio de baja el inventario de esta sesión -- si necesitas agregar algo, usa Anexar en Insumos" : "Guarda catéter/equipo/insumos/soluciones -- activa el checkup de Paola"}
+                  style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (savingMaterial || session.inventorySalidaDone) ? "not-allowed" : "pointer", background: session.inventorySalidaDone ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color: session.inventorySalidaDone ? "#666" : "#fff", opacity: savingMaterial ? 0.6 : 1 }}>
+                  {savingMaterial ? "Guardando…" : session.inventorySalidaDone ? "🔒 Inventario ya dado de baja" : session.materialSolicitudGuardada ? "✓ Material guardado" : "✓ Guardar material"}
                 </button>
               </div>
+              <button onClick={() => setShowMaterialModal(false)} disabled={savingMaterial || savingMeds}
+                style={{ padding:"9px", borderRadius:9, fontSize:12, cursor: (savingMaterial || savingMeds) ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                Cerrar
+              </button>
             </div>
           </div>
         );

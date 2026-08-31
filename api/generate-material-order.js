@@ -31,9 +31,23 @@ export const config = { api: { responseLimit: "10mb" } };
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { center, cipiVariant, patientName, cycle, date, groups, note, anexoNumber, scope, concepto } = req.body;
+  const { center, cipiVariant, patientName, cycle, date, groups, note, anexoNumber, scope, concepto, signatures } = req.body;
 
   try {
+    // Firma a distancia: si viene un arreglo "signatures" (SOLICITA/VALIDA/
+    // AUTORIZA/RECIBE, según el documento), se pre-descarga la imagen de
+    // cada firma en archivo antes de dibujar (pdfkit es síncrono) -- mismo
+    // patrón que ya usa generate-pdf.js para las firmas de retiro.
+    const fetchSigBuffer = async (url) => {
+      if (!url) return null;
+      try {
+        const r = await fetch(url);
+        if (!r.ok) return null;
+        return Buffer.from(await r.arrayBuffer());
+      } catch (e) { return null; }
+    };
+    const sigLines = signatures && signatures.length > 0 ? signatures : [{ label: "SOLICITA" }, { label: "AUTORIZA" }, { label: "RECIBE" }];
+    await Promise.all(sigLines.map(async (line) => { line.buffer = await fetchSigBuffer(line.signatureUrl); }));
     const centerKey = (center || "CITIO").toUpperCase();
     const logoKey = centerKey === "CIPI" ? `CIPI_${(cipiVariant || "PRO").toUpperCase()}` : centerKey;
     const logos = CENTER_LOGOS[logoKey] || CENTER_LOGOS.CITIO;
@@ -136,11 +150,21 @@ export default async function handler(req, res) {
     const sigBoxY = Math.max(y + 20, doc.page.height - 130);
     if (sigBoxY + 60 > doc.page.height - 45) { doc.addPage(); drawWatermark(); }
     const finalSigY = (sigBoxY + 60 > doc.page.height - 45) ? 60 : sigBoxY;
-    const sigW = (W - 40) / 3;
-    [["SOLICITA", 45], ["AUTORIZA", 45 + sigW + 20], ["RECIBE", 45 + (sigW + 20) * 2]].forEach(([label, x]) => {
+    const sigW = (W - 40) / sigLines.length;
+    sigLines.forEach((line, i) => {
+      const x = 45 + i * (sigW + 20);
+      if (line.buffer) {
+        try { doc.image(line.buffer, x + sigW / 2 - 30, finalSigY, { fit: [60, 34], align: "center" }); } catch (e) {}
+      }
       doc.moveTo(x, finalSigY + 40).lineTo(x + sigW, finalSigY + 40).lineWidth(0.75).strokeColor(LINE).stroke();
-      doc.fontSize(9).fillColor(GRAY).font("Helvetica-Bold").text(label, x, finalSigY + 44, { width: sigW, align: "center" });
-      doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("Nombre y firma", x, finalSigY + 58, { width: sigW, align: "center" });
+      doc.fontSize(9).fillColor(GRAY).font("Helvetica-Bold").text(line.label, x, finalSigY + 44, { width: sigW, align: "center" });
+      if (line.pending) {
+        doc.fontSize(7).fillColor("#c94848").font("Helvetica-Bold").text(line.pendingLabel || "PENDIENTE", x, finalSigY + 58, { width: sigW, align: "center" });
+      } else if (line.name) {
+        doc.fontSize(7).fillColor(GRAY).font("Helvetica").text(line.name, x, finalSigY + 58, { width: sigW, align: "center" });
+      } else {
+        doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("Nombre y firma", x, finalSigY + 58, { width: sigW, align: "center" });
+      }
     });
 
     doc.end();

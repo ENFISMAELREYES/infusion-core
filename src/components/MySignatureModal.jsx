@@ -114,7 +114,10 @@ export default function MySignatureModal() {
         });
       } else {
         // Cambio de firma (ya tenía una): queda pendiente de autorización
-        // del jefe -- no se toca users/{uid} todavía.
+        // del jefe -- no se toca users/{uid} todavía. Se le avisa por push
+        // (mismo mecanismo que ya usa /api/notify para nuevas órdenes) --
+        // si no, la solicitud se queda invisible hasta que él entre solo a
+        // revisar, y puede ser que tarde días en notarla.
         await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/signature_requests`, {
           method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
           body: JSON.stringify({ fields: Object.fromEntries(Object.entries({
@@ -122,6 +125,12 @@ export default function MySignatureModal() {
             status: "pending", requestedAt: new Date().toISOString(),
           }).map(([k, v]) => [k, toFV(v)])) }),
         });
+        try {
+          await fetch("/api/notify", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: "✍️ Cambio de firma pendiente", body: `${profile?.name || "Alguien"} pidió actualizar su firma -- necesita tu autorización.` }),
+          });
+        } catch (notifErr) { console.log("Error notificación:", notifErr); }
       }
       setDraft(null);
       await load();
