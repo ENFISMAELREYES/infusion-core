@@ -628,7 +628,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                   {medsHecho ? "✓ Medicamentos" : "💊 Medicamentos"}
                 </button>
 
-                {canValidate && (
+                {canValidate && s.medsSolicitudGuardada && (
                   <button onClick={validateMeds} disabled={savingMedsValidation || !!s.medsValidatedBy}
                     title={s.medsValidatedBy ? `Ya validado por ${s.medsValidatedByName || ""}` : "Marcar que ya revisaste estos medicamentos (checkup de Paola)"}
                     style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: (savingMedsValidation || s.medsValidatedBy) ? "default" : "pointer",
@@ -639,7 +639,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                   </button>
                 )}
 
-                {canAuthorize && (
+                {canAuthorize && s.medsSolicitudGuardada && (
                   <button onClick={authorizeMeds} disabled={savingMedsAuth || !s.medsValidatedBy || !!s.medsAuthorizedBy}
                     title={s.medsAuthorizedBy ? `Ya autorizado por ${s.medsAuthorizedByName || ""}` : !s.medsValidatedBy ? "Falta el checkup de Paola antes de poder autorizar" : "Dar tu autorización final para estos medicamentos"}
                     style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: (savingMedsAuth || !s.medsValidatedBy || s.medsAuthorizedBy) ? "default" : "pointer",
@@ -659,7 +659,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                   {materialHecho ? "✓ Material" : "🧰 Material"}
                 </button>
 
-                {canValidate && (
+                {canValidate && s.materialSolicitudGuardada && (
                   <button onClick={validateMaterial} disabled={savingValidation || !!s.materialValidatedBy}
                     title={s.materialValidatedBy ? `Ya validado por ${s.materialValidatedByName || ""}` : "Marcar que ya revisaste este material (checkup de Paola)"}
                     style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: (savingValidation || s.materialValidatedBy) ? "default" : "pointer",
