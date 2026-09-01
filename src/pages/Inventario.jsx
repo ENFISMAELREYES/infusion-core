@@ -693,6 +693,20 @@ export default function Inventario() {
   const markPurchaseOrderReceived = (id) => patchPurchaseOrder(id, {
     status: "recibida", receivedAt: new Date().toISOString(),
   }, ["status","receivedAt"]);
+  // Cancelar: para cuando una solicitud no se va a concretar (se canceló,
+  // se duplicó, se resolvió de otra forma) -- nunca se borra (igual que un
+  // movimiento anulado), queda como registro de que se pidió y por qué no
+  // se concretó. Pide motivo obligatorio, mismo criterio que voidEvent.
+  const cancelPurchaseOrder = (po) => {
+    const reason = prompt(`Motivo de la cancelación de "${po.concepto}":`);
+    if (reason === null) return; // canceló el prompt
+    if (!reason.trim()) { alert("El motivo es obligatorio."); return; }
+    patchPurchaseOrder(po.id, {
+      status: "cancelada", cancelledAt: new Date().toISOString(),
+      cancelledBy: user?.uid || "", cancelledByName: profile?.name || "",
+      cancelReason: reason.trim(),
+    }, ["status","cancelledAt","cancelledBy","cancelledByName","cancelReason"]);
+  };
 
   const registerMovement = async () => {
     if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
@@ -1053,22 +1067,27 @@ export default function Inventario() {
             const isOpen = expandedPO === po.id;
             const poItems = Array.isArray(po.items) ? po.items : [];
             const received = po.status === "recibida";
+            const cancelled = po.status === "cancelada";
             return (
-              <div key={po.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
+              <div key={po.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden", opacity: cancelled ? 0.55 : 1 }}>
                 <div onClick={() => setExpandedPO(isOpen ? null : po.id)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-                  <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600, minWidth:160 }}>{po.concepto}</span>
+                  <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600, minWidth:160, textDecoration: cancelled ? "line-through" : "none" }}>{po.concepto}</span>
                   <span style={{ fontSize:11, color:"#666" }}>{poItems.length} artículo{poItems.length!==1?"s":""}</span>
                   {po.note && <span title={po.note} style={{ fontSize:11, color:"#4fc3f7" }}>📝</span>}
                   <span style={{ fontSize:11, color:"#555" }}>{po.requestedByName || ""}{po.requestedAt ? " · " + new Date(po.requestedAt).toLocaleDateString("es-MX") : ""}</span>
-                  <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99, background: received ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.05)", color: received ? "#00d4aa" : "#888" }}>
-                    {received ? "✓ Recibida" : "⏳ Pendiente"}
+                  <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
+                    background: received ? "rgba(0,212,170,0.12)" : cancelled ? "rgba(255,107,107,0.1)" : "rgba(255,255,255,0.05)",
+                    color: received ? "#00d4aa" : cancelled ? "#ff6b6b" : "#888" }}>
+                    {received ? "✓ Recibida" : cancelled ? "✕ Cancelada" : "⏳ Pendiente"}
                   </span>
-                  <span title={po.authorizedBy ? `Autorizado por ${po.authorizedByName || ""}` : po.validatedBy ? `Validado por ${po.validatedByName || ""} — falta autorización del jefe` : "Pendiente del checkup de Paola"}
-                    style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
-                    background: po.authorizedBy ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
-                    color: po.authorizedBy ? "#00d4aa" : "#ffb347" }}>
-                    {po.authorizedBy ? "✓ Autorizada" : po.validatedBy ? "◐ Validada" : "⏳ Sin validar"}
-                  </span>
+                  {!cancelled && (
+                    <span title={po.authorizedBy ? `Autorizado por ${po.authorizedByName || ""}` : po.validatedBy ? `Validado por ${po.validatedByName || ""} — falta autorización del jefe` : "Pendiente del checkup de Paola"}
+                      style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
+                      background: po.authorizedBy ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
+                      color: po.authorizedBy ? "#00d4aa" : "#ffb347" }}>
+                      {po.authorizedBy ? "✓ Autorizada" : po.validatedBy ? "◐ Validada" : "⏳ Sin validar"}
+                    </span>
+                  )}
                   <span style={{ color:"#555" }}>{isOpen ? "▲" : "▼"}</span>
                 </div>
                 {isOpen && (
@@ -1076,44 +1095,58 @@ export default function Inventario() {
                     {po.note && (
                       <div style={{ fontSize:11, color:"#4fc3f7", marginBottom:6, padding:"6px 8px", background:"rgba(79,195,247,0.06)", borderRadius:6 }}>📝 {po.note}</div>
                     )}
+                    {cancelled && (
+                      <div style={{ fontSize:11, color:"#ff6b6b", marginBottom:6, padding:"6px 8px", background:"rgba(255,107,107,0.06)", borderRadius:6 }}>
+                        ✕ Cancelada por {po.cancelledByName || ""}{po.cancelledAt ? " · " + new Date(po.cancelledAt).toLocaleString("es-MX") : ""} — {po.cancelReason}
+                      </div>
+                    )}
                     {poItems.map((t,ti) => (
                       <div key={ti} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#aaa", padding:"3px 0" }}>
                         <span>{t.item}</span><span style={{ color:"#00d4aa" }}>{t.qty}</span>
                       </div>
                     ))}
-                    <div style={{ display:"flex", gap:8, marginTop:8, flexWrap:"wrap" }}>
-                      {canValidate && !po.validatedBy && (
-                        <button onClick={e => { e.stopPropagation(); validatePurchaseOrder(po.id); }} disabled={savingPOAction === po.id}
-                          style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
-                          {savingPOAction===po.id ? "Guardando…" : "✓ Validar (checkup)"}
+                    {!cancelled && (
+                      <div style={{ display:"flex", gap:8, marginTop:8, flexWrap:"wrap" }}>
+                        {canValidate && !po.validatedBy && (
+                          <button onClick={e => { e.stopPropagation(); validatePurchaseOrder(po.id); }} disabled={savingPOAction === po.id}
+                            style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+                            {savingPOAction===po.id ? "Guardando…" : "✓ Validar (checkup)"}
+                          </button>
+                        )}
+                        {canAuthorize && po.validatedBy && !po.authorizedBy && (
+                          <button onClick={e => { e.stopPropagation(); authorizePurchaseOrder(po.id); }} disabled={savingPOAction === po.id}
+                            style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                            {savingPOAction===po.id ? "Guardando…" : "✓ Autorizar"}
+                          </button>
+                        )}
+                        {!received && canValidate && (
+                          <button onClick={e => { e.stopPropagation(); markPurchaseOrderReceived(po.id); }} disabled={savingPOAction === po.id}
+                            title="Marcar que la mercancía ya llegó -- esto no registra la entrada al inventario, solo cierra el seguimiento de la solicitud (usa 'Registrar entrada' aparte para eso)"
+                            style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
+                            {savingPOAction===po.id ? "Guardando…" : "✓ Marcar recibida"}
+                          </button>
+                        )}
+                        <button onClick={e => {
+                            e.stopPropagation();
+                            setEditingPO(po);
+                            setMoveList(poItems.map(({ item, qty }) => ({ item, qty })));
+                            setPurchaseConcept(po.concepto || "");
+                            setPurchaseNote(po.note || "");
+                            setShowMoveModal("compra");
+                          }}
+                          title="Corregir concepto, nota o artículos -- vuelve a generar el PDF y reinicia la validación/autorización"
+                          style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>
+                          ✏️ Editar
                         </button>
-                      )}
-                      {canAuthorize && po.validatedBy && !po.authorizedBy && (
-                        <button onClick={e => { e.stopPropagation(); authorizePurchaseOrder(po.id); }} disabled={savingPOAction === po.id}
-                          style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
-                          {savingPOAction===po.id ? "Guardando…" : "✓ Autorizar"}
-                        </button>
-                      )}
-                      {!received && canValidate && (
-                        <button onClick={e => { e.stopPropagation(); markPurchaseOrderReceived(po.id); }} disabled={savingPOAction === po.id}
-                          title="Marcar que la mercancía ya llegó -- esto no registra la entrada al inventario, solo cierra el seguimiento de la solicitud (usa 'Registrar entrada' aparte para eso)"
-                          style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
-                          {savingPOAction===po.id ? "Guardando…" : "✓ Marcar recibida"}
-                        </button>
-                      )}
-                      <button onClick={e => {
-                          e.stopPropagation();
-                          setEditingPO(po);
-                          setMoveList(poItems.map(({ item, qty }) => ({ item, qty })));
-                          setPurchaseConcept(po.concepto || "");
-                          setPurchaseNote(po.note || "");
-                          setShowMoveModal("compra");
-                        }}
-                        title="Corregir concepto, nota o artículos -- vuelve a generar el PDF y reinicia la validación/autorización"
-                        style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>
-                        ✏️ Editar
-                      </button>
-                    </div>
+                        {!received && (
+                          <button onClick={e => { e.stopPropagation(); cancelPurchaseOrder(po); }} disabled={savingPOAction === po.id}
+                            title="La solicitud no se va a concretar (se canceló, se duplicó, se resolvió de otra forma) -- pide motivo y queda como registro, nunca se borra"
+                            style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
+                            ✕ Cancelar
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
