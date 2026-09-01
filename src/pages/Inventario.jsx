@@ -42,6 +42,29 @@ async function fetchCollection(token, collectionId, limit = 1000) {
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
 
+// El catálogo maestro (MASTER_CATALOG) es estático, del código -- pero
+// Insumos.jsx ya permite dar de alta artículos nuevos ahí mismo, guardados
+// en settings/materialCatalog.extraCatalog. Antes Inventario.jsx nunca leía
+// esos extras, así que un producto agregado desde Insumos no aparecía aquí
+// para buscarlo/registrar movimientos, y viceversa. Se lee el mismo
+// documento para que ambas páginas compartan un solo catálogo dinámico.
+async function fetchExtraCatalog(token) {
+  try {
+    const res = await fetch(`${FIRESTORE_BASE_URL}/settings/materialCatalog`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 404) return [];
+    const doc = await res.json();
+    return parseDoc(doc).extraCatalog || [];
+  } catch (e) {
+    return [];
+  }
+}
+async function saveExtraCatalog(token, updated) {
+  await fetch(`${FIRESTORE_BASE_URL}/settings/materialCatalog?updateMask.fieldPaths=extraCatalog`, {
+    method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({ fields: { extraCatalog: toFV(updated) } }),
+  });
+}
+
 // El almacén ahora se identifica por centro real: CITIO, CIPI_PED, CIPI_PRO
 // (CIPI se dividió en dos almacenes separados por variante).
 const WAREHOUSES = [
@@ -110,6 +133,7 @@ export default function Inventario() {
   const [inventory, setInventory] = useState([]);
   const [events, setEvents] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [extraCatalog, setExtraCatalog] = useState([]); // artículos dados de alta desde Insumos o desde aquí mismo (settings/materialCatalog)
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [search, setSearch] = useState("");
@@ -130,6 +154,9 @@ export default function Inventario() {
   const [saving, setSaving] = useState(false);
   const [xmlReview, setXmlReview] = useState(null); // [{descripcion, cantidad, matchedItem}] mientras se revisa antes de agregar
   const [xmlReceptor, setXmlReceptor] = useState(""); // nombre del receptor en la factura, para confirmar que corresponde al almacén
+  const [newItemDraft, setNewItemDraft] = useState(null); // { rowIndex, nombre, categoria, unidad } -- alta de producto nuevo desde un renglón sin emparejar
+  const [savingNewItem, setSavingNewItem] = useState(false);
+  const [linkedPO, setLinkedPO] = useState(null); // solicitud de compra pendiente que esta entrada va a cerrar, o null
 
   const load = async () => {
     if (!user) return;
@@ -137,14 +164,16 @@ export default function Inventario() {
     try {
       const t = await user.getIdToken(true);
       setToken(t);
-      const [inv, ev, po] = await Promise.all([
+      const [inv, ev, po, extraCat] = await Promise.all([
         fetchCollection(t, "inventory"),
         fetchCollection(t, "inventory_events"),
         fetchCollection(t, "purchase_orders"),
+        fetchExtraCatalog(t),
       ]);
       setInventory(inv);
       setEvents(ev.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")));
       setPurchaseOrders(po.sort((a, b) => (b.requestedAt || "").localeCompare(a.requestedAt || "")));
+      setExtraCatalog(extraCat);
     } catch (e) {
       console.error(e);
     } finally {
@@ -155,6 +184,10 @@ export default function Inventario() {
 
   useEffect(() => { load(); }, [user]);
   useEffect(() => { if (!canSeeAllCenters && warehouse.startsWith("QUAL")) setWarehouse("CITIO"); }, [canSeeAllCenters, warehouse]);
+
+  // Catálogo maestro + extras dados de alta desde Insumos o desde aquí --
+  // usar SIEMPRE este en vez de MASTER_CATALOG a secas en esta página.
+  const effectiveCatalog = [...MASTER_CATALOG, ...extraCatalog];
 
   const warehouseInventory = inventory.filter(i => i.warehouse === warehouse);
   const filteredInventory = search.trim()
@@ -180,14 +213,14 @@ export default function Inventario() {
   const suggestCatalogMatch = (descripcion) => {
     const up = (descripcion || "").toUpperCase().trim();
     if (!up) return "";
-    const exact = MASTER_CATALOG.find(c => c.item.toUpperCase() === up);
+    const exact = effectiveCatalog.find(c => c.item.toUpperCase() === up);
     if (exact) return exact.item;
-    const contains = MASTER_CATALOG.find(c => up.includes(c.item.toUpperCase()) || c.item.toUpperCase().includes(up));
+    const contains = effectiveCatalog.find(c => up.includes(c.item.toUpperCase()) || c.item.toUpperCase().includes(up));
     if (contains) return contains.item;
     // Coincidencia por palabras compartidas (al menos 2 palabras en común)
     const upWords = new Set(up.split(/\s+/).filter(w => w.length > 2));
     let best = null, bestScore = 0;
-    MASTER_CATALOG.forEach(c => {
+    effectiveCatalog.forEach(c => {
       const cWords = c.item.toUpperCase().split(/\s+/);
       const score = cWords.filter(w => upWords.has(w)).length;
       if (score > bestScore) { bestScore = score; best = c.item; }
@@ -340,6 +373,34 @@ export default function Inventario() {
       return Array.from(map, ([item, v]) => ({ item, qty: v.qty, cost: v.cost }));
     });
     setXmlReview(null);
+    setNewItemDraft(null);
+  };
+
+  // Da de alta un artículo nuevo directo desde un renglón de la factura que
+  // no encontró emparejamiento -- antes eso solo dejaba "— Sin emparejar —"
+  // y el renglón se perdía en silencio. Se guarda en el mismo
+  // settings/materialCatalog.extraCatalog que ya usa Insumos.jsx (catálogo
+  // compartido), y de una vez se selecciona como el emparejamiento de ese
+  // renglón.
+  const createExtraCatalogItem = async () => {
+    if (!newItemDraft || !newItemDraft.nombre.trim()) return;
+    setSavingNewItem(true);
+    try {
+      const nombre = newItemDraft.nombre.trim().toUpperCase();
+      if (effectiveCatalog.some(c => c.item.toUpperCase() === nombre)) {
+        alert("Ya existe un artículo con ese nombre en el catálogo -- elígelo de la lista en vez de crear uno nuevo.");
+        return;
+      }
+      const updated = [...extraCatalog, { category: newItemDraft.categoria, item: nombre, unit: (newItemDraft.unidad || "PIEZA").trim().toUpperCase() }];
+      await saveExtraCatalog(token, updated);
+      setExtraCatalog(updated);
+      setXmlReview(prev => prev.map((r, ri) => ri === newItemDraft.rowIndex ? { ...r, matchedItem: nombre } : r));
+      setNewItemDraft(null);
+    } catch (e) {
+      alert("Error al crear el producto: " + e.message);
+    } finally {
+      setSavingNewItem(false);
+    }
   };
 
   // Anula un movimiento: nunca se borra el registro original (por trazabilidad),
@@ -430,7 +491,7 @@ export default function Inventario() {
       };
 
       for (const { item, qty } of moveList) {
-        const catalogEntry = MASTER_CATALOG.find(c => c.item === item);
+        const catalogEntry = effectiveCatalog.find(c => c.item === item);
 
         // Restar del almacén origen
         const fromDocId = inventoryDocId(warehouse, item);
@@ -527,7 +588,7 @@ export default function Inventario() {
     try {
       const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
       moveList.forEach(({ item, qty }) => {
-        const cat = MASTER_CATALOG.find(c => c.item === item)?.category;
+        const cat = effectiveCatalog.find(c => c.item === item)?.category;
         if (MED_CATEGORIES.includes(cat)) groups.MEDICAMENTOS.push({ item, qty });
         else if (/CLORURO DE SODIO|GLUCOSA|HARTMANN/i.test(item)) groups.SOLUCIONES.push({ item, qty });
         else groups.INSUMOS.push({ item, qty });
@@ -654,7 +715,7 @@ export default function Inventario() {
         const existing = inventory.find(i => i.id === docId);
         const currentStock = existing?.currentStock ?? 0;
         const minStock = existing?.minStock ?? 0;
-        const catalogEntry = MASTER_CATALOG.find(c => c.item === item);
+        const catalogEntry = effectiveCatalog.find(c => c.item === item);
         const newStock = type === "entrada" ? currentStock + qty : currentStock - qty;
 
         // Costo: solo se actualiza en entradas y solo si se capturó un costo.
@@ -700,6 +761,24 @@ export default function Inventario() {
       });
       await checkOk(evRes, "Registro del evento de movimiento");
 
+      // Si esta entrada se ligó a una solicitud de compra pendiente, la
+      // entrada real es justo lo que la cierra -- ya no depende de que
+      // alguien se acuerde de dar clic aparte en "Marcar recibida".
+      if (type === "entrada" && linkedPO) {
+        const evDoc = await evRes.json().catch(() => null);
+        const eventId = evDoc?.name ? evDoc.name.split("/").pop() : null;
+        const poFields = {
+          status: { stringValue: "recibida" },
+          receivedAt: { stringValue: new Date().toISOString() },
+          receivedByEventId: eventId ? { stringValue: eventId } : { nullValue: null },
+        };
+        const poRes = await fetch(`${FIRESTORE_BASE_URL}/purchase_orders/${linkedPO.id}?${Object.keys(poFields).map(k => `updateMask.fieldPaths=${k}`).join("&")}`,
+          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields: poFields }) });
+        if (poRes.ok) {
+          setPurchaseOrders(prev => prev.map(p => p.id === linkedPO.id ? { ...p, status: "recibida", receivedAt: poFields.receivedAt.stringValue, receivedByEventId: eventId } : p));
+        }
+      }
+
       // Si es una entrada de MEDICAMENTO a un almacén de centro (no a Qual
       // mismo), es en realidad un traslado desde la farmacia -- se descuenta
       // solo del Qual correspondiente (CITIO o CIPI, este último combinado
@@ -708,7 +787,7 @@ export default function Inventario() {
       const qualWarehouse = QUAL_FOR_WAREHOUSE[warehouse];
       if (type === "entrada" && qualWarehouse) {
         const medItems = moveList.filter(({ item }) => {
-          const cat = MASTER_CATALOG.find(c => c.item === item)?.category;
+          const cat = effectiveCatalog.find(c => c.item === item)?.category;
           return MED_CATEGORIES.includes(cat);
         });
         if (medItems.length > 0) {
@@ -716,7 +795,7 @@ export default function Inventario() {
             const qualDocId = inventoryDocId(qualWarehouse, item);
             const qualExisting = inventory.find(i => i.id === qualDocId);
             const qualCurrentStock = qualExisting?.currentStock ?? 0;
-            const catalogEntry = MASTER_CATALOG.find(c => c.item === item);
+            const catalogEntry = effectiveCatalog.find(c => c.item === item);
             const qualRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${qualDocId}`, {
               method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
               body: JSON.stringify({ fields: {
@@ -743,7 +822,7 @@ export default function Inventario() {
         }
       }
 
-      setShowMoveModal(null); setMoveList([]); setMoveReason(""); setInvoiceFolio("");
+      setShowMoveModal(null); setMoveList([]); setMoveReason(""); setInvoiceFolio(""); setLinkedPO(null);
       load();
     } catch (e) {
       alert("Error al registrar el movimiento: " + e.message);
@@ -823,10 +902,10 @@ export default function Inventario() {
         <div>
           <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
             <input placeholder="Buscar artículo..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, flex:1, minWidth:200 }} />
-            <button onClick={() => { setShowMoveModal("entrada"); setMoveList([]); setXmlReview(null); setXmlReceptor(""); setInvoiceFolio(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+            <button onClick={() => { setShowMoveModal("entrada"); setMoveList([]); setXmlReview(null); setXmlReceptor(""); setInvoiceFolio(""); setNewItemDraft(null); setLinkedPO(null); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
               ↓ Registrar entrada
             </button>
-            <button onClick={() => { setShowMoveModal("salida"); setMoveList([]); setXmlReview(null); setXmlReceptor(""); setInvoiceFolio(""); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
+            <button onClick={() => { setShowMoveModal("salida"); setMoveList([]); setXmlReview(null); setXmlReceptor(""); setInvoiceFolio(""); setNewItemDraft(null); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
               ↑ Registrar salida
             </button>
             {warehouse.startsWith("QUAL") && (
@@ -1059,7 +1138,7 @@ export default function Inventario() {
         // quedado desactualizada (si el catálogo cambió después); se
         // reconsulta el catálogo actual por nombre para clasificar bien.
         const catalogByNameGeneral = {};
-        MASTER_CATALOG.forEach(c => { catalogByNameGeneral[c.item.toUpperCase()] = c.category; });
+        effectiveCatalog.forEach(c => { catalogByNameGeneral[c.item.toUpperCase()] = c.category; });
         const currentCategory = (r) => catalogByNameGeneral[r.item.toUpperCase()] || r.category;
         const materialRows = allRows.filter(r => !MED_CATEGORIES.includes(currentCategory(r)) || isSolution(r.item));
         const medRows = allRows.filter(r => MED_CATEGORIES.includes(currentCategory(r)) && !isSolution(r.item));
@@ -1120,7 +1199,7 @@ export default function Inventario() {
       })()}
 
       {showMoveModal && (
-        <div onClick={() => !saving && (setShowMoveModal(null), setXmlReview(null), setXmlReceptor(""), setEditingPO(null))}
+        <div onClick={() => !saving && (setShowMoveModal(null), setXmlReview(null), setXmlReceptor(""), setEditingPO(null), setNewItemDraft(null), setLinkedPO(null))}
           style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:460, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
             <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>
@@ -1143,6 +1222,37 @@ export default function Inventario() {
                 Destino: <strong>{warehouseLabel(transferTo)}</strong>
               </div>
             )}
+
+            {showMoveModal === "entrada" && (() => {
+              const pendingPOs = purchaseOrders.filter(po => po.warehouse === warehouse && po.status === "pendiente");
+              if (pendingPOs.length === 0) return null;
+              return (
+                <div style={{ padding:"10px 12px", borderRadius:9, background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.2)" }}>
+                  <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", marginBottom:6 }}>¿Corresponde a una solicitud de compra pendiente?</label>
+                  <select value={linkedPO?.id || ""} onChange={e => setLinkedPO(pendingPOs.find(po => po.id === e.target.value) || null)}
+                    style={{ ...inputStyle, cursor:"pointer" }}>
+                    <option value="">— No, es una entrada independiente —</option>
+                    {pendingPOs.map(po => <option key={po.id} value={po.id}>{po.concepto} · {po.requestedByName || ""}</option>)}
+                  </select>
+                  {linkedPO && (
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, marginTop:8 }}>
+                      <div style={{ fontSize:10, color:"#00d4aa" }}>Al registrar, esta solicitud se marcará como recibida.</div>
+                      <button onClick={() => setMoveList(prev => {
+                          const map = new Map(prev.map(x => [x.item, { qty:x.qty, cost:x.cost }]));
+                          (linkedPO.items||[]).forEach(({ item, qty }) => {
+                            const existing = map.get(item);
+                            map.set(item, { qty:(existing?.qty||0)+qty, cost:existing?.cost });
+                          });
+                          return Array.from(map, ([item,v]) => ({ item, qty:v.qty, cost:v.cost }));
+                        })}
+                        style={{ padding:"4px 10px", borderRadius:7, fontSize:10, fontWeight:600, cursor:"pointer", whiteSpace:"nowrap", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+                        + Precargar sus artículos
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {showMoveModal === "entrada" && !xmlReview && (
               <div style={{ display:"flex", gap:8 }}>
@@ -1174,16 +1284,43 @@ export default function Inventario() {
                   {xmlReview.map((r, i) => (
                     <div key={i} style={{ padding:"8px 10px", borderRadius:8, background: r.matchedItem ? "rgba(255,255,255,0.03)" : "rgba(255,107,107,0.06)", border:`1px solid ${r.matchedItem ? "rgba(255,255,255,0.07)" : "rgba(255,107,107,0.25)"}` }}>
                       <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>Factura: "{r.descripcion}" · cant. {r.cantidad}{r.valorUnitario ? ` · $${r.valorUnitario.toFixed(2)} c/u (con IVA)` : ""}</div>
-                      <select value={r.matchedItem} onChange={e => setXmlReview(prev => prev.map((x,xi) => xi===i ? { ...x, matchedItem: e.target.value } : x))}
+                      <select value={r.matchedItem} onChange={e => {
+                          if (e.target.value === "__new__") {
+                            setNewItemDraft({ rowIndex: i, nombre: r.descripcion, categoria: "Insumos", unidad: "PIEZA" });
+                            return;
+                          }
+                          setXmlReview(prev => prev.map((x,xi) => xi===i ? { ...x, matchedItem: e.target.value } : x));
+                        }}
                         style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"6px 8px", color: r.matchedItem ? "#f0f0f0" : "#ff6b6b", fontSize:12, outline:"none", cursor:"pointer" }}>
                         <option value="">— Sin emparejar (no se agregará) —</option>
-                        {MASTER_CATALOG.map((c,ci) => <option key={ci} value={c.item}>{c.item}</option>)}
+                        <option value="__new__">+ Crear producto nuevo con este nombre…</option>
+                        {effectiveCatalog.map((c,ci) => <option key={ci} value={c.item}>{c.item}</option>)}
                       </select>
+                      {newItemDraft?.rowIndex === i && (
+                        <div style={{ marginTop:6, padding:"8px", borderRadius:7, background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.2)", display:"flex", flexDirection:"column", gap:6 }}>
+                          <input value={newItemDraft.nombre} onChange={e => setNewItemDraft(d => ({ ...d, nombre: e.target.value }))}
+                            placeholder="Nombre del producto" style={{ ...inputStyle, fontSize:12 }} />
+                          <div style={{ display:"flex", gap:6 }}>
+                            <select value={newItemDraft.categoria} onChange={e => setNewItemDraft(d => ({ ...d, categoria: e.target.value }))} style={{ ...inputStyle, fontSize:12, flex:1 }}>
+                              <option>Insumos</option><option>Medicamentos</option><option>Oncológicos</option><option>Inmunoterapia</option>
+                            </select>
+                            <input value={newItemDraft.unidad} onChange={e => setNewItemDraft(d => ({ ...d, unidad: e.target.value }))}
+                              placeholder="Unidad" style={{ ...inputStyle, fontSize:12, width:80 }} />
+                          </div>
+                          <div style={{ display:"flex", gap:6 }}>
+                            <button onClick={() => setNewItemDraft(null)} style={{ flex:1, padding:"6px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
+                            <button onClick={createExtraCatalogItem} disabled={savingNewItem || !newItemDraft.nombre.trim()}
+                              style={{ flex:2, padding:"6px", borderRadius:6, fontSize:11, fontWeight:600, cursor: savingNewItem ? "wait" : "pointer", background:"rgba(0,212,170,0.15)", border:"1px solid rgba(0,212,170,0.4)", color:"#00d4aa" }}>
+                              {savingNewItem ? "Creando…" : "✓ Crear y usar"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
                 <div style={{ display:"flex", gap:8 }}>
-                  <button onClick={() => setXmlReview(null)} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                  <button onClick={() => { setXmlReview(null); setNewItemDraft(null); }} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                     Cancelar
                   </button>
                   <button onClick={confirmXmlReview} style={{ flex:2, padding:"9px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.15)", border:"1px solid rgba(175,169,236,0.4)", color:"#AFA9EC" }}>
@@ -1198,7 +1335,7 @@ export default function Inventario() {
               <input placeholder="Buscar artículo del catálogo..." value={moveSearch} onChange={e => setMoveSearch(e.target.value)} style={inputStyle} autoFocus />
               {moveSearch.trim().length >= 2 && (
                 <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:3, maxHeight:160, overflowY:"auto" }}>
-                  {MASTER_CATALOG.filter(c => c.item.toUpperCase().includes(moveSearch.toUpperCase())).slice(0, 10).map((c, i) => (
+                  {effectiveCatalog.filter(c => c.item.toUpperCase().includes(moveSearch.toUpperCase())).slice(0, 10).map((c, i) => (
                     <button key={i} onClick={() => addToMoveList(c.item)}
                       style={{ textAlign:"left", padding:"7px 10px", borderRadius:6, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", color:"#ccc" }}>
                       + {c.item}
@@ -1240,7 +1377,7 @@ export default function Inventario() {
             </div>
 
             <div style={{ display:"flex", gap:8 }}>
-              <button onClick={() => { setShowMoveModal(null); setEditingPO(null); }} disabled={saving} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, cursor: saving ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+              <button onClick={() => { setShowMoveModal(null); setEditingPO(null); setNewItemDraft(null); setLinkedPO(null); }} disabled={saving} style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, cursor: saving ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                 Cancelar
               </button>
               <button onClick={showMoveModal === "transferencia" ? registerTransfer : showMoveModal === "compra" ? generatePurchaseOrder : registerMovement}
