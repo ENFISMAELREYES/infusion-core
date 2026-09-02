@@ -632,6 +632,9 @@ export default function Inventario() {
             validatedBy: null, validatedByName: null, validatedAt: null, validationSignatureUrl: null,
             authorizedBy: null, authorizedByName: null, authorizedAt: null, authorizationSignatureUrl: null,
           } : p));
+        } else {
+          const err = await poRes.json().catch(() => ({}));
+          alert("⚠️ El PDF se generó, pero NO se pudo guardar el cambio en el seguimiento de la solicitud: " + (err.error?.message || `Error ${poRes.status}`) + "\n\nVuelve a intentar 'Guardar cambios' en un momento.");
         }
       } else {
         const poRes = await fetch(`${FIRESTORE_BASE_URL}/purchase_orders`, {
@@ -651,11 +654,16 @@ export default function Inventario() {
         if (poRes.ok) {
           const doc = await poRes.json();
           setPurchaseOrders(prev => [parseDoc(doc), ...prev]);
+        } else {
+          // Antes esto fallaba en silencio -- el PDF se abría igual y nadie
+          // se enteraba de que la solicitud nunca quedó guardada en la
+          // pestaña de seguimiento, hasta que alguien la buscaba y no
+          // aparecía. Ahora se avisa de inmediato con el motivo real (ej.
+          // permisos, reglas de Firestore desactualizadas).
+          const err = await poRes.json().catch(() => ({}));
+          alert("⚠️ El PDF se generó, pero la solicitud NO quedó guardada en el seguimiento (pestaña 'Solicitudes de compra'): " + (err.error?.message || `Error ${poRes.status}`) + "\n\nVuelve a intentar generarla en un momento; si sigue fallando, avísale al jefe.");
         }
       }
-      // Si falla el guardado del rastreo, no se revierte el PDF ya generado
-      // (ya se entregó/imprimió) -- solo se pierde el seguimiento en la
-      // pestaña de solicitudes, que la persona puede volver a intentar.
 
       setShowMoveModal(null); setMoveList([]); setPurchaseConcept(""); setPurchaseNote(""); setEditingPO(null);
     } catch (e) {
@@ -790,6 +798,9 @@ export default function Inventario() {
           { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields: poFields }) });
         if (poRes.ok) {
           setPurchaseOrders(prev => prev.map(p => p.id === linkedPO.id ? { ...p, status: "recibida", receivedAt: poFields.receivedAt.stringValue, receivedByEventId: eventId } : p));
+        } else {
+          const err = await poRes.json().catch(() => ({}));
+          alert("⚠️ La entrada se registró bien, pero NO se pudo cerrar la solicitud de compra vinculada: " + (err.error?.message || `Error ${poRes.status}`) + "\n\nCiérrala a mano desde 'Solicitudes de compra' con '✓ Marcar recibida'.");
         }
       }
 
