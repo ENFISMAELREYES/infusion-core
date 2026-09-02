@@ -184,6 +184,21 @@ export default function Inventario() {
 
   useEffect(() => { load(); }, [user]);
   useEffect(() => { if (!canSeeAllCenters && warehouse.startsWith("QUAL")) setWarehouse("CITIO"); }, [canSeeAllCenters, warehouse]);
+  // El token se obtiene una sola vez al cargar (arriba, en load()) -- todas
+  // las escrituras de esta página lo reusan tal cual, sin pedir uno fresco
+  // antes de cada una (a diferencia de MaterialModal.jsx, que sí lo hace).
+  // Si la pestaña se queda abierta más de una hora, el token caduca y
+  // cualquier guardado falla con ese token viejo -- reportado como "el PDF
+  // sí se generó pero la solicitud de compra nunca se guardó" en una
+  // sesión larga. Se renueva solo cada 45 min mientras la pestaña siga
+  // abierta, para que nunca llegue a caducar.
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      user.getIdToken(true).then(setToken).catch(() => {});
+    }, 45 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   // Catálogo maestro + extras dados de alta desde Insumos o desde aquí --
   // usar SIEMPRE este en vez de MASTER_CATALOG a secas en esta página.
