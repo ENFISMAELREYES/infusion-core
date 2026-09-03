@@ -713,22 +713,64 @@ export default function Inventario() {
     authorizedBy: user?.uid || "", authorizedByName: profile?.name || "",
     authorizedAt: new Date().toISOString(), authorizationSignatureUrl: profile?.signatureUrl || null,
   }, ["authorizedBy","authorizedByName","authorizedAt","authorizationSignatureUrl"]);
-  const markPurchaseOrderReceived = (id) => patchPurchaseOrder(id, {
-    status: "recibida", receivedAt: new Date().toISOString(),
-  }, ["status","receivedAt"]);
-  // Cancelar: para cuando una solicitud no se va a concretar (se canceló,
-  // se duplicó, se resolvió de otra forma) -- nunca se borra (igual que un
-  // movimiento anulado), queda como registro de que se pidió y por qué no
-  // se concretó. Pide motivo obligatorio, mismo criterio que voidEvent.
-  const cancelPurchaseOrder = (po) => {
-    const reason = prompt(`Motivo de la cancelación de "${po.concepto}":`);
+  // "Marcar recibida" manual ya no existe -- el cierre a "recibida" ahora
+  // pasa por vincular la solicitud con una entrada real al registrarla
+  // (ver registerMovement), que es lo que de verdad prueba que llegó.
+  //
+  // Cerrar: para cuando una solicitud no se va a concretar por la vía
+  // normal (se canceló, se duplicó, se resolvió de otra forma) -- nunca se
+  // borra (igual que un movimiento anulado), queda como registro de que se
+  // pidió y por qué se cerró. Pide motivo obligatorio, mismo criterio que
+  // voidEvent. Una vez cerrada (o recibida vía entrada), ya no se puede
+  // editar ni volver a firmar -- es un estado terminal.
+  const closePurchaseOrder = (po) => {
+    const reason = prompt(`Motivo del cierre de "${po.concepto}":`);
     if (reason === null) return; // canceló el prompt
     if (!reason.trim()) { alert("El motivo es obligatorio."); return; }
     patchPurchaseOrder(po.id, {
-      status: "cancelada", cancelledAt: new Date().toISOString(),
-      cancelledBy: user?.uid || "", cancelledByName: profile?.name || "",
-      cancelReason: reason.trim(),
-    }, ["status","cancelledAt","cancelledBy","cancelledByName","cancelReason"]);
+      status: "cerrada", closedAt: new Date().toISOString(),
+      closedBy: user?.uid || "", closedByName: profile?.name || "",
+      closeReason: reason.trim(),
+    }, ["status","closedAt","closedBy","closedByName","closeReason"]);
+  };
+
+  // Reimprime el PDF con el estado de firma ACTUAL (a diferencia del
+  // original, que sale con VALIDA/AUTORIZA pendientes porque se imprime en
+  // el mismo instante en que se crea la solicitud). No guarda nada nuevo.
+  const [reprintingPO, setReprintingPO] = useState(null);
+  const reprintPurchaseOrder = async (po) => {
+    setReprintingPO(po.id);
+    try {
+      const items = po.items || [];
+      const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
+      items.forEach(({ item, qty }) => {
+        const cat = effectiveCatalog.find(c => c.item === item)?.category;
+        if (MED_CATEGORIES.includes(cat)) groups.MEDICAMENTOS.push({ item, qty });
+        else if (/CLORURO DE SODIO|GLUCOSA|HARTMANN/i.test(item)) groups.SOLUCIONES.push({ item, qty });
+        else groups.INSUMOS.push({ item, qty });
+      });
+      const centerForPdf = po.warehouse.includes("CIPI") ? "CIPI" : "CITIO";
+      const cipiVariantForPdf = po.warehouse === "QUAL_CIPI" || po.warehouse === "CIPI_PED" ? "PED" : "PRO";
+      const signatures = [
+        { label: "SOLICITA", name: po.requestedByName || "", signatureUrl: po.requestedBySignatureUrl || null },
+        { label: "VALIDA", name: po.validatedByName || "", signatureUrl: po.validationSignatureUrl || null, pending: !po.validatedBy, pendingLabel: "PENDIENTE VALIDACIÓN" },
+        { label: "AUTORIZA", name: po.authorizedByName || "", signatureUrl: po.authorizationSignatureUrl || null, pending: !po.authorizedBy, pendingLabel: "PENDIENTE AUTORIZACIÓN" },
+        { label: "RECIBE" },
+      ];
+      const res = await fetch("/api/generate-material-order", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ center: centerForPdf, cipiVariant: cipiVariantForPdf, concepto: po.concepto, groups, signatures, note: po.note || "" }),
+      });
+      if (!res.ok) throw new Error(`Error ${res.status} al reimprimir`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      alert("Error al reimprimir la solicitud: " + e.message);
+    } finally {
+      setReprintingPO(null);
+    }
   };
 
   const registerMovement = async () => {
@@ -1093,20 +1135,21 @@ export default function Inventario() {
             const isOpen = expandedPO === po.id;
             const poItems = Array.isArray(po.items) ? po.items : [];
             const received = po.status === "recibida";
-            const cancelled = po.status === "cancelada";
+            const closed = po.status === "cerrada";
+            const isTerminal = received || closed; // ya no se puede editar ni volver a firmar
             return (
-              <div key={po.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden", opacity: cancelled ? 0.55 : 1 }}>
+              <div key={po.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden", opacity: closed ? 0.55 : 1 }}>
                 <div onClick={() => setExpandedPO(isOpen ? null : po.id)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-                  <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600, minWidth:160, textDecoration: cancelled ? "line-through" : "none" }}>{po.concepto}</span>
+                  <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600, minWidth:160, textDecoration: closed ? "line-through" : "none" }}>{po.concepto}</span>
                   <span style={{ fontSize:11, color:"#666" }}>{poItems.length} artículo{poItems.length!==1?"s":""}</span>
                   {po.note && <span title={po.note} style={{ fontSize:11, color:"#4fc3f7" }}>📝</span>}
                   <span style={{ fontSize:11, color:"#555" }}>{po.requestedByName || ""}{po.requestedAt ? " · " + new Date(po.requestedAt).toLocaleDateString("es-MX") : ""}</span>
                   <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
-                    background: received ? "rgba(0,212,170,0.12)" : cancelled ? "rgba(255,107,107,0.1)" : "rgba(255,255,255,0.05)",
-                    color: received ? "#00d4aa" : cancelled ? "#ff6b6b" : "#888" }}>
-                    {received ? "✓ Recibida" : cancelled ? "✕ Cancelada" : "⏳ Pendiente"}
+                    background: received ? "rgba(0,212,170,0.12)" : closed ? "rgba(255,107,107,0.1)" : "rgba(255,255,255,0.05)",
+                    color: received ? "#00d4aa" : closed ? "#ff6b6b" : "#888" }}>
+                    {received ? "✓ Recibida" : closed ? "✕ Cerrada" : "⏳ Pendiente"}
                   </span>
-                  {!cancelled && (
+                  {!closed && (
                     <span title={po.authorizedBy ? `Autorizado por ${po.authorizedByName || ""}` : po.validatedBy ? `Validado por ${po.validatedByName || ""} — falta autorización del jefe` : "Pendiente del checkup de Paola"}
                       style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99,
                       background: po.authorizedBy ? "rgba(0,212,170,0.12)" : "rgba(255,179,71,0.1)",
@@ -1121,9 +1164,14 @@ export default function Inventario() {
                     {po.note && (
                       <div style={{ fontSize:11, color:"#4fc3f7", marginBottom:6, padding:"6px 8px", background:"rgba(79,195,247,0.06)", borderRadius:6 }}>📝 {po.note}</div>
                     )}
-                    {cancelled && (
+                    {closed && (
                       <div style={{ fontSize:11, color:"#ff6b6b", marginBottom:6, padding:"6px 8px", background:"rgba(255,107,107,0.06)", borderRadius:6 }}>
-                        ✕ Cancelada por {po.cancelledByName || ""}{po.cancelledAt ? " · " + new Date(po.cancelledAt).toLocaleString("es-MX") : ""} — {po.cancelReason}
+                        ✕ Cerrada por {po.closedByName || ""}{po.closedAt ? " · " + new Date(po.closedAt).toLocaleString("es-MX") : ""} — {po.closeReason}
+                      </div>
+                    )}
+                    {received && po.receivedByEventId && (
+                      <div style={{ fontSize:11, color:"#00d4aa", marginBottom:6, padding:"6px 8px", background:"rgba(0,212,170,0.06)", borderRadius:6 }}>
+                        ✓ Recibida — ligada a la entrada registrada{po.receivedAt ? " · " + new Date(po.receivedAt).toLocaleString("es-MX") : ""}
                       </div>
                     )}
                     {poItems.map((t,ti) => (
@@ -1131,27 +1179,20 @@ export default function Inventario() {
                         <span>{t.item}</span><span style={{ color:"#00d4aa" }}>{t.qty}</span>
                       </div>
                     ))}
-                    {!cancelled && (
-                      <div style={{ display:"flex", gap:8, marginTop:8, flexWrap:"wrap" }}>
-                        {canValidate && !po.validatedBy && (
-                          <button onClick={e => { e.stopPropagation(); validatePurchaseOrder(po.id); }} disabled={savingPOAction === po.id}
-                            style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
-                            {savingPOAction===po.id ? "Guardando…" : "✓ Validar (checkup)"}
-                          </button>
-                        )}
-                        {canAuthorize && po.validatedBy && !po.authorizedBy && (
-                          <button onClick={e => { e.stopPropagation(); authorizePurchaseOrder(po.id); }} disabled={savingPOAction === po.id}
-                            style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
-                            {savingPOAction===po.id ? "Guardando…" : "✓ Autorizar"}
-                          </button>
-                        )}
-                        {!received && canValidate && (
-                          <button onClick={e => { e.stopPropagation(); markPurchaseOrderReceived(po.id); }} disabled={savingPOAction === po.id}
-                            title="Marcar que la mercancía ya llegó -- esto no registra la entrada al inventario, solo cierra el seguimiento de la solicitud (usa 'Registrar entrada' aparte para eso)"
-                            style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(0,212,170,0.1)", border:"1px solid rgba(0,212,170,0.25)", color:"#00d4aa" }}>
-                            {savingPOAction===po.id ? "Guardando…" : "✓ Marcar recibida"}
-                          </button>
-                        )}
+                    <div style={{ display:"flex", gap:8, marginTop:8, flexWrap:"wrap" }}>
+                      {!isTerminal && canValidate && !po.validatedBy && (
+                        <button onClick={e => { e.stopPropagation(); validatePurchaseOrder(po.id); }} disabled={savingPOAction === po.id}
+                          style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
+                          {savingPOAction===po.id ? "Guardando…" : "✓ Validar (checkup)"}
+                        </button>
+                      )}
+                      {!isTerminal && canAuthorize && po.validatedBy && !po.authorizedBy && (
+                        <button onClick={e => { e.stopPropagation(); authorizePurchaseOrder(po.id); }} disabled={savingPOAction === po.id}
+                          style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                          {savingPOAction===po.id ? "Guardando…" : "✓ Autorizar"}
+                        </button>
+                      )}
+                      {!isTerminal && (
                         <button onClick={e => {
                             e.stopPropagation();
                             setEditingPO(po);
@@ -1164,15 +1205,20 @@ export default function Inventario() {
                           style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>
                           ✏️ Editar
                         </button>
-                        {!received && (
-                          <button onClick={e => { e.stopPropagation(); cancelPurchaseOrder(po); }} disabled={savingPOAction === po.id}
-                            title="La solicitud no se va a concretar (se canceló, se duplicó, se resolvió de otra forma) -- pide motivo y queda como registro, nunca se borra"
-                            style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
-                            ✕ Cancelar
-                          </button>
-                        )}
-                      </div>
-                    )}
+                      )}
+                      {!isTerminal && (
+                        <button onClick={e => { e.stopPropagation(); closePurchaseOrder(po); }} disabled={savingPOAction === po.id}
+                          title="La solicitud no se va a concretar por la vía normal (se canceló, se duplicó, se resolvió de otra forma) -- pide motivo y queda como registro, nunca se borra. Ya no se podrá editar después."
+                          style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: savingPOAction===po.id ? "wait" : "pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
+                          ✕ Cerrar
+                        </button>
+                      )}
+                      <button onClick={e => { e.stopPropagation(); reprintPurchaseOrder(po); }} disabled={reprintingPO === po.id}
+                        title="Volver a generar el PDF -- útil para obtener una copia con las firmas ya al día"
+                        style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor: reprintingPO===po.id ? "wait" : "pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                        {reprintingPO===po.id ? "…" : "🖨️ Reimprimir"}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
