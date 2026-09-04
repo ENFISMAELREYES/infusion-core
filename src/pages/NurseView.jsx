@@ -676,6 +676,16 @@ function SessionCard({ session, token, onRefresh, user }) {
           updates.confirmedAt = new Date().toISOString();
           updates.confirmedBy = user?.email || "";
         }
+        // Si quedó marcado "no asistirá hoy" de antes (y se le olvidó a
+        // enfermería deshacerlo) pero de todas formas se está registrando
+        // el ingreso, es porque el paciente sí llegó -- se limpia solo, en
+        // vez de dejarlo contradictoriamente marcado como "no asistirá" a
+        // pesar de que ya está en curso.
+        if (session.noShowToday) {
+          updates.noShowToday = false;
+          updates.noShowMarkedAt = null;
+          updates.noShowMarkedBy = null;
+        }
 
         // Confirmar cita en agenda si existe
         try {
