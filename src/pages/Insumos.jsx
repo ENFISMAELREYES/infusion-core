@@ -1183,6 +1183,9 @@ export default function Insumos() {
             {dayList.map(s => (
               <div key={s.id} style={{ padding:"10px 14px", borderRadius:10, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
                 <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <img src={s.center === "CIPI" ? "/logo-cipi-icon.png" : "/logo-citio-icon.png"} alt=""
+                    onError={e => { e.currentTarget.style.display = "none"; }}
+                    style={{ width:20, height:20, objectFit:"contain", opacity:0.85, flexShrink:0, borderRadius:"50%" }} />
                   <span style={{ flex:1, fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</span>
                   <span style={{ fontSize:11, color:"#888" }}>{s.cycle}</span>
                   <span style={{ fontSize:11, color:"#666" }}>{s.center}{s.cipiVariant ? ` ${s.cipiVariant}` : ""}</span>
