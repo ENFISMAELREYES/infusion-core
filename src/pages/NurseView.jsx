@@ -681,19 +681,22 @@ function FichaResumenModal({ med, ficha, onClose }) {
           </div>
         </div>
 
-        {ficha.monitoreo_durante_infusion && (
-          <div>
-            <div style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>Efectos secundarios</div>
-            <div style={{ fontSize:13, color:"#ccc", lineHeight:1.5 }}>{ficha.monitoreo_durante_infusion}</div>
+        {/* Monitoreo y señales de alarma -- se muestran tal cual están en la
+            ficha (son los mismos campos que se editan en Fichas técnicas),
+            en vez de forzarlos bajo un rótulo genérico de "efectos
+            secundarios" que no les correspondía. */}
+        {[
+          ["monitoreo_durante_infusion", "Monitoreo durante la infusión", "#666"],
+          ["signos_alarma_hipersensibilidad", "Signos de alarma — hipersensibilidad", "#ff6b6b"],
+          ["signos_alarma_extravasacion", "Signos de alarma — extravasación", "#ff6b6b"],
+          ["conducta_inmediata_reaccion", "Conducta inmediata ante reacción", "#ff6b6b"],
+          ["antidoto_kit_especifico", "Antídoto / kit específico", "#ff6b6b"],
+        ].map(([field, label, color]) => ficha[field] && (
+          <div key={field}>
+            <div style={{ fontSize:11, color, textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>{label}</div>
+            <div style={{ fontSize:13, color:"#ccc", lineHeight:1.5, whiteSpace:"pre-line" }}>{ficha[field]}</div>
           </div>
-        )}
-
-        {ficha.antidoto_kit_especifico && (
-          <div>
-            <div style={{ fontSize:11, color:"#ff6b6b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>Extravasación</div>
-            <div style={{ fontSize:13, color:"#ccc", lineHeight:1.5 }}>{ficha.antidoto_kit_especifico}</div>
-          </div>
-        )}
+        ))}
 
         <button onClick={onClose} style={{ padding:"9px", borderRadius:9, fontSize:13, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cerrar</button>
       </div>
