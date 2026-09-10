@@ -545,13 +545,21 @@ useEffect(() => { loadUnfinished(); }, [user]);
 
   const addNewMed = () => {
     const newId = Date.now();
-    setMedStates(p => ({
-      ...p, [newId]: {
-        id: newId, order: Object.keys(p).length + 1,
-        name: "", dose: "", diluent: "", time: 0,
-        category: "premedicacion", reviewStatus: "approved", isNew: true,
-      }
-    }));
+    setMedStates(p => {
+      // Posición por defecto: después del último orden real, no de la
+      // cantidad de medicamentos -- si se borró alguno en esta misma
+      // edición, la cantidad ya no coincide con el order máximo existente
+      // y el nuevo terminaba chocando (mismo order) con uno de en medio,
+      // apareciendo ahí en vez de al final.
+      const maxOrder = Math.max(0, ...Object.values(p).map(m => Number(m.order) || 0));
+      return {
+        ...p, [newId]: {
+          id: newId, order: maxOrder + 1,
+          name: "", dose: "", diluent: "", time: 0,
+          category: "premedicacion", reviewStatus: "approved", isNew: true,
+        }
+      };
+    });
   };
 
   const handleDeleteSession = async (sessionId, patientName) => {
