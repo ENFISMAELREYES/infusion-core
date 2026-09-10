@@ -104,6 +104,13 @@ service cloud.firestore {
       allow write: if isAuth() && userRole() == "jefe";
     }
 
+    // Fichas técnicas de medicamentos: manual de referencia rápida para
+    // enfermería (lectura de todos) -- solo el jefe las captura/edita/borra.
+    match /fichas_tecnicas/{id} {
+      allow read: if isAuth();
+      allow write: if isAuth() && userRole() == "jefe";
+    }
+
     // Inventario: existencias por almacén
     match /inventory/{id} {
       allow read: if isAuth();
