@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { normalizeMedName } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -41,6 +42,19 @@ async function fetchPendingSessions(token) {
         orderBy: [{ field: { fieldPath: "date" }, direction: "ASCENDING" }]
       }
     })
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data.filter(d => d.document).map(d => parseDoc(d.document));
+}
+
+// Fichas técnicas, para el panel de referencia junto a cada medicamento
+// (Fase 2) -- no depende de la sesión seleccionada, se carga una sola vez.
+async function fetchFichasTecnicas(token) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
+  const res = await fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: "fichas_tecnicas" }], limit: 1000 } }),
   });
   const data = await res.json();
   if (!Array.isArray(data)) return [];
@@ -95,6 +109,47 @@ const CAT_COLOR = {
 const CATEGORIES = ["premedicacion","inmunoterapia","quimioterapia","adicional","especialidad","hidratacion","domicilio"];
 const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", hidratacion:"Hidratación", domicilio:"Domicilio" };
 
+// Ct (concentración final del producto mezclado) = dosis ÷ volumen diluido
+// -- a diferencia de validar el volumen de dilución en sí (que en la ficha
+// puede depender de un rango condicional según la dosis, ver Fase 1), la
+// concentración final resultante SÍ es un número limpio y comparable sin
+// importar qué combinación de volumen se haya usado para llegar ahí. Por
+// eso es lo único que se calcula de forma automática -- si algo no se
+// puede parsear con confianza, se devuelve null y simplemente no se
+// muestra nada (nunca un resultado adivinado).
+function computeCtCheck(med, ficha) {
+  if (!ficha || !med.dose || !med.diluent) return null;
+  const doseMatch = med.dose.match(/(\d+\.?\d*)/);
+  const dose = doseMatch ? parseFloat(doseMatch[1]) : null;
+  const volMatch = med.diluent.match(/(\d+\.?\d*)\s*ML/i);
+  const vol = volMatch ? parseFloat(volMatch[1]) : null;
+  if (!dose || !vol) return null;
+  const ct = dose / vol;
+
+  // Acepta guion normal, en-dash/em-dash, o "a" entre los dos números
+  // (ej. "0.3–0.74 mg/mL", "0.3-0.74 mg/mL", "0.3 a 0.74 mg/mL").
+  const rangeMatch = (ficha.volumen_concentracion_final || "").match(/(\d+\.?\d*)\s*[-–—a]\s*(\d+\.?\d*)/i);
+  if (!rangeMatch) return null;
+  const min = parseFloat(rangeMatch[1]), max = parseFloat(rangeMatch[2]);
+  const inRange = ct >= min && ct <= max;
+
+  // Segundo check: el tipo de diluyente capturado (SF/SG) contra lo que
+  // menciona el texto de dilución de la ficha -- si no se puede determinar
+  // ninguno de los dos con claridad, dilTypeOk queda null (no se muestra
+  // ese renglón, en vez de arriesgar un ✓/⚠️ equivocado).
+  const up = med.diluent.toUpperCase();
+  const capturedType = /\bSG\b/.test(up) ? "SG" : (/\bSF\b/.test(up) || /\bCS\b/.test(up)) ? "SF" : null;
+  let dilTypeOk = null;
+  if (capturedType) {
+    const dilText = (ficha.dilucion_solucion_tecnica || "").toUpperCase();
+    const acceptsSF = /\bSF\b/.test(dilText) || /\bCS\b/.test(dilText) || /CLORURO/.test(dilText);
+    const acceptsSG = /\bSG\b/.test(dilText) || /GLUCOSA/.test(dilText);
+    if (acceptsSF || acceptsSG) dilTypeOk = capturedType === "SG" ? acceptsSG : acceptsSF;
+  }
+
+  return { ct, min, max, inRange, dilTypeOk };
+}
+
 function calcWash(med, draft) {
   const wash = draft.washNA ? { washNA: true } : (() => {
     let speed;
@@ -137,7 +192,7 @@ function calcWash(med, draft) {
   return { ...wash, ...wash2 };
 }
 
-function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggestion }) {
+function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggestion, fichasByName }) {
   const [open, setOpen]   = useState(isNew || false);
   const [draft, setDraft] = useState({
     diluent: "", time: "", order: "", general: "",
@@ -159,6 +214,24 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
   const volMatch            = med.diluent?.match(/(\d+)/);
   const vol                 = volMatch ? parseInt(volMatch[1]) : null;
   const speed               = med.category === "premedicacion" ? 60 : (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
+
+  // Ficha técnica de referencia (Fase 2) -- exacta primero, si no hay
+  // coincidencia exacta se busca por contención (mismo criterio laxo que
+  // ya usa el resto de la app para emparejar nombres de medicamento). Sin
+  // verdicto automático: solo se muestra para que el jefe compare contra
+  // lo capturado, con todo el contexto real (ver por qué en el commit de
+  // Fase 1 -- casos como dilución condicional por dosis no se reducen a un
+  // simple rango).
+  const medNameNorm = normalizeMedName(med.name);
+  const ficha = !isNew && medNameNorm && fichasByName ? (
+    fichasByName[medNameNorm] ||
+    Object.values(fichasByName).find(f => {
+      const fn = normalizeMedName(f.nombre_generico);
+      return fn && (medNameNorm.includes(fn) || fn.includes(medNameNorm));
+    })
+  ) : null;
+  const fichaHasCriticalAlert = ficha && ["SI","SÍ"].includes((ficha.alerta_critica_seguridad || "").trim().toUpperCase());
+  const ctCheck = ficha ? computeCtCheck(med, ficha) : null;
 
   const save = () => {
     const wash = calcWash(med, draft);
@@ -217,6 +290,34 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
                 <div><label style={lbl}>Posición en secuencia</label><input type="number" min="1" value={med.order} onChange={e => onUpdate(med.id, "order", parseInt(e.target.value))} style={inp} /></div>
                 <button onClick={() => onApprove(med.id, calcWash(med, draft))} style={{ padding: "10px", borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: "pointer", background: "linear-gradient(135deg,#1D9E75,#0F6E56)", border: "none", color: "#fff" }}>✓ Confirmar medicamento</button>
               </>
+            )}
+
+            {ficha && (fichaHasCriticalAlert || ctCheck) && (
+              <div style={{ padding:"12px 14px", borderRadius:10, background:"#0d0d0d", border:"1px solid rgba(255,255,255,0.08)", display:"flex", flexDirection:"column", gap:10 }}>
+                {fichaHasCriticalAlert && (
+                  <div style={{ fontSize:12, color:"#ff6b6b", padding:"7px 10px", background:"rgba(255,107,107,0.08)", border:"1px solid rgba(255,107,107,0.25)", borderRadius:8 }}>
+                    🔴 <strong>Alerta crítica ({ficha.nombre_generico}):</strong> {ficha.detalle_alerta_critica}
+                  </div>
+                )}
+                {ctCheck && (
+                  <>
+                    <div>
+                      <div style={{ fontSize:11, color:"#888", marginBottom:2 }}>Ct: concentración final del producto mezclado</div>
+                      <div style={{ fontSize:18, fontWeight:700, color:"#f0f0f0" }}>{ctCheck.ct.toFixed(2)} <span style={{ fontSize:12, color:"#888", fontWeight:400 }}>mg/mL</span></div>
+                    </div>
+                    <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 10px", borderRadius:8, background: ctCheck.inRange ? "rgba(0,212,170,0.08)" : "rgba(255,107,107,0.08)" }}>
+                      <span style={{ color: ctCheck.inRange ? "#00d4aa" : "#ff6b6b" }}>{ctCheck.inRange ? "✓" : "⚠️"}</span>
+                      <span style={{ fontSize:12, color:"#ccc" }}>{ctCheck.inRange ? "Dentro de rango de dilución" : "Fuera de rango de dilución"} ({ctCheck.min}–{ctCheck.max} mg/mL)</span>
+                    </div>
+                    {ctCheck.dilTypeOk !== null && (
+                      <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 10px", borderRadius:8, background: ctCheck.dilTypeOk ? "rgba(0,212,170,0.08)" : "rgba(255,107,107,0.08)" }}>
+                        <span style={{ color: ctCheck.dilTypeOk ? "#00d4aa" : "#ff6b6b" }}>{ctCheck.dilTypeOk ? "✓" : "⚠️"}</span>
+                        <span style={{ fontSize:12, color:"#ccc" }}>{ctCheck.dilTypeOk ? "Diluyente dentro de lo recomendado" : "Diluyente distinto al recomendado"}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             )}
 
             {!isNew && (
@@ -368,6 +469,17 @@ export default function Autorizar() {
   const [saving, setSaving]             = useState(false);
   const [done, setDone]                 = useState(false);
   const [unfinished, setUnfinished] = useState([]);
+  const [fichasByName, setFichasByName] = useState({});
+
+  useEffect(() => {
+    if (!user) return;
+    user.getIdToken().then(async (token) => {
+      const fichas = await fetchFichasTecnicas(token);
+      const byName = {};
+      fichas.forEach(f => { if (f.nombre_generico) byName[normalizeMedName(f.nombre_generico)] = f; });
+      setFichasByName(byName);
+    });
+  }, [user]);
 
   const load = async () => {
     if (!user) return;
@@ -433,13 +545,21 @@ useEffect(() => { loadUnfinished(); }, [user]);
 
   const addNewMed = () => {
     const newId = Date.now();
-    setMedStates(p => ({
-      ...p, [newId]: {
-        id: newId, order: Object.keys(p).length + 1,
-        name: "", dose: "", diluent: "", time: 0,
-        category: "premedicacion", reviewStatus: "approved", isNew: true,
-      }
-    }));
+    setMedStates(p => {
+      // Posición por defecto: después del último orden real, no de la
+      // cantidad de medicamentos -- si se borró alguno en esta misma
+      // edición, la cantidad ya no coincide con el order máximo existente
+      // y el nuevo terminaba chocando (mismo order) con uno de en medio,
+      // apareciendo ahí en vez de al final.
+      const maxOrder = Math.max(0, ...Object.values(p).map(m => Number(m.order) || 0));
+      return {
+        ...p, [newId]: {
+          id: newId, order: maxOrder + 1,
+          name: "", dose: "", diluent: "", time: 0,
+          category: "premedicacion", reviewStatus: "approved", isNew: true,
+        }
+      };
+    });
   };
 
   const handleDeleteSession = async (sessionId, patientName) => {
@@ -626,6 +746,7 @@ useEffect(() => { loadUnfinished(); }, [user]);
                     onDelete={deleteMed} onUpdate={updateMed}
                     isNew={!!m.isNew}
                     suggestion={suggestion}
+                    fichasByName={fichasByName}
                   />
                 );
               })}
