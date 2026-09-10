@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { normalizeMedName } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -41,6 +42,19 @@ async function fetchPendingSessions(token) {
         orderBy: [{ field: { fieldPath: "date" }, direction: "ASCENDING" }]
       }
     })
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data.filter(d => d.document).map(d => parseDoc(d.document));
+}
+
+// Fichas técnicas, para el panel de referencia junto a cada medicamento
+// (Fase 2) -- no depende de la sesión seleccionada, se carga una sola vez.
+async function fetchFichasTecnicas(token) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
+  const res = await fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: "fichas_tecnicas" }], limit: 1000 } }),
   });
   const data = await res.json();
   if (!Array.isArray(data)) return [];
@@ -137,7 +151,7 @@ function calcWash(med, draft) {
   return { ...wash, ...wash2 };
 }
 
-function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggestion }) {
+function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggestion, fichasByName }) {
   const [open, setOpen]   = useState(isNew || false);
   const [draft, setDraft] = useState({
     diluent: "", time: "", order: "", general: "",
@@ -159,6 +173,23 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
   const volMatch            = med.diluent?.match(/(\d+)/);
   const vol                 = volMatch ? parseInt(volMatch[1]) : null;
   const speed               = med.category === "premedicacion" ? 60 : (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
+
+  // Ficha técnica de referencia (Fase 2) -- exacta primero, si no hay
+  // coincidencia exacta se busca por contención (mismo criterio laxo que
+  // ya usa el resto de la app para emparejar nombres de medicamento). Sin
+  // verdicto automático: solo se muestra para que el jefe compare contra
+  // lo capturado, con todo el contexto real (ver por qué en el commit de
+  // Fase 1 -- casos como dilución condicional por dosis no se reducen a un
+  // simple rango).
+  const medNameNorm = normalizeMedName(med.name);
+  const ficha = !isNew && medNameNorm && fichasByName ? (
+    fichasByName[medNameNorm] ||
+    Object.values(fichasByName).find(f => {
+      const fn = normalizeMedName(f.nombre_generico);
+      return fn && (medNameNorm.includes(fn) || fn.includes(medNameNorm));
+    })
+  ) : null;
+  const fichaHasCriticalAlert = ficha && ["SI","SÍ"].includes((ficha.alerta_critica_seguridad || "").trim().toUpperCase());
 
   const save = () => {
     const wash = calcWash(med, draft);
@@ -217,6 +248,41 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
                 <div><label style={lbl}>Posición en secuencia</label><input type="number" min="1" value={med.order} onChange={e => onUpdate(med.id, "order", parseInt(e.target.value))} style={inp} /></div>
                 <button onClick={() => onApprove(med.id, calcWash(med, draft))} style={{ padding: "10px", borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: "pointer", background: "linear-gradient(135deg,#1D9E75,#0F6E56)", border: "none", color: "#fff" }}>✓ Confirmar medicamento</button>
               </>
+            )}
+
+            {ficha && (
+              <div style={{ padding:"12px 14px", borderRadius:10, background:"rgba(0,212,170,0.04)", border:"1px solid rgba(0,212,170,0.2)", display:"flex", flexDirection:"column", gap:8 }}>
+                <div style={{ fontSize:11, color:"#00d4aa", fontWeight:600, textTransform:"uppercase", letterSpacing:1 }}>📋 Ficha técnica — {ficha.nombre_generico}</div>
+                {fichaHasCriticalAlert && (
+                  <div style={{ fontSize:12, color:"#ff6b6b", padding:"7px 10px", background:"rgba(255,107,107,0.08)", border:"1px solid rgba(255,107,107,0.25)", borderRadius:8 }}>
+                    🔴 <strong>Alerta crítica:</strong> {ficha.detalle_alerta_critica}
+                  </div>
+                )}
+                {[
+                  ["Dilución técnica", ficha.dilucion_solucion_tecnica],
+                  ["Tiempo / velocidad de infusión", ficha.velocidad_tiempo_infusion],
+                  ["Premedicación requerida", ficha.premedicacion_requerida],
+                  ["Puntos críticos de doble verificación", ficha.puntos_criticos_doble_verificacion],
+                ].filter(([, v]) => v).map(([label, value]) => (
+                  <div key={label}>
+                    <div style={{ fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>{label}</div>
+                    <div style={{ fontSize:12, color:"#ccc", lineHeight:1.5, whiteSpace:"pre-wrap" }}>{value}</div>
+                  </div>
+                ))}
+                {ficha.secuencia_en_esquema && (
+                  <div>
+                    <div style={{ fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>Secuencia en esquema</div>
+                    <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                      {ficha.secuencia_en_esquema.split("|").map(s => s.trim()).filter(Boolean).map((linea, li) => (
+                        <div key={li} style={{ display:"flex", gap:6, fontSize:12, color:"#ccc", lineHeight:1.5 }}>
+                          <span style={{ color:"#00d4aa", flexShrink:0 }}>•</span>
+                          <span>{linea}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {!isNew && (
@@ -368,6 +434,17 @@ export default function Autorizar() {
   const [saving, setSaving]             = useState(false);
   const [done, setDone]                 = useState(false);
   const [unfinished, setUnfinished] = useState([]);
+  const [fichasByName, setFichasByName] = useState({});
+
+  useEffect(() => {
+    if (!user) return;
+    user.getIdToken().then(async (token) => {
+      const fichas = await fetchFichasTecnicas(token);
+      const byName = {};
+      fichas.forEach(f => { if (f.nombre_generico) byName[normalizeMedName(f.nombre_generico)] = f; });
+      setFichasByName(byName);
+    });
+  }, [user]);
 
   const load = async () => {
     if (!user) return;
@@ -626,6 +703,7 @@ useEffect(() => { loadUnfinished(); }, [user]);
                     onDelete={deleteMed} onUpdate={updateMed}
                     isNew={!!m.isNew}
                     suggestion={suggestion}
+                    fichasByName={fichasByName}
                   />
                 );
               })}
