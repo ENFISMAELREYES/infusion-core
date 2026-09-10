@@ -76,8 +76,9 @@ const SECTIONS = [
     ["conducta_inmediata_reaccion","Conducta inmediata ante reacción"], ["antidoto_kit_especifico","Antídoto / kit específico"],
   ]},
   { title: "Otros", fields: [
-    ["fuente_referencia_clinica","Fuente / referencia clínica"], ["notas_adicionales","Notas adicionales"],
+    ["notas_adicionales","Notas adicionales"],
     ["codigo_infusioncore","Código InfusionCore"], ["codigo_cemi","Código CEMI"],
+    ["fuente_referencia_clinica","Fuente / referencia clínica"],
   ]},
 ];
 
