@@ -109,6 +109,47 @@ const CAT_COLOR = {
 const CATEGORIES = ["premedicacion","inmunoterapia","quimioterapia","adicional","especialidad","hidratacion","domicilio"];
 const CAT_LABEL = { premedicacion:"Premedicación", inmunoterapia:"Inmunoterapia", quimioterapia:"Quimioterapia", adicional:"Adicional", especialidad:"Especialidad", hidratacion:"Hidratación", domicilio:"Domicilio" };
 
+// Ct (concentración final del producto mezclado) = dosis ÷ volumen diluido
+// -- a diferencia de validar el volumen de dilución en sí (que en la ficha
+// puede depender de un rango condicional según la dosis, ver Fase 1), la
+// concentración final resultante SÍ es un número limpio y comparable sin
+// importar qué combinación de volumen se haya usado para llegar ahí. Por
+// eso es lo único que se calcula de forma automática -- si algo no se
+// puede parsear con confianza, se devuelve null y simplemente no se
+// muestra nada (nunca un resultado adivinado).
+function computeCtCheck(med, ficha) {
+  if (!ficha || !med.dose || !med.diluent) return null;
+  const doseMatch = med.dose.match(/(\d+\.?\d*)/);
+  const dose = doseMatch ? parseFloat(doseMatch[1]) : null;
+  const volMatch = med.diluent.match(/(\d+\.?\d*)\s*ML/i);
+  const vol = volMatch ? parseFloat(volMatch[1]) : null;
+  if (!dose || !vol) return null;
+  const ct = dose / vol;
+
+  // Acepta guion normal, en-dash/em-dash, o "a" entre los dos números
+  // (ej. "0.3–0.74 mg/mL", "0.3-0.74 mg/mL", "0.3 a 0.74 mg/mL").
+  const rangeMatch = (ficha.volumen_concentracion_final || "").match(/(\d+\.?\d*)\s*[-–—a]\s*(\d+\.?\d*)/i);
+  if (!rangeMatch) return null;
+  const min = parseFloat(rangeMatch[1]), max = parseFloat(rangeMatch[2]);
+  const inRange = ct >= min && ct <= max;
+
+  // Segundo check: el tipo de diluyente capturado (SF/SG) contra lo que
+  // menciona el texto de dilución de la ficha -- si no se puede determinar
+  // ninguno de los dos con claridad, dilTypeOk queda null (no se muestra
+  // ese renglón, en vez de arriesgar un ✓/⚠️ equivocado).
+  const up = med.diluent.toUpperCase();
+  const capturedType = /\bSG\b/.test(up) ? "SG" : (/\bSF\b/.test(up) || /\bCS\b/.test(up)) ? "SF" : null;
+  let dilTypeOk = null;
+  if (capturedType) {
+    const dilText = (ficha.dilucion_solucion_tecnica || "").toUpperCase();
+    const acceptsSF = /\bSF\b/.test(dilText) || /\bCS\b/.test(dilText) || /CLORURO/.test(dilText);
+    const acceptsSG = /\bSG\b/.test(dilText) || /GLUCOSA/.test(dilText);
+    if (acceptsSF || acceptsSG) dilTypeOk = capturedType === "SG" ? acceptsSG : acceptsSF;
+  }
+
+  return { ct, min, max, inRange, dilTypeOk };
+}
+
 function calcWash(med, draft) {
   const wash = draft.washNA ? { washNA: true } : (() => {
     let speed;
@@ -190,6 +231,7 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
     })
   ) : null;
   const fichaHasCriticalAlert = ficha && ["SI","SÍ"].includes((ficha.alerta_critica_seguridad || "").trim().toUpperCase());
+  const ctCheck = ficha ? computeCtCheck(med, ficha) : null;
 
   const save = () => {
     const wash = calcWash(med, draft);
@@ -250,37 +292,30 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
               </>
             )}
 
-            {ficha && (
-              <div style={{ padding:"12px 14px", borderRadius:10, background:"rgba(0,212,170,0.04)", border:"1px solid rgba(0,212,170,0.2)", display:"flex", flexDirection:"column", gap:8 }}>
-                <div style={{ fontSize:11, color:"#00d4aa", fontWeight:600, textTransform:"uppercase", letterSpacing:1 }}>📋 Ficha técnica — {ficha.nombre_generico}</div>
+            {ficha && (fichaHasCriticalAlert || ctCheck) && (
+              <div style={{ padding:"12px 14px", borderRadius:10, background:"#0d0d0d", border:"1px solid rgba(255,255,255,0.08)", display:"flex", flexDirection:"column", gap:10 }}>
                 {fichaHasCriticalAlert && (
                   <div style={{ fontSize:12, color:"#ff6b6b", padding:"7px 10px", background:"rgba(255,107,107,0.08)", border:"1px solid rgba(255,107,107,0.25)", borderRadius:8 }}>
-                    🔴 <strong>Alerta crítica:</strong> {ficha.detalle_alerta_critica}
+                    🔴 <strong>Alerta crítica ({ficha.nombre_generico}):</strong> {ficha.detalle_alerta_critica}
                   </div>
                 )}
-                {[
-                  ["Dilución técnica", ficha.dilucion_solucion_tecnica],
-                  ["Tiempo / velocidad de infusión", ficha.velocidad_tiempo_infusion],
-                  ["Premedicación requerida", ficha.premedicacion_requerida],
-                  ["Puntos críticos de doble verificación", ficha.puntos_criticos_doble_verificacion],
-                ].filter(([, v]) => v).map(([label, value]) => (
-                  <div key={label}>
-                    <div style={{ fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>{label}</div>
-                    <div style={{ fontSize:12, color:"#ccc", lineHeight:1.5, whiteSpace:"pre-wrap" }}>{value}</div>
-                  </div>
-                ))}
-                {ficha.secuencia_en_esquema && (
-                  <div>
-                    <div style={{ fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>Secuencia en esquema</div>
-                    <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
-                      {ficha.secuencia_en_esquema.split("|").map(s => s.trim()).filter(Boolean).map((linea, li) => (
-                        <div key={li} style={{ display:"flex", gap:6, fontSize:12, color:"#ccc", lineHeight:1.5 }}>
-                          <span style={{ color:"#00d4aa", flexShrink:0 }}>•</span>
-                          <span>{linea}</span>
-                        </div>
-                      ))}
+                {ctCheck && (
+                  <>
+                    <div>
+                      <div style={{ fontSize:11, color:"#888", marginBottom:2 }}>Ct: concentración final del producto mezclado</div>
+                      <div style={{ fontSize:18, fontWeight:700, color:"#f0f0f0" }}>{ctCheck.ct.toFixed(2)} <span style={{ fontSize:12, color:"#888", fontWeight:400 }}>mg/mL</span></div>
                     </div>
-                  </div>
+                    <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 10px", borderRadius:8, background: ctCheck.inRange ? "rgba(0,212,170,0.08)" : "rgba(255,107,107,0.08)" }}>
+                      <span style={{ color: ctCheck.inRange ? "#00d4aa" : "#ff6b6b" }}>{ctCheck.inRange ? "✓" : "⚠️"}</span>
+                      <span style={{ fontSize:12, color:"#ccc" }}>{ctCheck.inRange ? "Dentro de rango de dilución" : "Fuera de rango de dilución"} ({ctCheck.min}–{ctCheck.max} mg/mL)</span>
+                    </div>
+                    {ctCheck.dilTypeOk !== null && (
+                      <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 10px", borderRadius:8, background: ctCheck.dilTypeOk ? "rgba(0,212,170,0.08)" : "rgba(255,107,107,0.08)" }}>
+                        <span style={{ color: ctCheck.dilTypeOk ? "#00d4aa" : "#ff6b6b" }}>{ctCheck.dilTypeOk ? "✓" : "⚠️"}</span>
+                        <span style={{ fontSize:12, color:"#ccc" }}>{ctCheck.dilTypeOk ? "Diluyente dentro de lo recomendado" : "Diluyente distinto al recomendado"}</span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
