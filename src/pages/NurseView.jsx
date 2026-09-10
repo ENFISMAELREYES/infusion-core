@@ -3,6 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { uploadSignature, uploadUserSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { computeSessionMaterial } from "../data/materialCatalog";
+import { normalizeMedName } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -71,6 +72,20 @@ async function fetchTodaySessions(token, center, date) {
         ]}}
       }
     })
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data.filter(d => d.document).map(d => parseFirestoreDoc(d.document));
+}
+
+// Fichas técnicas, para la consulta rápida "?" junto al medicamento en
+// curso (ver FichaResumenModal más abajo) -- no depende de la sesión, se
+// carga una sola vez.
+async function fetchFichasTecnicas(token) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
+  const res = await fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: "fichas_tecnicas" }], limit: 1000 } }),
   });
   const data = await res.json();
   if (!Array.isArray(data)) return [];
@@ -628,7 +643,65 @@ function ProcedureNote({ session, token, onRefresh, user }) {
   );
 }
 
-function SessionCard({ session, token, onRefresh, user }) {
+// Consulta rápida de la ficha técnica del medicamento en curso -- combina
+// lo capturado en ESTA sesión (dosis, dilución, concentración calculada)
+// con la parte de referencia de la ficha (tiempo, efectos secundarios,
+// manejo de extravasación). A propósito sin ningún ✓/⚠️: es solo para
+// consultar, no para que el sistema le diga a enfermería si está bien o
+// mal (ver Fase 2 de fichas técnicas, en Autorizar, donde sí se calcula
+// ese veredicto -- pero solo lo ve el jefe).
+function FichaResumenModal({ med, ficha, onClose }) {
+  const doseMatch = med.dose?.match(/(\d+\.?\d*)/);
+  const dose      = doseMatch ? parseFloat(doseMatch[1]) : null;
+  const volMatch  = med.diluent?.match(/(\d+\.?\d*)\s*ML/i);
+  const vol       = volMatch ? parseFloat(volMatch[1]) : null;
+  const ct        = (dose && vol) ? dose / vol : null;
+  const mentionsPVC = /PVC/i.test(ficha.dilucion_solucion_tecnica || "");
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:420, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
+        <div>
+          <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>{med.name} {med.dose}</div>
+          {med.diluent && <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{med.diluent}</div>}
+        </div>
+
+        {ct !== null && (
+          <div>
+            <div style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>Volumen / concentración</div>
+            <div style={{ fontSize:13, color:"#ccc" }}>VOL. {vol} ML. CONCENTRACIÓN: {ct.toFixed(2)} MG/1ML</div>
+          </div>
+        )}
+
+        <div>
+          <div style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>Infusión</div>
+          <div style={{ fontSize:13, color:"#ccc" }}>
+            {med.time ? `${med.time} MIN.` : "Sin tiempo capturado"}
+            {mentionsPVC && <span style={{ color:"#ffb347" }}> · Utilizar equipos libres de PVC</span>}
+          </div>
+        </div>
+
+        {ficha.monitoreo_durante_infusion && (
+          <div>
+            <div style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>Efectos secundarios</div>
+            <div style={{ fontSize:13, color:"#ccc", lineHeight:1.5 }}>{ficha.monitoreo_durante_infusion}</div>
+          </div>
+        )}
+
+        {ficha.antidoto_kit_especifico && (
+          <div>
+            <div style={{ fontSize:11, color:"#ff6b6b", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>Extravasación</div>
+            <div style={{ fontSize:13, color:"#ccc", lineHeight:1.5 }}>{ficha.antidoto_kit_especifico}</div>
+          </div>
+        )}
+
+        <button onClick={onClose} style={{ padding:"9px", borderRadius:9, fontSize:13, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cerrar</button>
+      </div>
+    </div>
+  );
+}
+
+function SessionCard({ session, token, onRefresh, user, fichasByName }) {
   const { profile, refreshProfile } = useAuth();
   const [open, setOpen]       = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -949,6 +1022,19 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
   const currentMedIndex = currentMed ? timedMeds.findIndex(m => m.id === currentMed.id) : -1;
   const nextMed = currentMedIndex >= 0 ? timedMeds[currentMedIndex + 1] : null;
 
+  // Ficha técnica del medicamento en curso, para la consulta rápida "?" --
+  // exacta primero, si no hay coincidencia se busca por contención (mismo
+  // criterio laxo que ya usa el resto de la app para emparejar nombres).
+  const [showFichaModal, setShowFichaModal] = useState(false);
+  const currentMedFichaNameNorm = currentMed ? normalizeMedName(currentMed.name) : "";
+  const currentMedFicha = currentMedFichaNameNorm && fichasByName ? (
+    fichasByName[currentMedFichaNameNorm] ||
+    Object.values(fichasByName).find(f => {
+      const fn = normalizeMedName(f.nombre_generico);
+      return fn && (currentMedFichaNameNorm.includes(fn) || fn.includes(currentMedFichaNameNorm));
+    })
+  ) : null;
+
   // Medicamento ya aplicado cuyo lavado (o lavado adicional) todavía no se ha
   // iniciado/terminado — bloquea el siguiente, así que debe poder atenderse
   // sin tener que expandir la tarjeta.
@@ -1017,6 +1103,12 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
               <span style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>{started ? "En curso" : "Siguiente"}</span>
               <span style={{ fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{currentMed.name} {currentMed.dose}</span>
+              {currentMedFicha && (
+                <button onClick={e => { e.stopPropagation(); setShowFichaModal(true); }} title="Consultar ficha técnica de este medicamento"
+                  style={{ width:20, height:20, borderRadius:"50%", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, cursor:"pointer", background:"rgba(79,195,247,0.12)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7" }}>
+                  ?
+                </button>
+              )}
             </div>
             <div style={{ display:"flex", gap:8 }}>
               {!started && <button onClick={() => recordMedEvent(currentMed.id,"inicio")} disabled={!canStart} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:canStart?"pointer":"not-allowed", background:canStart?"rgba(29,158,117,0.12)":"rgba(255,255,255,0.03)", border:`1px solid ${canStart?"rgba(29,158,117,0.3)":"rgba(255,255,255,0.06)"}`, color:canStart?"#1D9E75":"#444" }}>▶ Iniciar</button>}
@@ -1035,6 +1127,10 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
           </div>
         );
       })()}
+
+      {showFichaModal && currentMedFicha && (
+        <FichaResumenModal med={currentMed} ficha={currentMedFicha} onClose={() => setShowFichaModal(false)} />
+      )}
 
       {open && (
         <div style={{ padding:"16px 20px", borderTop:"1px solid rgba(255,255,255,0.05)" }}>
@@ -1262,6 +1358,7 @@ export default function NurseView() {
   const [loading, setLoading]   = useState(true);
   const [token, setToken]       = useState(null);
   const [tab, setTab]           = useState("hoy");
+  const [fichasByName, setFichasByName] = useState({});
   const today = getToday();
 
   const load = async () => {
@@ -1290,6 +1387,20 @@ const scheduled = nurseData.filter(s => s.authorized && s.date !== today && s.st
   };
 
   useEffect(() => { if (profile?.center) load(); }, [profile?.center]);
+
+  // Fichas técnicas -- se cargan aparte de las sesiones, no dependen del
+  // centro ni cambian con ellas (ver ícono "?" en SessionCard).
+  useEffect(() => {
+    if (!user) return;
+    user.getIdToken().then(async (t) => {
+      try {
+        const fichas = await fetchFichasTecnicas(t);
+        const byName = {};
+        fichas.forEach(f => { if (f.nombre_generico) byName[normalizeMedName(f.nombre_generico)] = f; });
+        setFichasByName(byName);
+      } catch(e) { console.error("Error cargando fichas técnicas:", e); }
+    });
+  }, [user]);
 
   const inCourse = todaySessions.filter(s => s.status === "en_curso").length;
   const waiting  = todaySessions.filter(s => !s.events?.ingreso).length;
@@ -1341,7 +1452,7 @@ const scheduled = nurseData.filter(s => s.authorized && s.date !== today && s.st
               <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
                 No hay sesiones asignadas hoy.
               </div>
-            ) : todaySessions.map(s => <SessionCard key={s.id} session={s} token={token} onRefresh={load} user={user} />)
+            ) : todaySessions.map(s => <SessionCard key={s.id} session={s} token={token} onRefresh={load} user={user} fichasByName={fichasByName} />)
           )}
 
           {tab === "pendientes" && (
@@ -1359,7 +1470,7 @@ const scheduled = nurseData.filter(s => s.authorized && s.date !== today && s.st
               </div>
             ) : scheduledSessions.map(s => 
                 s.status === "en_curso" 
-                  ? <SessionCard key={s.id} session={s} token={token} onRefresh={load} user={user} />
+                  ? <SessionCard key={s.id} session={s} token={token} onRefresh={load} user={user} fichasByName={fichasByName} />
                   : <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} />
               )
           )}
