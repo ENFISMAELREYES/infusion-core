@@ -717,6 +717,37 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
   const medEvents  = session.medEvents || {};
   const washEvents = session.washEvents || {};
 
+  // Genera el consentimiento informado con los datos ya capturados de esta
+  // sesión (paciente, diagnóstico, y los medicamentos del tratamiento en sí
+  // -- no premedicación/hidratación). El resto de los campos (representante,
+  // testigo, firmas) quedan en blanco para llenarse/firmarse en el momento.
+  const [generatingConsent, setGeneratingConsent] = useState(false);
+  const generateConsent = async () => {
+    setGeneratingConsent(true);
+    try {
+      const freshToken = await user.getIdToken(true);
+      const res = await fetch("/api/generate-consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${freshToken}` },
+        body: JSON.stringify({
+          center: session.center, cipiVariant: session.cipiVariant,
+          patientName: session.patientName, dob: session.dob, diagnosis: session.diagnosis,
+          physician: session.physician, allergies: session.allergies, meds: session.meds || [],
+          requestedByName: profile?.name || "",
+        }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      alert("Error al generar el consentimiento: " + e.message);
+    } finally {
+      setGeneratingConsent(false);
+    }
+  };
+
   // Marcar que el paciente no asistirá hoy -- solo tiene sentido antes de
   // que se registre el ingreso (si ya inició, obviamente sí llegó).
   const toggleNoShow = async () => {
@@ -1061,6 +1092,14 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
         </div>
         {events.ingreso && <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace" }}>{pct}%</div>}
         {!session.authorized && <span style={{ fontSize:11, color:"#ffb347", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", padding:"3px 10px", borderRadius:99 }}>⏳ Sin autorizar</span>}
+        {session.authorized && session.sessionType !== "procedimiento" && (
+          <button onClick={e => { e.stopPropagation(); generateConsent(); }} disabled={generatingConsent}
+            title="Generar el consentimiento informado con los datos de esta sesión"
+            style={{ fontSize:11, fontWeight:600, padding:"3px 10px", borderRadius:99, cursor: generatingConsent ? "wait" : "pointer", border:"1px solid rgba(79,195,247,0.3)",
+              background:"rgba(79,195,247,0.1)", color:"#4fc3f7" }}>
+            {generatingConsent ? "Generando…" : "📄 Consentimiento"}
+          </button>
+        )}
         {!events.ingreso && (
           <button onClick={e => { e.stopPropagation(); toggleNoShow(); }}
             title="Marcar que el paciente no asistirá hoy -- se quita del Monitor"
