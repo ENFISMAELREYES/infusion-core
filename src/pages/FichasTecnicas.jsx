@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { FIRESTORE_BASE_URL } from "../config";
 
@@ -104,24 +104,79 @@ function FichaJsonModal({ initialFicha, onClose, onSaved, token }) {
     : "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState(null); // { done, total } durante alta masiva
+
+  // Subir el .json como archivo en vez de pegarlo -- lotes grandes (como el
+  // arreglo con varias fichas) a veces exceden lo que el portapapeles del
+  // teléfono/navegador puede pegar de un jalón.
+  const fileInputRef = useRef(null);
+  const onFileSelected = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permite volver a elegir el mismo archivo después
+    if (!file) return;
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => setText(String(reader.result || ""));
+    reader.onerror = () => setError("No se pudo leer el archivo.");
+    reader.readAsText(file);
+  };
+
+  const saveOne = async (parsed) => {
+    const docId = ficha_docId(parsed.nombre_generico);
+    const fields = {};
+    FICHA_FIELDS.forEach(k => { fields[k] = toFV(parsed[k] ?? ""); });
+    fields.updatedAt = { stringValue: new Date().toISOString() };
+    if (!initialFicha) fields.createdAt = { stringValue: new Date().toISOString() };
+    const mask = [...FICHA_FIELDS, "updatedAt", ...(initialFicha ? [] : ["createdAt"])].map(k => `updateMask.fieldPaths=${k}`).join("&");
+    const res = await fetch(`${FIRESTORE_BASE_URL}/fichas_tecnicas/${docId}?${mask}`,
+      { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) });
+    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${res.status}`); }
+    return { id: docId, ...parsed };
+  };
 
   const save = async () => {
     setError("");
     let parsed;
     try { parsed = JSON.parse(text); } catch (e) { setError("El JSON no es válido: " + e.message); return; }
+
+    // Alta masiva: si se pega un arreglo (en vez de un solo objeto) se
+    // importan todas las fichas de un jalón -- pensado para lotes grandes
+    // como los que arma "el otro agente" de una sola vez, en vez de repetir
+    // el alta una por una. Solo aplica al dar de alta, no al editar (ahí
+    // siempre se pega y se guarda una sola ficha).
+    if (Array.isArray(parsed)) {
+      if (initialFicha) { setError("Para editar solo se puede pegar un objeto, no un arreglo."); return; }
+      const badIndex = parsed.findIndex(p => !p?.nombre_generico?.trim());
+      if (badIndex !== -1) { setError(`El elemento #${badIndex + 1} del arreglo no trae "nombre_generico".`); return; }
+      setSaving(true);
+      const saved = [];
+      const failedItems = [];
+      const failedMsgs = [];
+      for (let i = 0; i < parsed.length; i++) {
+        setProgress({ done: i, total: parsed.length });
+        try { saved.push(await saveOne(parsed[i])); }
+        catch (e) { failedItems.push(parsed[i]); failedMsgs.push(`${parsed[i].nombre_generico}: ${e.message}`); }
+      }
+      setProgress(null);
+      setSaving(false);
+      if (saved.length > 0) onSaved(saved);
+      if (failedMsgs.length > 0) {
+        // Deja en el textarea SOLO lo que falló, para reintentar sin
+        // repetir lo que ya se guardó correctamente.
+        setText(JSON.stringify(failedItems, null, 2));
+        setError(`${failedMsgs.length} de ${parsed.length} no se guardaron:\n` + failedMsgs.join("\n"));
+      } else {
+        onClose();
+      }
+      return;
+    }
+
     if (!parsed.nombre_generico || !parsed.nombre_generico.trim()) { setError("Falta \"nombre_generico\" -- es el campo con el que se identifica y se busca la ficha."); return; }
     setSaving(true);
     try {
-      const docId = ficha_docId(parsed.nombre_generico);
-      const fields = {};
-      FICHA_FIELDS.forEach(k => { fields[k] = toFV(parsed[k] ?? ""); });
-      fields.updatedAt = { stringValue: new Date().toISOString() };
-      if (!initialFicha) fields.createdAt = { stringValue: new Date().toISOString() };
-      const mask = [...FICHA_FIELDS, "updatedAt", ...(initialFicha ? [] : ["createdAt"])].map(k => `updateMask.fieldPaths=${k}`).join("&");
-      const res = await fetch(`${FIRESTORE_BASE_URL}/fichas_tecnicas/${docId}?${mask}`,
-        { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) });
-      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${res.status}`); }
-      onSaved({ id: docId, ...parsed });
+      const saved = await saveOne(parsed);
+      onSaved(saved);
+      onClose();
     } catch (e) {
       setError("Error al guardar: " + e.message);
     } finally {
@@ -134,15 +189,25 @@ function FichaJsonModal({ initialFicha, onClose, onSaved, token }) {
       <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:640, maxHeight:"88vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
         <div>
           <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>{initialFicha ? "✏️ Editar ficha técnica" : "＋ Nueva ficha técnica"}</div>
-          <div style={{ fontSize:12, color:"#888", marginTop:2 }}>Pega aquí el JSON de la ficha (tal cual lo generes) -- se identifica y se busca después por "nombre_generico".</div>
+          <div style={{ fontSize:12, color:"#888", marginTop:2 }}>
+            Pega aquí el JSON de la ficha (tal cual lo generes) -- se identifica y se busca después por "nombre_generico".
+            {!initialFicha && " También puedes pegar un arreglo [ ] con varias fichas para darlas de alta todas juntas."}
+          </div>
+        </div>
+        <div>
+          <input ref={fileInputRef} type="file" accept=".json,application/json" onChange={onFileSelected} style={{ display:"none" }} />
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={saving}
+            style={{ padding:"7px 12px", borderRadius:8, fontSize:12, fontWeight:600, cursor: saving ? "wait" : "pointer", background:"rgba(79,195,247,0.08)", border:"1px solid rgba(79,195,247,0.25)", color:"#4fc3f7" }}>
+            📎 Subir archivo .json
+          </button>
         </div>
         <textarea value={text} onChange={e => setText(e.target.value)} placeholder='{"nombre_generico": "Docetaxel", ...}'
           rows={16} style={{ ...inputStyle, fontFamily:"'IBM Plex Mono', monospace", fontSize:11, resize:"vertical" }} />
-        {error && <div style={{ fontSize:12, color:"#ff6b6b", padding:"8px 10px", background:"rgba(255,107,107,0.08)", border:"1px solid rgba(255,107,107,0.25)", borderRadius:8 }}>{error}</div>}
+        {error && <div style={{ fontSize:12, color:"#ff6b6b", padding:"8px 10px", background:"rgba(255,107,107,0.08)", border:"1px solid rgba(255,107,107,0.25)", borderRadius:8, whiteSpace:"pre-line" }}>{error}</div>}
         <div style={{ display:"flex", gap:8 }}>
           <button onClick={onClose} disabled={saving} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: saving ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
           <button onClick={save} disabled={saving || !text.trim()} style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: saving ? "wait" : "pointer", background:"linear-gradient(135deg,#00d4aa,#0F6E56)", border:"none", color:"#fff", opacity: (saving || !text.trim()) ? 0.6 : 1 }}>
-            {saving ? "Guardando…" : "✓ Guardar ficha"}
+            {saving ? (progress ? `Guardando ${progress.done + 1} de ${progress.total}…` : "Guardando…") : "✓ Guardar ficha"}
           </button>
         </div>
       </div>
@@ -251,11 +316,17 @@ export default function FichasTecnicas() {
                               <div key={key}>
                                 <div style={{ fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>{label}</div>
                                 {key === "secuencia_en_esquema" ? (
-                                  // Viene como varias combinaciones separadas por "|" en un solo
-                                  // string (ej. "Monoterapia: N/A | +Doxorrubicina: ... | ...") --
-                                  // se parte en renglones de lista, más legible que un párrafo corrido.
+                                  // Dos formatos posibles: un string con varias combinaciones
+                                  // separadas por "|" (ej. "Monoterapia: N/A | +Doxorrubicina: ...")
+                                  // o un arreglo de objetos {combinacion, orden, notas} -- se
+                                  // muestran ambos como renglones de lista, más legible que un
+                                  // párrafo corrido.
                                   <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-                                    {f[key].split("|").map(s => s.trim()).filter(Boolean).map((linea, li) => (
+                                    {(Array.isArray(f[key])
+                                      ? f[key].map(item => typeof item === "string" ? item
+                                          : [item.combinacion, item.orden, item.notas].filter(Boolean).join(" — "))
+                                      : String(f[key]).split("|").map(s => s.trim())
+                                    ).filter(Boolean).map((linea, li) => (
                                       <div key={li} style={{ display:"flex", gap:6, fontSize:12, color:"#ccc", lineHeight:1.5 }}>
                                         <span style={{ color:"#00d4aa", flexShrink:0 }}>•</span>
                                         <span>{linea}</span>
@@ -293,12 +364,18 @@ export default function FichasTecnicas() {
           token={token}
           onClose={() => setShowModal(false)}
           onSaved={(saved) => {
+            // saved puede ser una ficha sola o un arreglo (alta masiva) --
+            // el modal es quien decide cuándo cerrarse (onClose), aquí solo
+            // se refleja lo que ya se guardó en el listado.
+            const list = Array.isArray(saved) ? saved : [saved];
             setFichas(prev => {
-              const exists = prev.some(f => f.id === saved.id);
-              const next = exists ? prev.map(f => f.id === saved.id ? saved : f) : [...prev, saved];
+              let next = [...prev];
+              list.forEach(item => {
+                const exists = next.some(f => f.id === item.id);
+                next = exists ? next.map(f => f.id === item.id ? item : f) : [...next, item];
+              });
               return next.sort((a,b) => (a.nombre_generico||"").localeCompare(b.nombre_generico||""));
             });
-            setShowModal(false);
           }}
         />
       )}
