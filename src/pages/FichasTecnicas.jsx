@@ -316,11 +316,17 @@ export default function FichasTecnicas() {
                               <div key={key}>
                                 <div style={{ fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>{label}</div>
                                 {key === "secuencia_en_esquema" ? (
-                                  // Viene como varias combinaciones separadas por "|" en un solo
-                                  // string (ej. "Monoterapia: N/A | +Doxorrubicina: ... | ...") --
-                                  // se parte en renglones de lista, más legible que un párrafo corrido.
+                                  // Dos formatos posibles: un string con varias combinaciones
+                                  // separadas por "|" (ej. "Monoterapia: N/A | +Doxorrubicina: ...")
+                                  // o un arreglo de objetos {combinacion, orden, notas} -- se
+                                  // muestran ambos como renglones de lista, más legible que un
+                                  // párrafo corrido.
                                   <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-                                    {f[key].split("|").map(s => s.trim()).filter(Boolean).map((linea, li) => (
+                                    {(Array.isArray(f[key])
+                                      ? f[key].map(item => typeof item === "string" ? item
+                                          : [item.combinacion, item.orden, item.notas].filter(Boolean).join(" — "))
+                                      : String(f[key]).split("|").map(s => s.trim())
+                                    ).filter(Boolean).map((linea, li) => (
                                       <div key={li} style={{ display:"flex", gap:6, fontSize:12, color:"#ccc", lineHeight:1.5 }}>
                                         <span style={{ color:"#00d4aa", flexShrink:0 }}>•</span>
                                         <span>{linea}</span>
