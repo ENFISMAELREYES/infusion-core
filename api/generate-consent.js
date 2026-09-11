@@ -32,8 +32,15 @@ const NAVY = "#00339F", GRAY = "#666666", LINE = "#999999";
 
 // Categorías que sí cuentan como "el tratamiento" para nombrar los fármacos
 // en el consentimiento -- premedicación/hidratación/domicilio son soporte,
-// no lo que el documento necesita nombrar explícitamente.
-const TREATMENT_CATS = new Set(["quimioterapia", "inmunoterapia", "especialidad"]);
+// no lo que el documento necesita nombrar explícitamente. Cada una con su
+// etiqueta para el encabezado del documento ("especialidad" es donde caen
+// los biológicos/dirigidos que no son ni quimio ni inmunoterapia propiamente,
+// ej. bevacizumab) -- así el título deja de ser siempre "QUIMIOTERAPIA/
+// AGENTE BIOLÓGICO" fijo y se arma según lo que de verdad trae la sesión:
+// solo quimio -> "QUIMIOTERAPIA"; solo bevacizumab -> "AGENTE BIOLÓGICO";
+// combinación -> "QUIMIOTERAPIA / INMUNOTERAPIA", etc.
+const TREATMENT_CAT_LABEL = { quimioterapia: "QUIMIOTERAPIA", inmunoterapia: "INMUNOTERAPIA", especialidad: "AGENTE BIOLÓGICO" };
+const TREATMENT_CAT_ORDER = ["quimioterapia", "inmunoterapia", "especialidad"];
 
 // "Negadas", "Ninguna", "No", etc. cuentan como sin alergia -- cualquier otra
 // cosa capturada se toma como una alergia real que hay que mostrar.
@@ -90,10 +97,14 @@ export default async function handler(req, res) {
     // Nombres de los fármacos "del tratamiento" (no premedicación/hidratación)
     // para nombrarlos explícitamente en el documento -- a diferencia de dejar
     // solo "QUIMIOTERAPIA/AGENTE BIOLÓGICO" genérico.
-    const treatmentDrugs = [...new Set(
-      (meds || []).filter(m => TREATMENT_CATS.has(m.category)).map(m => (m.name || "").trim().toUpperCase()).filter(Boolean)
-    )];
+    const treatmentMeds = (meds || []).filter(m => TREATMENT_CAT_LABEL[m.category]);
+    const treatmentDrugs = [...new Set(treatmentMeds.map(m => (m.name || "").trim().toUpperCase()).filter(Boolean))];
     const drugList = treatmentDrugs.join(", ");
+    // Título dinámico según qué categorías realmente trae la sesión -- si
+    // ninguna calza (sesión sin meds, o todo premedicación) se deja el
+    // genérico de siempre como respaldo.
+    const presentCats = TREATMENT_CAT_ORDER.filter(c => treatmentMeds.some(m => m.category === c));
+    const treatmentLabel = presentCats.length > 0 ? presentCats.map(c => TREATMENT_CAT_LABEL[c]).join(" / ") : "QUIMIOTERAPIA/AGENTE BIOLÓGICO";
 
     const allergic = hasAllergy(allergies);
 
@@ -177,7 +188,7 @@ export default async function handler(req, res) {
 
     doc.fontSize(9.5).fillColor("#000").font("Helvetica").text("Usted, o la persona que representa, ha sido diagnosticado/a de ", 45, doc.y, { continued: true, width: W })
       .font("Helvetica-Bold").text(diagnosis || "____________________________", { continued: true })
-      .font("Helvetica").text(` por tal motivo se le ha sugerido recibir tratamiento con QUIMIOTERAPIA/AGENTE BIOLÓGICO${drugList ? ` (${drugList})` : ""}.`);
+      .font("Helvetica").text(` por tal motivo se le ha sugerido recibir tratamiento con ${treatmentLabel}${drugList ? ` (${drugList})` : ""}.`);
     doc.moveDown(0.6);
 
     P("La quimioterapia es uno de los tratamientos más utilizados para combatir el cáncer y otras enfermedades proliferativas. Su objetivo es atacar las células del cuerpo humano que tienen un crecimiento anormal, ya sea destruyéndolas o controlando su crecimiento. En general, los tratamientos de quimioterapia consisten en la combinación de diferentes medicamentos (agentes químicos antineoplásicos y agentes biológicos) que, habitualmente, se administran de forma intermitente o en ciclos (semanal, cada 2, 3 ó 4 semanas). La finalidad del tratamiento es destruir las células anómalas que están ocasionando su enfermedad. La indicación de tratamiento oncológico forma parte de las recomendaciones científicas admitidas para su enfermedad.");
@@ -214,7 +225,7 @@ export default async function handler(req, res) {
     // texto no cabe, forzarlo dejaba media página en blanco innecesariamente.
     doc.fontSize(10).fillColor(NAVY).font("Helvetica-Bold").text("Al dar mi consentimiento", 45, doc.y, { width: W });
     doc.moveDown(0.4);
-    numbered(1, `Acepto que se me ha explicado que es conveniente proceder, en mi situación, a la administración de QUIMIOTERAPIA / AGENTES BIOLÓGICOS${drugList ? ` (${drugList})` : ""}.`);
+    numbered(1, `Acepto que se me ha explicado que es conveniente proceder, en mi situación, a la administración de ${treatmentLabel}${drugList ? ` (${drugList})` : ""}.`);
     numbered(2, "He sido informado(a) de forma comprensible de la naturaleza y los riesgos del tratamiento mencionado, así como de sus alternativas, que he tenido oportunidad de comentar con el médico.");
     numbered(3, "He sido informado(a) de las posibles consecuencias de no realizar la terapia que se me propone.");
     numbered(4, "Estoy satisfecho(a) con la información recibida.");
