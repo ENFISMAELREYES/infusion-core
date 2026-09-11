@@ -218,6 +218,10 @@ function FichaJsonModal({ initialFicha, onClose, onSaved, token }) {
 export default function FichasTecnicas() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
+  // "visualizador" no es solo personal médico -- también lo usa contabilidad
+  // y admisión (mismo criterio que ya aplica el ícono de Monitor). Solo
+  // entra aquí si es jefe, enfermera, o visualizador marcado como médico.
+  const blocked = profile?.role === "visualizador" && !profile?.isMedico;
   const [token, setToken] = useState(null);
   const [fichas, setFichas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -233,7 +237,10 @@ export default function FichasTecnicas() {
     setLoading(false);
   };
 
-  useEffect(() => { user.getIdToken().then(t => { setToken(t); load(t); }); }, [user]);
+  useEffect(() => {
+    if (blocked) { setLoading(false); return; }
+    user.getIdToken().then(t => { setToken(t); load(t); });
+  }, [user, blocked]);
 
   const deleteFicha = async (ficha) => {
     if (!confirm(`¿Eliminar la ficha técnica de "${ficha.nombre_generico}"? No se puede deshacer.`)) return;
@@ -256,6 +263,11 @@ export default function FichasTecnicas() {
     ? fichas.filter(f => (f.nombre_generico||"").toUpperCase().includes(term) || (f.nombre_comercial||"").toUpperCase().includes(term))
     : fichas;
 
+  if (blocked) return (
+    <div style={{ padding:40, color:"#666", textAlign:"center" }}>
+      No tienes acceso a esta sección.
+    </div>
+  );
   if (loading) return <div style={{ padding:40, color:"#666", textAlign:"center" }}>Cargando…</div>;
 
   return (

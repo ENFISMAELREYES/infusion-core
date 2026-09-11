@@ -62,7 +62,10 @@ function AppRoutes() {
         <Route path="insumos" element={<PrivateRoute roles={["jefe","enfermera","visualizador"]}><Insumos /></PrivateRoute>} />
         <Route path="auditoria" element={<PrivateRoute roles={["jefe"]}><Auditoria /></PrivateRoute>} />
         <Route path="inventario" element={<PrivateRoute roles={["jefe","enfermera"]}><Inventario /></PrivateRoute>} />
-        <Route path="fichas-tecnicas" element={<PrivateRoute roles={["jefe","enfermera"]}><FichasTecnicas /></PrivateRoute>} />
+        {/* visualizador entra a la ruta -- FichasTecnicas.jsx filtra adentro
+            si además es personal médico (profile.isMedico); así contabilidad/
+            admisión, que también son "visualizador", quedan bloqueados. */}
+        <Route path="fichas-tecnicas" element={<PrivateRoute roles={["jefe","enfermera","visualizador"]}><FichasTecnicas /></PrivateRoute>} />
       </Route>
     </Routes>
   );
