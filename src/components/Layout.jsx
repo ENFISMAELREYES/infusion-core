@@ -46,7 +46,13 @@ const ROLE_LABEL = {
 export default function Layout() {
   const { profile, logout } = useAuth();
   const role = profile?.role || "enfermera";
-  const nav  = NAV[role] || [];
+  // "visualizador" no es un solo grupo -- personal médico (marcado con
+  // isMedico en su documento de usuario) además puede consultar fichas
+  // técnicas, a diferencia de contabilidad/admisión que comparten el mismo
+  // rol pero no deben verlas (mismo criterio que el ícono de Monitor).
+  const nav = (role === "visualizador" && profile?.isMedico)
+    ? [...NAV.visualizador, { to:"/fichas-tecnicas", icon:"📋", label:"Fichas técnicas" }]
+    : (NAV[role] || []);
 
   return (
     <div style={{ display:"flex", minHeight:"100vh", background:"#080a0f", color:"#f0f0f0", fontFamily:"'Inter', sans-serif" }}>
