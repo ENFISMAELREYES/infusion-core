@@ -1025,18 +1025,21 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
   const currentMedIndex = currentMed ? timedMeds.findIndex(m => m.id === currentMed.id) : -1;
   const nextMed = currentMedIndex >= 0 ? timedMeds[currentMedIndex + 1] : null;
 
-  // Ficha técnica del medicamento en curso, para la consulta rápida "?" --
-  // exacta primero, si no hay coincidencia se busca por contención (mismo
-  // criterio laxo que ya usa el resto de la app para emparejar nombres).
-  const [showFichaModal, setShowFichaModal] = useState(false);
-  const currentMedFichaNameNorm = currentMed ? normalizeMedName(currentMed.name) : "";
-  const currentMedFicha = currentMedFichaNameNorm && fichasByName ? (
-    fichasByName[currentMedFichaNameNorm] ||
-    Object.values(fichasByName).find(f => {
+  // Ficha técnica de cualquier medicamento de la sesión, para la consulta
+  // rápida "ⓘ" (mismo ícono que ya usa Monitor) -- exacta primero, si no hay
+  // coincidencia se busca por contención (mismo criterio laxo que ya usa el
+  // resto de la app para emparejar nombres). Se muestra en todos los
+  // medicamentos, no solo en el que está pasando.
+  const [fichaModalMed, setFichaModalMed] = useState(null); // { med, ficha } o null
+  const findFicha = (medName) => {
+    if (!medName || !fichasByName) return null;
+    const norm = normalizeMedName(medName);
+    return fichasByName[norm] || Object.values(fichasByName).find(f => {
       const fn = normalizeMedName(f.nombre_generico);
-      return fn && (currentMedFichaNameNorm.includes(fn) || fn.includes(currentMedFichaNameNorm));
-    })
-  ) : null;
+      return fn && (norm.includes(fn) || fn.includes(norm));
+    }) || null;
+  };
+  const currentMedFicha = currentMed ? findFicha(currentMed.name) : null;
 
   // Medicamento ya aplicado cuyo lavado (o lavado adicional) todavía no se ha
   // iniciado/terminado — bloquea el siguiente, así que debe poder atenderse
@@ -1107,9 +1110,9 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
               <span style={{ fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>{started ? "En curso" : "Siguiente"}</span>
               <span style={{ fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{currentMed.name} {currentMed.dose}</span>
               {currentMedFicha && (
-                <button onClick={e => { e.stopPropagation(); setShowFichaModal(true); }} title="Consultar ficha técnica de este medicamento"
-                  style={{ width:20, height:20, borderRadius:"50%", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, cursor:"pointer", background:"rgba(79,195,247,0.12)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7" }}>
-                  ?
+                <button onClick={e => { e.stopPropagation(); setFichaModalMed({ med: currentMed, ficha: currentMedFicha }); }} title="Consultar ficha técnica de este medicamento"
+                  style={{ width:18, height:18, borderRadius:"50%", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, cursor:"pointer", background:"rgba(79,195,247,0.12)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7", padding:0 }}>
+                  ⓘ
                 </button>
               )}
             </div>
@@ -1131,8 +1134,8 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
         );
       })()}
 
-      {showFichaModal && currentMedFicha && (
-        <FichaResumenModal med={currentMed} ficha={currentMedFicha} onClose={() => setShowFichaModal(false)} />
+      {fichaModalMed && (
+        <FichaResumenModal med={fichaModalMed.med} ficha={fichaModalMed.ficha} onClose={() => setFichaModalMed(null)} />
       )}
 
       {open && (
@@ -1191,13 +1194,22 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                 const ended    = !!ev.fin;
                 const canStart = canStartMed(med);
                 const isEditing = editingId === med.id;
+                const medFicha = findFicha(med.name);
                 return (
                   <div key={med.id}>
                     <div style={{ borderRadius:11, overflow:"hidden", border:`1px solid ${ended?"rgba(79,195,247,0.2)":started?"rgba(29,158,117,0.2)":"rgba(255,255,255,0.07)"}`, borderLeft:`3px solid ${color}`, background:"rgba(255,255,255,0.02)" }}>
                       <div style={{ padding:"11px 14px", display:"flex", alignItems:"center", gap:10 }}>
                         <span style={{ width:22, height:22, borderRadius:"50%", background:"rgba(255,255,255,0.06)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, color:"#888", fontFamily:"'IBM Plex Mono', monospace", flexShrink:0 }}>{med.order}</span>
                         <div style={{ flex:1 }}>
-                          <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{med.name} {med.dose}</div>
+                          <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>
+                            <span>{med.name} {med.dose}</span>
+                            {medFicha && (
+                              <button onClick={e => { e.stopPropagation(); setFichaModalMed({ med, ficha: medFicha }); }} title="Consultar ficha técnica de este medicamento"
+                                style={{ width:16, height:16, borderRadius:"50%", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:700, cursor:"pointer", background:"rgba(79,195,247,0.12)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7", padding:0 }}>
+                                ⓘ
+                              </button>
+                            )}
+                          </div>
                           <div style={{ fontSize:11, color:"#666", marginTop:1 }}>{med.diluent}{med.time?` · ${med.time} min`:""}</div>
                           {med.parallelType && med.parallelType !== "secuencial" && (
                             <div style={{ fontSize:10, color:"#AFA9EC", marginTop:2 }}>
