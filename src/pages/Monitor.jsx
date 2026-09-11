@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { normalizeMedName } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -42,6 +43,80 @@ async function fetchAllSessions(token, date) {
 
 const CAT_COLOR = { premedicacion:"#FAC775", inmunoterapia:"#5DCAA5", quimioterapia:"#F09595", adicional:"#AFA9EC" };
 const CAT_LABEL = { premedicacion:"Pre", inmunoterapia:"Inmuno", quimioterapia:"Quimio", adicional:"Adic." };
+
+// Fichas técnicas, para la consulta rápida "ⓘ" junto a cada medicamento --
+// visible para quien llega a Monitor (jefe o visualizador, únicos roles con
+// acceso a esta pantalla), no depende de las sesiones y se carga una sola vez.
+async function fetchFichasTecnicas(token) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
+  const res = await fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: "fichas_tecnicas" }], limit: 1000 } }),
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data.filter(d => d.document).map(d => parseDoc(d.document));
+}
+
+// Resumen de referencia de un medicamento -- mismo criterio que el ícono
+// "?" de Sesión de hoy: información capturada + datos de la ficha técnica,
+// SIN ningún veredicto ✓/⚠️ (eso es exclusivo de Autorizar/jefe).
+function MedFichaModal({ med, ficha, onClose }) {
+  const doseMatch = med.dose?.match(/(\d+\.?\d*)/);
+  const dose      = doseMatch ? parseFloat(doseMatch[1]) : null;
+  const volMatch  = med.diluent?.match(/(\d+\.?\d*)\s*ML/i);
+  const vol       = volMatch ? parseFloat(volMatch[1]) : null;
+  const ct        = (dose && vol) ? dose / vol : null;
+  const mentionsPVC = /PVC/i.test(ficha.dilucion_solucion_tecnica || "");
+  const hasCriticalAlert = ["SI","SÍ"].includes((ficha.alerta_critica_seguridad || "").trim().toUpperCase());
+
+  return (
+    <div onClick={e => { e.stopPropagation(); onClose(); }} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:440, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
+        <div>
+          <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>{med.name} {med.dose}</div>
+          {med.diluent && <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{med.diluent}</div>}
+        </div>
+
+        {hasCriticalAlert && (
+          <div style={{ fontSize:12, color:"#ff6b6b", padding:"9px 12px", background:"rgba(255,107,107,0.08)", border:"1px solid rgba(255,107,107,0.25)", borderRadius:9 }}>
+            🔴 <strong>Alerta crítica:</strong> {ficha.detalle_alerta_critica}
+          </div>
+        )}
+
+        {ct !== null && (
+          <div>
+            <div style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>Volumen / concentración</div>
+            <div style={{ fontSize:13, color:"#ccc" }}>VOL. {vol} ML. CONCENTRACIÓN: {ct.toFixed(2)} MG/1ML</div>
+          </div>
+        )}
+
+        <div>
+          <div style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>Infusión</div>
+          <div style={{ fontSize:13, color:"#ccc" }}>
+            {med.time ? `${med.time} MIN.` : "Sin tiempo capturado"}
+            {mentionsPVC && <span style={{ color:"#ffb347" }}> · Utilizar equipos libres de PVC</span>}
+          </div>
+        </div>
+
+        {[
+          ["monitoreo_durante_infusion", "Monitoreo durante la infusión", "#666"],
+          ["signos_alarma_hipersensibilidad", "Signos de alarma — hipersensibilidad", "#ff6b6b"],
+          ["signos_alarma_extravasacion", "Signos de alarma — extravasación", "#ff6b6b"],
+          ["conducta_inmediata_reaccion", "Conducta inmediata ante reacción", "#ff6b6b"],
+          ["antidoto_kit_especifico", "Antídoto / kit específico", "#ff6b6b"],
+        ].map(([field, label, color]) => ficha[field] && (
+          <div key={field}>
+            <div style={{ fontSize:11, color, textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>{label}</div>
+            <div style={{ fontSize:13, color:"#ccc", lineHeight:1.5, whiteSpace:"pre-line" }}>{ficha[field]}</div>
+          </div>
+        ))}
+
+        <button onClick={onClose} style={{ padding:"9px", borderRadius:9, fontSize:13, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cerrar</button>
+      </div>
+    </div>
+  );
+}
 
 // Logo tenue por centro, junto al nombre del paciente. Si el archivo del centro
 // aún no existe (ej. CIPI antes de subir su logo), el onError del <img> lo oculta solo.
@@ -140,12 +215,22 @@ function MedTimeline({ meds, medEvents }) {
   );
 }
 
-function PatientRow({ s, onNoShow, isJefe }) {
+function PatientRow({ s, onNoShow, isJefe, fichasByName }) {
   const st = getStatus(s);
   const pct = getProgress(s);
   const me = s.medEvents || {};
   const activeMed = (s.meds||[]).find(m => me[`med_${m.id}`]?.inicio && !me[`med_${m.id}`]?.fin);
   const canMarkNoShow = isJefe && !s.events?.ingreso; // solo jefe, y solo si aún no ha iniciado
+  const [fichaModalMed, setFichaModalMed] = useState(null); // medicamento cuya ficha se está consultando, o null
+
+  const findFicha = (medName) => {
+    if (!medName || !fichasByName) return null;
+    const norm = normalizeMedName(medName);
+    return fichasByName[norm] || Object.values(fichasByName).find(f => {
+      const fn = normalizeMedName(f.nombre_generico);
+      return fn && (norm.includes(fn) || fn.includes(norm));
+    }) || null;
+  };
 
   return (
     <div style={{
@@ -184,6 +269,7 @@ function PatientRow({ s, onNoShow, isJefe }) {
     const me = s.medEvents || {};
     const ev = me[`med_${m.id}`] || {};
     const done = !!ev.fin, active = !!ev.inicio && !ev.fin;
+    const ficha = findFicha(m.name);
     return (
       <div key={m.id} style={{ display:"flex", alignItems:"center", gap:8, fontSize:11 }}>
         <span style={{ color: done ? "#1D9E75" : active ? "#00d4aa" : "#444" }}>
@@ -192,6 +278,12 @@ function PatientRow({ s, onNoShow, isJefe }) {
         <span style={{ color: done ? "#777" : active ? "#f0f0f0" : "#555", fontWeight: active ? 600 : 400 }}>
           {m.name} {m.dose}
         </span>
+        {ficha && (
+          <button onClick={e => { e.stopPropagation(); setFichaModalMed(m); }} title="Consultar ficha técnica de este medicamento"
+            style={{ width:16, height:16, borderRadius:"50%", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:700, cursor:"pointer", background:"rgba(79,195,247,0.12)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7", padding:0 }}>
+            ⓘ
+          </button>
+        )}
         {active && ev.inicio && (
           <span style={{ color:"#666", fontFamily:"'IBM Plex Mono', monospace" }}>
             ▶ {ev.inicio}
@@ -363,6 +455,9 @@ function PatientRow({ s, onNoShow, isJefe }) {
           })()}
         </div>
       )}
+      {fichaModalMed && (
+        <MedFichaModal med={fichaModalMed} ficha={findFicha(fichaModalMed.name)} onClose={() => setFichaModalMed(null)} />
+      )}
     </div>
   );
 }
@@ -375,6 +470,7 @@ export default function Monitor() {
   const [clock, setClock] = useState(new Date().toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false }));
   const [filter, setFilter] = useState("Todos");
   const [showNoShow, setShowNoShow] = useState(false);
+  const [fichasByName, setFichasByName] = useState({});
   const today = getToday();
 
   const load = async () => {
@@ -390,6 +486,21 @@ export default function Monitor() {
     load();
     const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
+  }, [user]);
+
+  // Fichas técnicas -- se cargan aparte de las sesiones, no dependen del
+  // día ni cambian con el refresco de cada 15s (ver ícono "ⓘ" en cada
+  // medicamento, arriba en PatientRow).
+  useEffect(() => {
+    if (!user) return;
+    user.getIdToken().then(async (t) => {
+      try {
+        const fichas = await fetchFichasTecnicas(t);
+        const byName = {};
+        fichas.forEach(f => { if (f.nombre_generico) byName[normalizeMedName(f.nombre_generico)] = f; });
+        setFichasByName(byName);
+      } catch(e) { console.error("Error cargando fichas técnicas:", e); }
+    });
   }, [user]);
 
   useEffect(() => {
@@ -478,7 +589,7 @@ export default function Monitor() {
           <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:13 }}>
             No hay pacientes registrados hoy.
           </div>
-        ) : filtered.map(s => <PatientRow key={s.id} s={s} onNoShow={toggleNoShow} isJefe={isJefe} />)}
+        ) : filtered.map(s => <PatientRow key={s.id} s={s} onNoShow={toggleNoShow} isJefe={isJefe} fichasByName={fichasByName} />)}
       </div>
 
       {isJefe && noShowSessions.length > 0 && (
