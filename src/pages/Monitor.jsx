@@ -466,6 +466,12 @@ export default function Monitor() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
   const isVisualizador = profile?.role === "visualizador";
+  // "visualizador" no es solo personal médico -- también lo usan contabilidad
+  // y admisión, que no deben ver información clínica de tratamiento. Se
+  // marca con un campo aparte en su documento de usuario (isMedico: true en
+  // Firestore, users/{uid}) quién sí puede ver la ficha técnica de cada
+  // medicamento; el jefe siempre puede.
+  const canSeeFichas = isJefe || !!profile?.isMedico;
   const [sessions, setSessions] = useState([]);
   const [clock, setClock] = useState(new Date().toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false }));
   const [filter, setFilter] = useState("Todos");
@@ -490,9 +496,11 @@ export default function Monitor() {
 
   // Fichas técnicas -- se cargan aparte de las sesiones, no dependen del
   // día ni cambian con el refresco de cada 15s (ver ícono "ⓘ" en cada
-  // medicamento, arriba en PatientRow).
+  // medicamento, arriba en PatientRow). Ni se piden si el usuario no puede
+  // verlas -- no solo se oculta el botón, tampoco se descarga la información
+  // clínica al navegador de contabilidad/admisión.
   useEffect(() => {
-    if (!user) return;
+    if (!user || !canSeeFichas) return;
     user.getIdToken().then(async (t) => {
       try {
         const fichas = await fetchFichasTecnicas(t);
@@ -501,7 +509,7 @@ export default function Monitor() {
         setFichasByName(byName);
       } catch(e) { console.error("Error cargando fichas técnicas:", e); }
     });
-  }, [user]);
+  }, [user, canSeeFichas]);
 
   useEffect(() => {
     const id = setInterval(() => setClock(new Date().toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false })), 1000);
