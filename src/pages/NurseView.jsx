@@ -741,6 +741,13 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 60000);
+      // Se marca en la sesión -- así Historial puede mostrar si a un C1D1
+      // ya se le generó su consentimiento o sigue pendiente.
+      await patchSession(freshToken, session.id, {
+        consentGeneratedAt: new Date().toISOString(),
+        consentGeneratedByName: profile?.name || "",
+      });
+      onRefresh();
     } catch (e) {
       alert("Error al generar el consentimiento: " + e.message);
     } finally {
@@ -1092,14 +1099,22 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
         </div>
         {events.ingreso && <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace" }}>{pct}%</div>}
         {!session.authorized && <span style={{ fontSize:11, color:"#ffb347", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", padding:"3px 10px", borderRadius:99 }}>⏳ Sin autorizar</span>}
-        {session.authorized && session.sessionType !== "procedimiento" && (
-          <button onClick={e => { e.stopPropagation(); generateConsent(); }} disabled={generatingConsent}
-            title="Generar el consentimiento informado con los datos de esta sesión"
-            style={{ fontSize:11, fontWeight:600, padding:"3px 10px", borderRadius:99, cursor: generatingConsent ? "wait" : "pointer", border:"1px solid rgba(79,195,247,0.3)",
-              background:"rgba(79,195,247,0.1)", color:"#4fc3f7" }}>
-            {generatingConsent ? "Generando…" : "📄 Consentimiento"}
-          </button>
-        )}
+        {session.authorized && session.sessionType !== "procedimiento" && (() => {
+          // C1D1 sin consentimiento generado se destaca -- es el aviso de
+          // "este ciclo necesita consentimiento nuevo" (inicio de línea de
+          // tratamiento), un clic y queda marcado en la sesión/Historial.
+          const needsC1D1Consent = session.isC1D1 && !session.consentGeneratedAt;
+          return (
+            <button onClick={e => { e.stopPropagation(); generateConsent(); }} disabled={generatingConsent}
+              title={needsC1D1Consent ? "Este ciclo es C1D1 -- requiere generar un consentimiento nuevo" : "Generar el consentimiento informado con los datos de esta sesión"}
+              style={{ fontSize:11, fontWeight:600, padding:"3px 10px", borderRadius:99, cursor: generatingConsent ? "wait" : "pointer",
+                border: `1px solid ${needsC1D1Consent ? "rgba(255,179,71,0.4)" : session.consentGeneratedAt ? "rgba(29,158,117,0.3)" : "rgba(79,195,247,0.3)"}`,
+                background: needsC1D1Consent ? "rgba(255,179,71,0.12)" : session.consentGeneratedAt ? "rgba(29,158,117,0.1)" : "rgba(79,195,247,0.1)",
+                color: needsC1D1Consent ? "#ffb347" : session.consentGeneratedAt ? "#1D9E75" : "#4fc3f7" }}>
+              {generatingConsent ? "Generando…" : needsC1D1Consent ? "⚠️ Consentimiento nuevo (C1D1)" : session.consentGeneratedAt ? "✓ Consentimiento" : "📄 Consentimiento"}
+            </button>
+          );
+        })()}
         {!events.ingreso && (
           <button onClick={e => { e.stopPropagation(); toggleNoShow(); }}
             title="Marcar que el paciente no asistirá hoy -- se quita del Monitor"

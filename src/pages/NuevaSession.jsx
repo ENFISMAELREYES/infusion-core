@@ -149,6 +149,7 @@ export default function NuevaSession() {
   const [form, setForm] = useState({
     patientName: "", dob: "", diagnosis: "", physician: "",
     insurance: "", cycle: "", applicationDate: today, allergies: "", schemeId: "", procedureType: "",
+    isC1D1: false,
   });
   const [meds, setMeds]       = useState([emptyMed(1)]);
   const [saving, setSaving]   = useState(false);
@@ -293,7 +294,7 @@ export default function NuevaSession() {
   };
 
   const reset = () => {
-    setForm({ patientName:"", dob:"", diagnosis:"", physician:"", insurance:"", cycle:"", applicationDate:today, allergies:"", schemeId:"", procedureType:"" });
+    setForm({ patientName:"", dob:"", diagnosis:"", physician:"", insurance:"", cycle:"", applicationDate:today, allergies:"", schemeId:"", procedureType:"", isC1D1:false });
     setMeds([emptyMed(1)]); setSaved(false); setError("");
     setSessionType(null);
   };
@@ -390,6 +391,10 @@ export default function NuevaSession() {
                 <div>
                   <label style={labelStyle}>Ciclo / Día</label>
                   <input required value={form.cycle} onChange={e => setField("cycle", e.target.value)} placeholder="ej: Ciclo 5 Día 1" style={inputStyle} />
+                  <label style={{ display:"flex", alignItems:"center", gap:7, marginTop:8, fontSize:12, color:"#ccc", cursor:"pointer" }}>
+                    <input type="checkbox" checked={!!form.isC1D1} onChange={e => setField("isC1D1", e.target.checked)} style={{ width:15, height:15, cursor:"pointer" }} />
+                    Inicio de línea (C1D1) — requiere consentimiento nuevo
+                  </label>
                 </div>
                 <div>
                   <label style={labelStyle}>Fecha de aplicación</label>

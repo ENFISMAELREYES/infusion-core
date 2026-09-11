@@ -297,7 +297,17 @@ const saveEdit = async () => {
             {s.eliminado && <span style={{ color:"#ff6b6b", marginRight:6 }}>🗑</span>}
             {s.patientName}
           </div>
-          <div style={{ fontSize:12, color:"#666" }}>{s.diagnosis} · {s.cycle}</div>
+          <div style={{ fontSize:12, color:"#666", display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+            <span>{s.diagnosis} · {s.cycle}</span>
+            {s.isC1D1 && (
+              <span title={s.consentGeneratedAt ? `Consentimiento generado ${new Date(s.consentGeneratedAt).toLocaleString("es-MX")} por ${s.consentGeneratedByName || ""}` : "C1D1 sin consentimiento generado"}
+                style={{ fontSize:10, fontWeight:600, padding:"1px 7px", borderRadius:99,
+                  background: s.consentGeneratedAt ? "rgba(29,158,117,0.12)" : "rgba(255,179,71,0.12)",
+                  color: s.consentGeneratedAt ? "#1D9E75" : "#ffb347" }}>
+                {s.consentGeneratedAt ? "✓ Consentimiento" : "⚠️ C1D1 sin consentimiento"}
+              </span>
+            )}
+          </div>
           {s.eliminado && (
             <div style={{ fontSize:10, color:"#ff6b6b", marginTop:2 }}>
               Eliminada {s.eliminadoAt ? new Date(s.eliminadoAt).toLocaleString("es-MX") : ""} {s.eliminadoPor ? `por ${s.eliminadoPor}` : ""}
