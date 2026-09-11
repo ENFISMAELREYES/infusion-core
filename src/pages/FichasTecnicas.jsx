@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { FIRESTORE_BASE_URL } from "../config";
 
@@ -106,6 +106,21 @@ function FichaJsonModal({ initialFicha, onClose, onSaved, token }) {
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(null); // { done, total } durante alta masiva
 
+  // Subir el .json como archivo en vez de pegarlo -- lotes grandes (como el
+  // arreglo con varias fichas) a veces exceden lo que el portapapeles del
+  // teléfono/navegador puede pegar de un jalón.
+  const fileInputRef = useRef(null);
+  const onFileSelected = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permite volver a elegir el mismo archivo después
+    if (!file) return;
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => setText(String(reader.result || ""));
+    reader.onerror = () => setError("No se pudo leer el archivo.");
+    reader.readAsText(file);
+  };
+
   const saveOne = async (parsed) => {
     const docId = ficha_docId(parsed.nombre_generico);
     const fields = {};
@@ -178,6 +193,13 @@ function FichaJsonModal({ initialFicha, onClose, onSaved, token }) {
             Pega aquí el JSON de la ficha (tal cual lo generes) -- se identifica y se busca después por "nombre_generico".
             {!initialFicha && " También puedes pegar un arreglo [ ] con varias fichas para darlas de alta todas juntas."}
           </div>
+        </div>
+        <div>
+          <input ref={fileInputRef} type="file" accept=".json,application/json" onChange={onFileSelected} style={{ display:"none" }} />
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={saving}
+            style={{ padding:"7px 12px", borderRadius:8, fontSize:12, fontWeight:600, cursor: saving ? "wait" : "pointer", background:"rgba(79,195,247,0.08)", border:"1px solid rgba(79,195,247,0.25)", color:"#4fc3f7" }}>
+            📎 Subir archivo .json
+          </button>
         </div>
         <textarea value={text} onChange={e => setText(e.target.value)} placeholder='{"nombre_generico": "Docetaxel", ...}'
           rows={16} style={{ ...inputStyle, fontFamily:"'IBM Plex Mono', monospace", fontSize:11, resize:"vertical" }} />
