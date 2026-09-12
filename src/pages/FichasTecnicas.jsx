@@ -52,6 +52,12 @@ const FICHA_FIELDS = [
   "incompatibilidades_conocidas","monitoreo_durante_infusion","signos_alarma_hipersensibilidad",
   "signos_alarma_extravasacion","conducta_inmediata_reaccion","antidoto_kit_especifico",
   "fuente_referencia_clinica","notas_adicionales",
+  // Para el consentimiento informado generado en Sesión de hoy (ver
+  // generate-consent.js) -- es_oncologico decide título/bloques del
+  // documento; categoria_farmaco/rol_en_esquema son informativos; el resto
+  // alimenta directamente el contenido del PDF cuando están capturados.
+  "es_oncologico","categoria_farmaco","rol_en_esquema","especialidad_clinica",
+  "beneficios_esperados","alternativas_tratamiento","mecanismo_accion_paciente","riesgos_por_frecuencia",
 ];
 
 const SECTIONS = [
@@ -74,6 +80,12 @@ const SECTIONS = [
     ["signos_alarma_hipersensibilidad","Signos de alarma — hipersensibilidad"],
     ["signos_alarma_extravasacion","Signos de alarma — extravasación"],
     ["conducta_inmediata_reaccion","Conducta inmediata ante reacción"], ["antidoto_kit_especifico","Antídoto / kit específico"],
+  ]},
+  { title: "Consentimiento informado", fields: [
+    ["es_oncologico","¿Es oncológico?"], ["categoria_farmaco","Categoría del fármaco"], ["rol_en_esquema","Rol en el esquema"],
+    ["especialidad_clinica","Especialidad clínica"], ["mecanismo_accion_paciente","Mecanismo de acción (para el paciente)"],
+    ["beneficios_esperados","Beneficios esperados"], ["alternativas_tratamiento","Alternativas de tratamiento"],
+    ["riesgos_por_frecuencia","Riesgos por frecuencia"],
   ]},
   { title: "Otros", fields: [
     ["notas_adicionales","Notas adicionales"],
@@ -318,7 +330,16 @@ export default function FichasTecnicas() {
                       </div>
                     )}
                     {SECTIONS.map(section => {
-                      const rows = section.fields.filter(([key]) => f[key]);
+                      // Truthy simple no alcanza para booleanos (false se
+                      // perdería, ej. es_oncologico: false) ni distingue un
+                      // arreglo/objeto vacío de uno con contenido real.
+                      const hasValue = (v) => {
+                        if (v === undefined || v === null || v === "") return false;
+                        if (Array.isArray(v)) return v.length > 0;
+                        if (typeof v === "object") return Object.keys(v).length > 0;
+                        return true;
+                      };
+                      const rows = section.fields.filter(([key]) => hasValue(f[key]));
                       if (rows.length === 0) return null;
                       return (
                         <div key={section.title}>
@@ -339,6 +360,30 @@ export default function FichasTecnicas() {
                                           : [item.combinacion, item.orden, item.notas].filter(Boolean).join(" — "))
                                       : String(f[key]).split("|").map(s => s.trim())
                                     ).filter(Boolean).map((linea, li) => (
+                                      <div key={li} style={{ display:"flex", gap:6, fontSize:12, color:"#ccc", lineHeight:1.5 }}>
+                                        <span style={{ color:"#00d4aa", flexShrink:0 }}>•</span>
+                                        <span>{linea}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : key === "riesgos_por_frecuencia" ? (
+                                  // Objeto {frecuentes, menos_frecuentes, raros_pero_importantes} --
+                                  // cada uno una lista corta.
+                                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                                    {[["frecuentes","Frecuentes"],["menos_frecuentes","Menos frecuentes"],["raros_pero_importantes","Raros pero importantes"]].map(([subKey, subLabel]) => (
+                                      (f[key][subKey] || []).length > 0 && (
+                                        <div key={subKey}>
+                                          <span style={{ fontSize:11, color:"#888", fontWeight:600 }}>{subLabel}: </span>
+                                          <span style={{ fontSize:12, color:"#ccc" }}>{f[key][subKey].join(", ")}</span>
+                                        </div>
+                                      )
+                                    ))}
+                                  </div>
+                                ) : typeof f[key] === "boolean" ? (
+                                  <div style={{ fontSize:12, color:"#ccc" }}>{f[key] ? "Sí" : "No"}</div>
+                                ) : Array.isArray(f[key]) ? (
+                                  <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                                    {f[key].map((linea, li) => (
                                       <div key={li} style={{ display:"flex", gap:6, fontSize:12, color:"#ccc", lineHeight:1.5 }}>
                                         <span style={{ color:"#00d4aa", flexShrink:0 }}>•</span>
                                         <span>{linea}</span>

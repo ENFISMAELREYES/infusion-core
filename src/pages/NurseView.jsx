@@ -726,6 +726,23 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
     setGeneratingConsent(true);
     try {
       const freshToken = await user.getIdToken(true);
+      // Datos de la ficha técnica de cada medicamento del tratamiento (no
+      // premedicación/hidratación) -- el generador los usa para explicar
+      // mecanismo/beneficios/alternativas/riesgos específicos por fármaco
+      // en vez del texto genérico, cuando ya están capturados en la ficha.
+      const TREATMENT_CATS = new Set(["quimioterapia", "inmunoterapia", "especialidad"]);
+      const treatmentInfo = (session.meds || [])
+        .filter(m => TREATMENT_CATS.has(m.category))
+        .map(m => findFicha(m.name))
+        .filter(Boolean)
+        .map(f => ({
+          name: f.nombre_generico,
+          es_oncologico: f.es_oncologico,
+          mecanismo_accion_paciente: f.mecanismo_accion_paciente,
+          beneficios_esperados: f.beneficios_esperados,
+          alternativas_tratamiento: f.alternativas_tratamiento,
+          riesgos_por_frecuencia: f.riesgos_por_frecuencia,
+        }));
       const res = await fetch("/api/generate-consent", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${freshToken}` },
@@ -733,7 +750,7 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
           center: session.center, cipiVariant: session.cipiVariant,
           patientName: session.patientName, dob: session.dob, diagnosis: session.diagnosis,
           physician: session.physician, allergies: session.allergies, meds: session.meds || [],
-          requestedByName: profile?.name || "",
+          requestedByName: profile?.name || "", treatmentInfo,
         }),
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
