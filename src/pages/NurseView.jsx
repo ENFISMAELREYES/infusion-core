@@ -704,6 +704,76 @@ function FichaResumenModal({ med, ficha, onClose }) {
   );
 }
 
+const REP_TIPOS = [
+  { value:"tutor", label:"Tutor" },
+  { value:"representante_legal", label:"Representante legal" },
+  { value:"familiar", label:"Familiar más cercano por vínculo" },
+  { value:"paciente_mismo", label:"El paciente firma por sí mismo" },
+];
+
+// Se pide justo antes de generar el consentimiento (no al registrar el
+// ingreso, para no frenar ese flujo) -- quién acompaña al paciente, para
+// llenar esa parte del PDF en vez de dejarla en blanco. Prellenado con lo
+// último capturado en la sesión, si ya se había generado antes.
+function RepresentanteModal({ session, onClose, onConfirm, saving }) {
+  const [tipo, setTipo] = useState(session.consentRepTipo || "");
+  const [nombre, setNombre] = useState(session.consentRepNombre || "");
+  const [edad, setEdad] = useState(session.consentRepEdad || "");
+  const [parentesco, setParentesco] = useState(session.consentRepParentesco || "");
+  const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
+  const labelStyle = { fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 };
+  const needsDetails = tipo && tipo !== "paciente_mismo";
+  const canConfirm = tipo && (!needsDetails || nombre.trim());
+
+  return (
+    <div onClick={() => !saving && onClose()} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:420, maxHeight:"88vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
+        <div>
+          <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>Consentimiento — quién acompaña</div>
+          <div style={{ fontSize:12, color:"#888", marginTop:2 }}>Para llenar esa parte del documento. Si no se sabe todavía, se deja en blanco para completarse a mano al firmar.</div>
+        </div>
+        <div>
+          <label style={labelStyle}>Quién firma como tutor/representante</label>
+          <select value={tipo} onChange={e => setTipo(e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
+            <option value="">Sin definir (queda en blanco)</option>
+            {REP_TIPOS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </div>
+        {needsDetails && (
+          <>
+            <div>
+              <label style={labelStyle}>Nombre completo</label>
+              <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="ej: José Luis Burgos Ramos" style={inputStyle} />
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              <div>
+                <label style={labelStyle}>Edad</label>
+                <input type="number" min="1" value={edad} onChange={e => setEdad(e.target.value)} style={inputStyle} />
+              </div>
+              {tipo === "familiar" && (
+                <div>
+                  <label style={labelStyle}>Parentesco</label>
+                  <input value={parentesco} onChange={e => setParentesco(e.target.value)} placeholder="ej: Esposo, Hija" style={inputStyle} />
+                </div>
+              )}
+            </div>
+          </>
+        )}
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={onClose} disabled={saving} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: saving ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
+          <button onClick={() => onConfirm({ tipo, nombre, edad, parentesco })} disabled={saving || !canConfirm}
+            style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (saving || !canConfirm) ? "not-allowed" : "pointer", background:"linear-gradient(135deg,#00d4aa,#0F6E56)", border:"none", color:"#fff", opacity: (saving || !canConfirm) ? 0.6 : 1 }}>
+            {saving ? "Generando…" : "✓ Generar consentimiento"}
+          </button>
+        </div>
+        <button onClick={() => onConfirm(null)} disabled={saving} style={{ padding:"7px", fontSize:11, cursor: saving ? "wait" : "pointer", background:"transparent", border:"none", color:"#555", textDecoration:"underline" }}>
+          Omitir y dejar esta parte en blanco
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SessionCard({ session, token, onRefresh, user, fichasByName }) {
   const { profile, refreshProfile } = useAuth();
   const [open, setOpen]       = useState(false);
@@ -719,10 +789,13 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
 
   // Genera el consentimiento informado con los datos ya capturados de esta
   // sesión (paciente, diagnóstico, y los medicamentos del tratamiento en sí
-  // -- no premedicación/hidratación). El resto de los campos (representante,
-  // testigo, firmas) quedan en blanco para llenarse/firmarse en el momento.
+  // -- no premedicación/hidratación) más los datos de tutor/representante/
+  // familiar que se piden justo antes de generar (ver RepresentanteModal) --
+  // no se atan al registro de ingreso para no frenar ese flujo. El testigo
+  // y las firmas siguen en blanco para llenarse/firmarse en el momento.
   const [generatingConsent, setGeneratingConsent] = useState(false);
-  const generateConsent = async () => {
+  const [showRepModal, setShowRepModal] = useState(false);
+  const generateConsent = async (representante) => {
     setGeneratingConsent(true);
     try {
       const freshToken = await user.getIdToken(true);
@@ -750,7 +823,7 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
           center: session.center, cipiVariant: session.cipiVariant,
           patientName: session.patientName, dob: session.dob, diagnosis: session.diagnosis,
           physician: session.physician, allergies: session.allergies, meds: session.meds || [],
-          requestedByName: profile?.name || "", treatmentInfo,
+          requestedByName: profile?.name || "", treatmentInfo, representante,
         }),
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
@@ -759,10 +832,19 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 60000);
       // Se marca en la sesión -- así Historial puede mostrar si a un C1D1
-      // ya se le generó su consentimiento o sigue pendiente.
+      // ya se le generó su consentimiento o sigue pendiente. Los datos del
+      // representante también se guardan aquí, para que la próxima vez que
+      // se genere/reimprima el modal ya aparezca con ellos en vez de
+      // pedirlos de nuevo desde cero.
       await patchSession(freshToken, session.id, {
         consentGeneratedAt: new Date().toISOString(),
         consentGeneratedByName: profile?.name || "",
+        ...(representante ? {
+          consentRepTipo: representante.tipo || "",
+          consentRepNombre: representante.nombre || "",
+          consentRepEdad: representante.edad || "",
+          consentRepParentesco: representante.parentesco || "",
+        } : {}),
       });
       onRefresh();
     } catch (e) {
@@ -1122,7 +1204,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
           // tratamiento), un clic y queda marcado en la sesión/Historial.
           const needsC1D1Consent = session.isC1D1 && !session.consentGeneratedAt;
           return (
-            <button onClick={e => { e.stopPropagation(); generateConsent(); }} disabled={generatingConsent}
+            <button onClick={e => { e.stopPropagation(); setShowRepModal(true); }} disabled={generatingConsent}
               title={needsC1D1Consent ? "Este ciclo es C1D1 -- requiere generar un consentimiento nuevo" : "Generar el consentimiento informado con los datos de esta sesión"}
               style={{ fontSize:11, fontWeight:600, padding:"3px 10px", borderRadius:99, cursor: generatingConsent ? "wait" : "pointer",
                 border: `1px solid ${needsC1D1Consent ? "rgba(255,179,71,0.4)" : session.consentGeneratedAt ? "rgba(29,158,117,0.3)" : "rgba(79,195,247,0.3)"}`,
@@ -1207,6 +1289,12 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
 
       {fichaModalMed && (
         <FichaResumenModal med={fichaModalMed.med} ficha={fichaModalMed.ficha} onClose={() => setFichaModalMed(null)} />
+      )}
+
+      {showRepModal && (
+        <RepresentanteModal session={session} saving={generatingConsent}
+          onClose={() => setShowRepModal(false)}
+          onConfirm={(representante) => { setShowRepModal(false); generateConsent(representante); }} />
       )}
 
       {open && (

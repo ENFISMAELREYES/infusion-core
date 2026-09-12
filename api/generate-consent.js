@@ -48,7 +48,7 @@ export const config = { api: { responseLimit: "10mb" } };
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { center, cipiVariant, patientName, dob, diagnosis, physician, allergies, meds, requestedByName, treatmentInfo, token } = req.body;
+  const { center, cipiVariant, patientName, dob, diagnosis, physician, allergies, meds, requestedByName, treatmentInfo, representante, token } = req.body;
 
   // Es un documento legal con datos clínicos del paciente -- a diferencia de
   // generate-material-order.js (solo insumos/cantidades), aquí sí se exige
@@ -195,10 +195,18 @@ export default async function handler(req, res) {
     y = doc.y + 10;
     line(y); y += 8;
 
-    doc.fontSize(9.5).font("Helvetica").text("Datos: Tutor ( )   Representante Legal ( )   Familiar más cercano por vínculo ( )   Parentesco: ______________________", 45, y, { width: W });
+    // Marca el tipo capturado (ver RepresentanteModal en NurseView.jsx) --
+    // sin dato, queda igual que antes (todo en blanco para llenarse a mano).
+    const repTipo = representante?.tipo || "";
+    const mark = (t) => repTipo === t ? "X" : "_";
+    doc.fontSize(9.5).font("Helvetica").text(
+      `Datos: Tutor (${mark("tutor")})   Representante Legal (${mark("representante_legal")})   Familiar más cercano por vínculo (${mark("familiar")})   Parentesco: ${repTipo === "familiar" ? (representante?.parentesco || "") : "______________________"}`,
+      45, y, { width: W }
+    );
     y = doc.y + 6;
-    field("Nombre:", "", 45, y, 60, 300);
-    field("Edad:", "", 400, y, 40, 80);
+    const repShowsDetails = repTipo && repTipo !== "paciente_mismo";
+    field("Nombre:", repShowsDetails ? (representante?.nombre || "") : "", 45, y, 60, 300);
+    field("Edad:", repShowsDetails && representante?.edad ? `${representante.edad} años` : "", 400, y, 40, 80);
     y = doc.y + 10;
     line(y); y += 12;
     doc.y = y;
@@ -359,7 +367,10 @@ export default async function handler(req, res) {
       doc.moveDown(1.4);
     };
     sigBlock(patientName, "Nombre Completo y firma del paciente");
-    sigBlock("", "Nombre completo y firma del Tutor, representante legal o familiar más cercano por vínculo");
+    sigBlock(
+      repShowsDetails ? (representante?.nombre || "") : (repTipo === "paciente_mismo" ? "N/A — el paciente firma por sí mismo" : ""),
+      "Nombre completo y firma del Tutor, representante legal o familiar más cercano por vínculo"
+    );
     sigBlock(requestedByName || "", "Nombre completo y firma de quien proporciona la información y recaba el consentimiento");
     sigBlock(physician || "", "Nombre completo del Médico Tratante");
     sigBlock("", "Nombre completo y firma del Testigo 1");
