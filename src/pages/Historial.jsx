@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
+import { normalizeMedName } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -50,6 +51,19 @@ async function fetchSessions(token, filters) {
 const CAT_COLOR = { premedicacion:"#FAC775", inmunoterapia:"#5DCAA5", quimioterapia:"#F09595", adicional:"#AFA9EC", domicilio:"#82C4F8" };
 const CAT_LABEL = { premedicacion:"Pre", inmunoterapia:"Inmuno", quimioterapia:"Quimio", adicional:"Adic.", domicilio:"Dom." };
 
+// Fichas técnicas -- para que "Reimprimir consentimiento" salga con el
+// mismo detalle por fármaco que la primera generación (ver NurseView.jsx).
+async function fetchFichasTecnicas(token) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
+  const res = await fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: "fichas_tecnicas" }], limit: 1000 } }),
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data.filter(d => d.document).map(d => parseDoc(d.document));
+}
+
 function parseTime(t) {
   if (!t) return null;
   if (t.includes("a.m.") || t.includes("p.m.")) {
@@ -75,12 +89,62 @@ const STATUS_META = {
   pendiente:  { label:"Pendiente",  color:"#ffb347" },
 };
 
-function SessionRow({ s, selected, onSelect, isJefe, canSign, token, onRefresh, profile }) {
+function SessionRow({ s, selected, onSelect, isJefe, canSign, token, onRefresh, profile, user, fichasByName }) {
   const sm = STATUS_META[s.status] || STATUS_META.pendiente;
   const isSelected = selected?.id === s.id;
   const [editing, setEditing] = useState(false);
 const [editDraft, setEditDraft] = useState(null);
   const [showSignModal, setShowSignModal] = useState(false);
+
+  // Reimprime el consentimiento con los datos que ya quedaron guardados en
+  // la sesión desde la primera vez que se generó (representante, etc.) --
+  // sin volver a preguntar nada. Solo aparece si ya se había generado antes.
+  const [reprintingConsent, setReprintingConsent] = useState(false);
+  const reprintConsent = async () => {
+    setReprintingConsent(true);
+    try {
+      const freshToken = await user.getIdToken(true);
+      const findFicha = (medName) => {
+        if (!medName || !fichasByName) return null;
+        const norm = normalizeMedName(medName);
+        return fichasByName[norm] || Object.values(fichasByName).find(f => {
+          const fn = normalizeMedName(f.nombre_generico);
+          return fn && (norm.includes(fn) || fn.includes(norm));
+        }) || null;
+      };
+      const TREATMENT_CATS = new Set(["quimioterapia", "inmunoterapia", "especialidad"]);
+      const treatmentInfo = (s.meds || [])
+        .filter(m => TREATMENT_CATS.has(m.category))
+        .map(m => findFicha(m.name))
+        .filter(Boolean)
+        .map(f => ({
+          name: f.nombre_generico, es_oncologico: f.es_oncologico, mecanismo_accion_paciente: f.mecanismo_accion_paciente,
+          beneficios_esperados: f.beneficios_esperados, alternativas_tratamiento: f.alternativas_tratamiento,
+          riesgos_por_frecuencia: f.riesgos_por_frecuencia,
+        }));
+      const representante = s.consentRepTipo ? {
+        tipo: s.consentRepTipo, nombre: s.consentRepNombre, edad: s.consentRepEdad, parentesco: s.consentRepParentesco,
+      } : null;
+      const res = await fetch("/api/generate-consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${freshToken}` },
+        body: JSON.stringify({
+          center: s.center, cipiVariant: s.cipiVariant, patientName: s.patientName, dob: s.dob, diagnosis: s.diagnosis,
+          physician: s.physician, allergies: s.allergies, meds: s.meds || [],
+          requestedByName: s.consentGeneratedByName || "", treatmentInfo, representante,
+        }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      alert("Error al reimprimir el consentimiento: " + e.message);
+    } finally {
+      setReprintingConsent(false);
+    }
+  };
   const [sigPaciente, setSigPaciente]     = useState(null);
   const [sigEnfermeria, setSigEnfermeria] = useState(null);
   const [signing, setSigning]             = useState(false);
@@ -471,6 +535,13 @@ const saveEdit = async () => {
                   ✍️ Registrar firmas
                 </button>
               )}
+              {s.consentGeneratedAt && !s.eliminado && (
+                <button onClick={e => { e.stopPropagation(); reprintConsent(); }} disabled={reprintingConsent}
+                  title={`Consentimiento generado ${new Date(s.consentGeneratedAt).toLocaleString("es-MX")} por ${s.consentGeneratedByName || ""} -- se reimprime con los mismos datos de tutor/representante ya guardados`}
+                  style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor: reprintingConsent ? "wait" : "pointer", background:"rgba(79,195,247,0.1)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7" }}>
+                  {reprintingConsent ? "Generando…" : "🖨️ Reimprimir consentimiento"}
+                </button>
+              )}
               {isJefe && !s.eliminado && (
                 <button onClick={e => { e.stopPropagation(); openDupModal(); }} title="Duplicar como plantilla (temporal, captura retrospectiva)"
                   style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
@@ -688,6 +759,7 @@ const isJefe = profile?.role === "jefe";
   const [filters, setFilters]   = useState({ date:"", center:"", search:"" });
   const [typeFilter, setTypeFilter] = useState(""); // "" = todos
   const [showDeleted, setShowDeleted] = useState(false); // jefe: ver sesiones eliminadas (borrado lógico)
+  const [fichasByName, setFichasByName] = useState({});
 
   const load = async () => {
     if (!user) return;
@@ -703,6 +775,20 @@ setToken(t);
   };
 
   useEffect(() => { load(); }, [user]);
+
+  // Aparte de las sesiones -- solo se necesitan para "Reimprimir
+  // consentimiento", no dependen de los filtros de fecha/centro.
+  useEffect(() => {
+    if (!user) return;
+    user.getIdToken().then(async (t) => {
+      try {
+        const fichas = await fetchFichasTecnicas(t);
+        const byName = {};
+        fichas.forEach(f => { if (f.nombre_generico) byName[normalizeMedName(f.nombre_generico)] = f; });
+        setFichasByName(byName);
+      } catch (e) { console.error("Error cargando fichas técnicas:", e); }
+    });
+  }, [user]);
 
   const visibilityFiltered = sessions.filter(s => showDeleted ? true : !s.eliminado);
   const searchFiltered = visibilityFiltered.filter(s => {
@@ -787,7 +873,7 @@ setToken(t);
               </div>
             );
           })()}
-          {filtered.map(s => <SessionRow key={s.id} s={s} onSelect={setSelected} selected={selected} isJefe={isJefe} canSign={canSign} token={token} onRefresh={load} profile={profile} />)}
+          {filtered.map(s => <SessionRow key={s.id} s={s} onSelect={setSelected} selected={selected} isJefe={isJefe} canSign={canSign} token={token} onRefresh={load} profile={profile} user={user} fichasByName={fichasByName} />)}
         </div>
       )}
     </div>
