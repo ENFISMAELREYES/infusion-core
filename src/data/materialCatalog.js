@@ -688,6 +688,27 @@ export const MATERIAL_DEFAULTS = {
     ],
     "soluciones": []
   },
+  "PACLITAXEL ALBUMINA": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA 18G ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO C/ FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
   "DACARBAZINA": {
     "insumos": [
       {
