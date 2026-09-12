@@ -34,6 +34,41 @@ export function normalizeMedName(s) {
   return (s || "").toUpperCase().trim().replace(/[-_]/g, " ").replace(/\s+/g, " ")
     .replace(/Á/g,"A").replace(/É/g,"E").replace(/Í/g,"I").replace(/Ó/g,"O").replace(/Ú/g,"U");
 }
+
+// Busca la ficha técnica de un medicamento capturado, con el mismo criterio
+// en todos los consumidores (Autorizar, NurseView, Monitor, Historial) --
+// antes cada archivo repetía su propia versión de esto, y la búsqueda
+// difusa por contención (fn.includes(norm) / norm.includes(fn)) podía
+// confundir un fármaco genérico con una variante más específica cuyo
+// nombre lo contiene como sub-cadena (ej. "Doxorrubicina" capturado
+// calzaba, por contención, con "Doxorrubicina liposomal pegilizada" --
+// que trae instrucciones de dilución OPUESTAS a la doxorrubicina simple).
+// Reglas, en orden:
+//  1. Coincidencia exacta por nombre normalizado.
+//  2. Coincidencia exacta ignorando el texto entre paréntesis (ej.
+//     "Carboplatino" capturado vs ficha guardada como
+//     "Carboplatino (CBDCA)") -- solo si un único fármaco calza así.
+//  3. Contención difusa (como antes) -- pero solo si UN único fármaco
+//     calza; si el nombre capturado es ambiguo entre dos o más fichas, no
+//     se adivina cuál es la correcta -- se prefiere no mostrar nada a
+//     mostrar la alerta de un fármaco distinto.
+export function findFichaMatch(medName, fichasByName) {
+  if (!medName || !fichasByName) return null;
+  const norm = normalizeMedName(medName);
+  if (fichasByName[norm]) return fichasByName[norm];
+
+  const stripParens = (s) => s.replace(/\s*\([^)]*\)/g, "").trim();
+  const normNoParens = stripParens(norm);
+  const exactNoParens = Object.values(fichasByName).filter(f => stripParens(normalizeMedName(f.nombre_generico)) === normNoParens);
+  if (exactNoParens.length === 1) return exactNoParens[0];
+
+  const fuzzy = Object.values(fichasByName).filter(f => {
+    const fn = normalizeMedName(f.nombre_generico);
+    return fn && (norm.includes(fn) || fn.includes(norm));
+  });
+  return fuzzy.length === 1 ? fuzzy[0] : null;
+}
+
 function ficha_docId(nombreGenerico) {
   return normalizeMedName(nombreGenerico).replace(/[^A-Z0-9]/g, "_").slice(0, 200);
 }

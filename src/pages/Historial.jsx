@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
-import { normalizeMedName } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -104,14 +104,7 @@ const [editDraft, setEditDraft] = useState(null);
     setReprintingConsent(true);
     try {
       const freshToken = await user.getIdToken(true);
-      const findFicha = (medName) => {
-        if (!medName || !fichasByName) return null;
-        const norm = normalizeMedName(medName);
-        return fichasByName[norm] || Object.values(fichasByName).find(f => {
-          const fn = normalizeMedName(f.nombre_generico);
-          return fn && (norm.includes(fn) || fn.includes(norm));
-        }) || null;
-      };
+      const findFicha = (medName) => findFichaMatch(medName, fichasByName);
       const TREATMENT_CATS = new Set(["quimioterapia", "inmunoterapia", "especialidad"]);
       const treatmentInfo = (s.meds || [])
         .filter(m => TREATMENT_CATS.has(m.category))

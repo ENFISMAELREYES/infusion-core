@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { normalizeMedName } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -223,14 +223,7 @@ function PatientRow({ s, onNoShow, isJefe, fichasByName }) {
   const canMarkNoShow = isJefe && !s.events?.ingreso; // solo jefe, y solo si aún no ha iniciado
   const [fichaModalMed, setFichaModalMed] = useState(null); // medicamento cuya ficha se está consultando, o null
 
-  const findFicha = (medName) => {
-    if (!medName || !fichasByName) return null;
-    const norm = normalizeMedName(medName);
-    return fichasByName[norm] || Object.values(fichasByName).find(f => {
-      const fn = normalizeMedName(f.nombre_generico);
-      return fn && (norm.includes(fn) || fn.includes(norm));
-    }) || null;
-  };
+  const findFicha = (medName) => findFichaMatch(medName, fichasByName);
 
   return (
     <div style={{

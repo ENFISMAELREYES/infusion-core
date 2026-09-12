@@ -3,7 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { uploadSignature, uploadUserSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { computeSessionMaterial } from "../data/materialCatalog";
-import { normalizeMedName } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -1163,19 +1163,10 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
   const nextMed = currentMedIndex >= 0 ? timedMeds[currentMedIndex + 1] : null;
 
   // Ficha técnica de cualquier medicamento de la sesión, para la consulta
-  // rápida "ⓘ" (mismo ícono que ya usa Monitor) -- exacta primero, si no hay
-  // coincidencia se busca por contención (mismo criterio laxo que ya usa el
-  // resto de la app para emparejar nombres). Se muestra en todos los
+  // rápida "ⓘ" (mismo ícono que ya usa Monitor). Se muestra en todos los
   // medicamentos, no solo en el que está pasando.
   const [fichaModalMed, setFichaModalMed] = useState(null); // { med, ficha } o null
-  const findFicha = (medName) => {
-    if (!medName || !fichasByName) return null;
-    const norm = normalizeMedName(medName);
-    return fichasByName[norm] || Object.values(fichasByName).find(f => {
-      const fn = normalizeMedName(f.nombre_generico);
-      return fn && (norm.includes(fn) || fn.includes(norm));
-    }) || null;
-  };
+  const findFicha = (medName) => findFichaMatch(medName, fichasByName);
   const currentMedFicha = currentMed ? findFicha(currentMed.name) : null;
 
   // Medicamento ya aplicado cuyo lavado (o lavado adicional) todavía no se ha
