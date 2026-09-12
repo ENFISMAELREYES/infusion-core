@@ -32,15 +32,8 @@ const NAVY = "#00339F", GRAY = "#666666", LINE = "#999999";
 
 // Categorías que sí cuentan como "el tratamiento" para nombrar los fármacos
 // en el consentimiento -- premedicación/hidratación/domicilio son soporte,
-// no lo que el documento necesita nombrar explícitamente. Cada una con su
-// etiqueta para el encabezado del documento ("especialidad" es donde caen
-// los biológicos/dirigidos que no son ni quimio ni inmunoterapia propiamente,
-// ej. bevacizumab) -- así el título deja de ser siempre "QUIMIOTERAPIA/
-// AGENTE BIOLÓGICO" fijo y se arma según lo que de verdad trae la sesión:
-// solo quimio -> "QUIMIOTERAPIA"; solo bevacizumab -> "AGENTE BIOLÓGICO";
-// combinación -> "QUIMIOTERAPIA / INMUNOTERAPIA", etc.
-const TREATMENT_CAT_LABEL = { quimioterapia: "QUIMIOTERAPIA", inmunoterapia: "INMUNOTERAPIA", especialidad: "AGENTE BIOLÓGICO" };
-const TREATMENT_CAT_ORDER = ["quimioterapia", "inmunoterapia", "especialidad"];
+// no lo que el documento necesita nombrar explícitamente.
+const TREATMENT_CATS = new Set(["quimioterapia", "inmunoterapia", "especialidad"]);
 
 // "Negadas", "Ninguna", "No", etc. cuentan como sin alergia -- cualquier otra
 // cosa capturada se toma como una alergia real que hay que mostrar.
@@ -97,7 +90,7 @@ export default async function handler(req, res) {
     // Nombres de los fármacos "del tratamiento" (no premedicación/hidratación)
     // para nombrarlos explícitamente en el documento -- a diferencia de dejar
     // solo "QUIMIOTERAPIA/AGENTE BIOLÓGICO" genérico.
-    const treatmentMeds = (meds || []).filter(m => TREATMENT_CAT_LABEL[m.category]);
+    const treatmentMeds = (meds || []).filter(m => TREATMENT_CATS.has(m.category));
     const treatmentDrugs = [...new Set(treatmentMeds.map(m => (m.name || "").trim().toUpperCase()).filter(Boolean))];
     const drugList = treatmentDrugs.join(", ");
 
@@ -125,15 +118,14 @@ export default async function handler(req, res) {
     const beneficios = dedupList(infoList.map(i => i.beneficios_esperados));
     const alternativas = dedupList(infoList.map(i => i.alternativas_tratamiento));
 
-    // Título/frase del tratamiento dinámicos según qué categorías realmente
-    // trae la sesión -- si ninguna calza (sesión sin meds, o todo
-    // premedicación) se deja el genérico de siempre como respaldo. Para
-    // tratamiento NO oncológico (ej. hierro IV, antiemético solo) la
-    // etiqueta de categoría (QUIMIOTERAPIA/AGENTE BIOLÓGICO) no aplica --
-    // se nombra directo el fármaco en su lugar.
-    const presentCats = TREATMENT_CAT_ORDER.filter(c => treatmentMeds.some(m => m.category === c));
-    const treatmentLabel = presentCats.length > 0 ? presentCats.map(c => TREATMENT_CAT_LABEL[c]).join(" / ") : "QUIMIOTERAPIA/AGENTE BIOLÓGICO";
-    const treatmentPhrase = !isOncologic ? (drugList || "el tratamiento indicado") : `${treatmentLabel}${drugList ? ` (${drugList})` : ""}`;
+    // La frase del tratamiento nombra solo los fármacos, sin anteponer la
+    // etiqueta de categoría (QUIMIOTERAPIA/INMUNOTERAPIA/AGENTE BIOLÓGICO) --
+    // mezclar dos o más categorías ahí (ej. "QUIMIOTERAPIA / INMUNOTERAPIA")
+    // resultaba confuso cuando en la práctica son fármacos de la misma
+    // familia, así que el nombre del/los fármaco(s) basta por sí solo.
+    // Aplica igual en todo el documento (título del PDF aparte, que sigue
+    // siendo el nombre genérico del tipo de documento).
+    const treatmentPhrase = drugList || "el tratamiento indicado";
 
     const allergic = hasAllergy(allergies);
 
@@ -180,9 +172,14 @@ export default async function handler(req, res) {
     y = doc.y + 10;
 
     const line = (yy) => { doc.moveTo(45, yy).lineTo(45 + W, yy).lineWidth(0.75).strokeColor(LINE).stroke(); };
+    // OJO (mismo bug que numbered()/EFFECTS): dos anchos distintos dentro de
+    // un continued:true rompe el ajuste -- por eso el valor se iba a su
+    // propio renglón en vez de quedar junto a la etiqueta. Un solo ancho
+    // (la suma de las dos columnas) en la primera llamada, sin ancho en la
+    // continuación, es lo que ya funciona bien en el resto del documento.
     const field = (label, value, x, yy, labelW, valueW) => {
-      doc.fontSize(9.5).fillColor("#000").font("Helvetica-Bold").text(label, x, yy, { continued: true, width: labelW });
-      doc.font("Helvetica").text(`  ${value || ""}`, { width: valueW, underline: !value });
+      doc.fontSize(9.5).fillColor("#000").font("Helvetica-Bold").text(label, x, yy, { continued: true, width: labelW + valueW });
+      doc.font("Helvetica").text(`  ${value || ""}`, { underline: !value });
     };
 
     doc.fontSize(10).fillColor(NAVY).font("Helvetica-Bold").text("Datos Paciente", 45, y);
@@ -314,19 +311,34 @@ export default async function handler(req, res) {
       P("La frecuencia y la intensidad de los efectos varían de una persona a otra. En cualquier caso, cuando proceda, se llevarán a cabo las pruebas y terapias de soporte necesarias para que los riesgos del tratamiento se reduzcan al mínimo. Con el fin de minimizar riesgos, usted deberá informar de toda la medicación que tome y de cualquier prueba diagnóstica o maniobra terapéutica que le vayan a realizar por indicación de otros médicos.");
     }
 
-    // Sin salto de página forzado aquí -- pdfkit ya pagina solo cuando el
-    // texto no cabe, forzarlo dejaba media página en blanco innecesariamente.
+    const consentItems = [
+      `Acepto que se me ha explicado que es conveniente proceder, en mi situación, a la administración de ${treatmentPhrase}.`,
+      "He sido informado(a) de forma comprensible de la naturaleza y los riesgos del tratamiento mencionado, así como de sus alternativas, que he tenido oportunidad de comentar con el médico.",
+      "He sido informado(a) de las posibles consecuencias de no realizar la terapia que se me propone.",
+      "Estoy satisfecho(a) con la información recibida.",
+      "He podido formular todas las preguntas que he creído convenientes y me han sido aclaradas todas mis dudas.",
+      "He sido informado(a) de la posibilidad de revocar este consentimiento en cualquier momento, aceptando firmar la denegación si esto llegara a suceder.",
+      "Sé que debo realizarme una serie de exámenes de sangre, radiografías, ecografías o tomografías, entre otros, para el diagnóstico, tratamiento y seguimiento de esta enfermedad. Los exámenes específicos dependerán del diagnóstico, la etapa del tratamiento y la evaluación médica.",
+      "Entiendo mi estado de salud y que por indicación médica, dicho procedimiento supone beneficios esperados para mejorar la situación que me afecta.",
+      "Tengo conocimiento que no es posible garantizar el buen resultado de las prácticas que se me realicen, de los riesgos y eventuales complicaciones que puedan surgir en el curso de los mismos y de las condiciones imprevistas que, tal vez, requieran procedimientos adicionales para mi mejoría.",
+    ];
+
+    // "Al dar mi consentimiento" + las 9 declaraciones + fecha + las 5
+    // firmas deben quedar juntos en una misma página -- si el corte caía
+    // entre las declaraciones y las firmas, quien firma no ve en la misma
+    // hoja lo que acaba de leer. Se estima el alto total del bloque y, si
+    // no cabe completo en lo que resta de la página, se empieza una nueva
+    // ANTES del encabezado (a diferencia de otros bloques del documento,
+    // aquí sí conviene forzar el salto porque el costo de una página con
+    // algo de blanco es menor al de partir esta sección).
+    doc.fontSize(9.5).font("Helvetica");
+    const itemsHeight = consentItems.reduce((h, text) => h + doc.heightOfString(`1. ${text}`, { width: W }) + 4, 0);
+    const estimatedBlockHeight = 26 /* encabezado */ + itemsHeight + 34 /* fecha */ + 5 * 70 /* firmas */;
+    if (doc.y + estimatedBlockHeight > doc.page.height - 45) newPage();
+
     doc.fontSize(10).fillColor(NAVY).font("Helvetica-Bold").text("Al dar mi consentimiento", 45, doc.y, { width: W });
     doc.moveDown(0.4);
-    numbered(1, `Acepto que se me ha explicado que es conveniente proceder, en mi situación, a la administración de ${treatmentPhrase}.`);
-    numbered(2, "He sido informado(a) de forma comprensible de la naturaleza y los riesgos del tratamiento mencionado, así como de sus alternativas, que he tenido oportunidad de comentar con el médico.");
-    numbered(3, "He sido informado(a) de las posibles consecuencias de no realizar la terapia que se me propone.");
-    numbered(4, "Estoy satisfecho(a) con la información recibida.");
-    numbered(5, "He podido formular todas las preguntas que he creído convenientes y me han sido aclaradas todas mis dudas.");
-    numbered(6, "He sido informado(a) de la posibilidad de revocar este consentimiento en cualquier momento, aceptando firmar la denegación si esto llegara a suceder.");
-    numbered(7, "Sé que debo realizarme una serie de exámenes de sangre, radiografías, ecografías o tomografías, entre otros, para el diagnóstico, tratamiento y seguimiento de esta enfermedad. Los exámenes específicos dependerán del diagnóstico, la etapa del tratamiento y la evaluación médica.");
-    numbered(8, "Entiendo mi estado de salud y que por indicación médica, dicho procedimiento supone beneficios esperados para mejorar la situación que me afecta.");
-    numbered(9, "Tengo conocimiento que no es posible garantizar el buen resultado de las prácticas que se me realicen, de los riesgos y eventuales complicaciones que puedan surgir en el curso de los mismos y de las condiciones imprevistas que, tal vez, requieran procedimientos adicionales para mi mejoría.");
+    consentItems.forEach((text, i) => numbered(i + 1, text));
 
     doc.moveDown(1.5);
     doc.fontSize(9.5).font("Helvetica").text(`${logos.city} a ${todayStr}`, 45, doc.y, { width: W, align: "center" });
@@ -336,6 +348,8 @@ export default async function handler(req, res) {
       // Un bloque de firma completo (nombre + línea + etiqueta) ocupa ~70pt --
       // el umbral anterior (90) no dejaba margen suficiente y a veces
       // partía el bloque entre dos páginas (nombre en una, línea en otra).
+      // Se conserva como respaldo aunque el bloque ya se estimó completo
+      // arriba, por si la estimación se queda corta.
       if (doc.y > doc.page.height - 130) newPage();
       if (name) doc.fontSize(9).font("Helvetica-Bold").text(name, 45, doc.y, { width: W, align: "center" });
       doc.moveDown(name ? 0.2 : 1.2);
