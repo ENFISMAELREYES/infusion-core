@@ -688,6 +688,27 @@ export const MATERIAL_DEFAULTS = {
     ],
     "soluciones": []
   },
+  "PACLITAXEL ALBUMINA": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "AGUJA 18G ROSA",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "EQUIPO SECUNDARIO C/ FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
   "DACARBAZINA": {
     "insumos": [
       {
@@ -2100,7 +2121,14 @@ export function matchMedication(medName, extraDefaults = {}) {
   if (!norm) return null;
   if (allDefaults[norm]) return norm;
   const keys = Object.keys(allDefaults);
-  return keys.find(k => norm.includes(k) || k.includes(norm)) || null;
+  // Por contención (ej. "PACLITAXEL" capturado vs las llaves "PACLITAXEL" y
+  // "NAB PACLITAXEL") solo se usa si hay UNA única llave que calza -- si el
+  // nombre capturado es ambiguo entre dos medicamentos distintos, no se
+  // adivina cuál es el correcto (mismo criterio que findFichaMatch en
+  // FichasTecnicas.jsx, que corrigió el mismo problema con Doxorrubicina
+  // simple vs liposomal).
+  const candidates = keys.filter(k => norm.includes(k) || k.includes(norm));
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 function parseDiluent(diluent) {
@@ -2263,8 +2291,7 @@ const PREMEDICACION_DRUGS = new Set([
 
   (session.meds || []).forEach(m => {
     if (!m.name) return;
-    const norm = normalize(m.name);
-    const key = allDefaults[norm] ? norm : Object.keys(allDefaults).find(k => norm.includes(k) || k.includes(norm));
+    const key = matchMedication(m.name, extraDefaults);
     if (!key) { unmatched.push(m.name); return; }
 
     // Si el medicamento es de vía ORAL (según su dosis, cuando el nombre es

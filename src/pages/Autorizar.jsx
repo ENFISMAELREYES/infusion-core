@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { normalizeMedName } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -215,21 +215,13 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
   const vol                 = volMatch ? parseInt(volMatch[1]) : null;
   const speed               = med.category === "premedicacion" ? 60 : (vol && med.time) ? Math.round((vol / med.time) * 60) : null;
 
-  // Ficha técnica de referencia (Fase 2) -- exacta primero, si no hay
-  // coincidencia exacta se busca por contención (mismo criterio laxo que
-  // ya usa el resto de la app para emparejar nombres de medicamento). Sin
-  // verdicto automático: solo se muestra para que el jefe compare contra
-  // lo capturado, con todo el contexto real (ver por qué en el commit de
+  // Ficha técnica de referencia (Fase 2) -- ver findFichaMatch en
+  // FichasTecnicas.jsx para el criterio de emparejamiento. Sin verdicto
+  // automático: solo se muestra para que el jefe compare contra lo
+  // capturado, con todo el contexto real (ver por qué en el commit de
   // Fase 1 -- casos como dilución condicional por dosis no se reducen a un
   // simple rango).
-  const medNameNorm = normalizeMedName(med.name);
-  const ficha = !isNew && medNameNorm && fichasByName ? (
-    fichasByName[medNameNorm] ||
-    Object.values(fichasByName).find(f => {
-      const fn = normalizeMedName(f.nombre_generico);
-      return fn && (medNameNorm.includes(fn) || fn.includes(medNameNorm));
-    })
-  ) : null;
+  const ficha = !isNew ? findFichaMatch(med.name, fichasByName) : null;
   const fichaHasCriticalAlert = ficha && ["SI","SÍ"].includes((ficha.alerta_critica_seguridad || "").trim().toUpperCase());
   const ctCheck = ficha ? computeCtCheck(med, ficha) : null;
 

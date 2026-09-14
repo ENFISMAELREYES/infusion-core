@@ -3,7 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { uploadSignature, uploadUserSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { computeSessionMaterial } from "../data/materialCatalog";
-import { normalizeMedName } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -704,6 +704,76 @@ function FichaResumenModal({ med, ficha, onClose }) {
   );
 }
 
+const REP_TIPOS = [
+  { value:"tutor", label:"Tutor" },
+  { value:"representante_legal", label:"Representante legal" },
+  { value:"familiar", label:"Familiar más cercano por vínculo" },
+  { value:"paciente_mismo", label:"El paciente firma por sí mismo" },
+];
+
+// Se pide justo antes de generar el consentimiento (no al registrar el
+// ingreso, para no frenar ese flujo) -- quién acompaña al paciente, para
+// llenar esa parte del PDF en vez de dejarla en blanco. Prellenado con lo
+// último capturado en la sesión, si ya se había generado antes.
+function RepresentanteModal({ session, onClose, onConfirm, saving }) {
+  const [tipo, setTipo] = useState(session.consentRepTipo || "");
+  const [nombre, setNombre] = useState(session.consentRepNombre || "");
+  const [edad, setEdad] = useState(session.consentRepEdad || "");
+  const [parentesco, setParentesco] = useState(session.consentRepParentesco || "");
+  const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
+  const labelStyle = { fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 };
+  const needsDetails = tipo && tipo !== "paciente_mismo";
+  const canConfirm = tipo && (!needsDetails || nombre.trim());
+
+  return (
+    <div onClick={() => !saving && onClose()} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:420, maxHeight:"88vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
+        <div>
+          <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>Consentimiento — quién acompaña</div>
+          <div style={{ fontSize:12, color:"#888", marginTop:2 }}>Para llenar esa parte del documento. Si no se sabe todavía, se deja en blanco para completarse a mano al firmar.</div>
+        </div>
+        <div>
+          <label style={labelStyle}>Quién firma como tutor/representante</label>
+          <select value={tipo} onChange={e => setTipo(e.target.value)} style={{ ...inputStyle, cursor:"pointer" }}>
+            <option value="">Sin definir (queda en blanco)</option>
+            {REP_TIPOS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </div>
+        {needsDetails && (
+          <>
+            <div>
+              <label style={labelStyle}>Nombre completo</label>
+              <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="ej: José Luis Burgos Ramos" style={inputStyle} />
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              <div>
+                <label style={labelStyle}>Edad</label>
+                <input type="number" min="1" value={edad} onChange={e => setEdad(e.target.value)} style={inputStyle} />
+              </div>
+              {tipo === "familiar" && (
+                <div>
+                  <label style={labelStyle}>Parentesco</label>
+                  <input value={parentesco} onChange={e => setParentesco(e.target.value)} placeholder="ej: Esposo, Hija" style={inputStyle} />
+                </div>
+              )}
+            </div>
+          </>
+        )}
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={onClose} disabled={saving} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: saving ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
+          <button onClick={() => onConfirm({ tipo, nombre, edad, parentesco })} disabled={saving || !canConfirm}
+            style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (saving || !canConfirm) ? "not-allowed" : "pointer", background:"linear-gradient(135deg,#00d4aa,#0F6E56)", border:"none", color:"#fff", opacity: (saving || !canConfirm) ? 0.6 : 1 }}>
+            {saving ? "Generando…" : "✓ Generar consentimiento"}
+          </button>
+        </div>
+        <button onClick={() => onConfirm(null)} disabled={saving} style={{ padding:"7px", fontSize:11, cursor: saving ? "wait" : "pointer", background:"transparent", border:"none", color:"#555", textDecoration:"underline" }}>
+          Omitir y dejar esta parte en blanco
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SessionCard({ session, token, onRefresh, user, fichasByName }) {
   const { profile, refreshProfile } = useAuth();
   const [open, setOpen]       = useState(false);
@@ -716,6 +786,73 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
   const events     = session.events    || {};
   const medEvents  = session.medEvents || {};
   const washEvents = session.washEvents || {};
+
+  // Genera el consentimiento informado con los datos ya capturados de esta
+  // sesión (paciente, diagnóstico, y los medicamentos del tratamiento en sí
+  // -- no premedicación/hidratación) más los datos de tutor/representante/
+  // familiar que se piden justo antes de generar (ver RepresentanteModal) --
+  // no se atan al registro de ingreso para no frenar ese flujo. El testigo
+  // y las firmas siguen en blanco para llenarse/firmarse en el momento.
+  const [generatingConsent, setGeneratingConsent] = useState(false);
+  const [showRepModal, setShowRepModal] = useState(false);
+  const generateConsent = async (representante) => {
+    setGeneratingConsent(true);
+    try {
+      const freshToken = await user.getIdToken(true);
+      // Datos de la ficha técnica de cada medicamento del tratamiento (no
+      // premedicación/hidratación) -- el generador los usa para explicar
+      // mecanismo/beneficios/alternativas/riesgos específicos por fármaco
+      // en vez del texto genérico, cuando ya están capturados en la ficha.
+      const TREATMENT_CATS = new Set(["quimioterapia", "inmunoterapia", "especialidad"]);
+      const treatmentInfo = (session.meds || [])
+        .filter(m => TREATMENT_CATS.has(m.category))
+        .map(m => findFicha(m.name))
+        .filter(Boolean)
+        .map(f => ({
+          name: f.nombre_generico,
+          es_oncologico: f.es_oncologico,
+          mecanismo_accion_paciente: f.mecanismo_accion_paciente,
+          beneficios_esperados: f.beneficios_esperados,
+          alternativas_tratamiento: f.alternativas_tratamiento,
+          riesgos_por_frecuencia: f.riesgos_por_frecuencia,
+        }));
+      const res = await fetch("/api/generate-consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${freshToken}` },
+        body: JSON.stringify({
+          center: session.center, cipiVariant: session.cipiVariant,
+          patientName: session.patientName, dob: session.dob, diagnosis: session.diagnosis,
+          physician: session.physician, allergies: session.allergies, meds: session.meds || [],
+          requestedByName: profile?.name || "", treatmentInfo, representante,
+        }),
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      // Se marca en la sesión -- así Historial puede mostrar si a un C1D1
+      // ya se le generó su consentimiento o sigue pendiente. Los datos del
+      // representante también se guardan aquí, para que la próxima vez que
+      // se genere/reimprima el modal ya aparezca con ellos en vez de
+      // pedirlos de nuevo desde cero.
+      await patchSession(freshToken, session.id, {
+        consentGeneratedAt: new Date().toISOString(),
+        consentGeneratedByName: profile?.name || "",
+        ...(representante ? {
+          consentRepTipo: representante.tipo || "",
+          consentRepNombre: representante.nombre || "",
+          consentRepEdad: representante.edad || "",
+          consentRepParentesco: representante.parentesco || "",
+        } : {}),
+      });
+      onRefresh();
+    } catch (e) {
+      alert("Error al generar el consentimiento: " + e.message);
+    } finally {
+      setGeneratingConsent(false);
+    }
+  };
 
   // Marcar que el paciente no asistirá hoy -- solo tiene sentido antes de
   // que se registre el ingreso (si ya inició, obviamente sí llegó).
@@ -1026,19 +1163,10 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
   const nextMed = currentMedIndex >= 0 ? timedMeds[currentMedIndex + 1] : null;
 
   // Ficha técnica de cualquier medicamento de la sesión, para la consulta
-  // rápida "ⓘ" (mismo ícono que ya usa Monitor) -- exacta primero, si no hay
-  // coincidencia se busca por contención (mismo criterio laxo que ya usa el
-  // resto de la app para emparejar nombres). Se muestra en todos los
+  // rápida "ⓘ" (mismo ícono que ya usa Monitor). Se muestra en todos los
   // medicamentos, no solo en el que está pasando.
   const [fichaModalMed, setFichaModalMed] = useState(null); // { med, ficha } o null
-  const findFicha = (medName) => {
-    if (!medName || !fichasByName) return null;
-    const norm = normalizeMedName(medName);
-    return fichasByName[norm] || Object.values(fichasByName).find(f => {
-      const fn = normalizeMedName(f.nombre_generico);
-      return fn && (norm.includes(fn) || fn.includes(norm));
-    }) || null;
-  };
+  const findFicha = (medName) => findFichaMatch(medName, fichasByName);
   const currentMedFicha = currentMed ? findFicha(currentMed.name) : null;
 
   // Medicamento ya aplicado cuyo lavado (o lavado adicional) todavía no se ha
@@ -1061,6 +1189,22 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
         </div>
         {events.ingreso && <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace" }}>{pct}%</div>}
         {!session.authorized && <span style={{ fontSize:11, color:"#ffb347", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", padding:"3px 10px", borderRadius:99 }}>⏳ Sin autorizar</span>}
+        {session.authorized && session.sessionType !== "procedimiento" && (() => {
+          // C1D1 sin consentimiento generado se destaca -- es el aviso de
+          // "este ciclo necesita consentimiento nuevo" (inicio de línea de
+          // tratamiento), un clic y queda marcado en la sesión/Historial.
+          const needsC1D1Consent = session.isC1D1 && !session.consentGeneratedAt;
+          return (
+            <button onClick={e => { e.stopPropagation(); setShowRepModal(true); }} disabled={generatingConsent}
+              title={needsC1D1Consent ? "Este ciclo es C1D1 -- requiere generar un consentimiento nuevo" : "Generar el consentimiento informado con los datos de esta sesión"}
+              style={{ fontSize:11, fontWeight:600, padding:"3px 10px", borderRadius:99, cursor: generatingConsent ? "wait" : "pointer",
+                border: `1px solid ${needsC1D1Consent ? "rgba(255,179,71,0.4)" : session.consentGeneratedAt ? "rgba(29,158,117,0.3)" : "rgba(79,195,247,0.3)"}`,
+                background: needsC1D1Consent ? "rgba(255,179,71,0.12)" : session.consentGeneratedAt ? "rgba(29,158,117,0.1)" : "rgba(79,195,247,0.1)",
+                color: needsC1D1Consent ? "#ffb347" : session.consentGeneratedAt ? "#1D9E75" : "#4fc3f7" }}>
+              {generatingConsent ? "Generando…" : needsC1D1Consent ? "⚠️ Consentimiento nuevo (C1D1)" : session.consentGeneratedAt ? "✓ Consentimiento" : "📄 Consentimiento"}
+            </button>
+          );
+        })()}
         {!events.ingreso && (
           <button onClick={e => { e.stopPropagation(); toggleNoShow(); }}
             title="Marcar que el paciente no asistirá hoy -- se quita del Monitor"
@@ -1136,6 +1280,12 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
 
       {fichaModalMed && (
         <FichaResumenModal med={fichaModalMed.med} ficha={fichaModalMed.ficha} onClose={() => setFichaModalMed(null)} />
+      )}
+
+      {showRepModal && (
+        <RepresentanteModal session={session} saving={generatingConsent}
+          onClose={() => setShowRepModal(false)}
+          onConfirm={(representante) => { setShowRepModal(false); generateConsent(representante); }} />
       )}
 
       {open && (
