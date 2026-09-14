@@ -50,6 +50,29 @@ async function fetchAllSessions(token, date) {
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
 
+// Sesiones con solicitud de medicamentos ya validada por Paola pero todavía
+// sin la autorización final del jefe -- no se limita al día de hoy (a
+// diferencia de fetchAllSessions), porque una solicitud puede quedar
+// pendiente de días anteriores.
+async function fetchPendingMedsAuth(token) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: "sessions" }],
+        where: { fieldFilter: { field: { fieldPath: "medsSolicitudGuardada" }, op: "EQUAL", value: { booleanValue: true } } },
+        limit: 500,
+      }
+    })
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data.filter(d => d.document).map(d => parseDoc(d.document))
+    .filter(s => s.medsValidatedBy && !s.medsAuthorizedBy && !s.eliminado);
+}
+
 const STATUS_META = {
   en_curso:   { label: "En curso",   color: "#00d4aa", bg: "rgba(0,212,170,0.10)" },
   completado: { label: "Completado", color: "#4fc3f7", bg: "rgba(79,195,247,0.10)" },
@@ -91,7 +114,41 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pendingAuth, setPendingAuth] = useState([]);
+  const [authorizingId, setAuthorizingId] = useState(null);
   const today = getToday();
+
+  const loadPendingAuth = async () => {
+    if (!user || profile?.role !== "jefe") return;
+    try {
+      const token = await user.getIdToken(true);
+      const data = await fetchPendingMedsAuth(token);
+      setPendingAuth(data);
+    } catch (e) { console.error("Error cargando pendientes de autorizar:", e); }
+  };
+
+  // Autorización final de medicamentos -- mismo criterio/campos que ya usa
+  // Insumos.jsx, para poder hacerlo aquí mismo sin tener que navegar.
+  const authorizeMeds = async (s) => {
+    setAuthorizingId(s.id);
+    try {
+      const freshToken = await user.getIdToken(true);
+      const mask = ["medsAuthorizedBy","medsAuthorizedByName","medsAuthorizedAt","medsAuthorizationSignatureUrl"].map(k => `updateMask.fieldPaths=${k}`).join("&");
+      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?${mask}`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
+          body: JSON.stringify({ fields: {
+            medsAuthorizedBy: { stringValue: user?.uid || "" },
+            medsAuthorizedByName: { stringValue: profile?.name || "" },
+            medsAuthorizedAt: { stringValue: new Date().toISOString() },
+            medsAuthorizationSignatureUrl: profile?.signatureUrl ? { stringValue: profile.signatureUrl } : { nullValue: null },
+          }}) });
+      setPendingAuth(prev => prev.filter(x => x.id !== s.id));
+    } catch (e) {
+      alert("Error al autorizar: " + e.message);
+    } finally {
+      setAuthorizingId(null);
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -110,6 +167,12 @@ export default function Dashboard() {
     const interval = setInterval(load, 30000);
     return () => clearInterval(interval);
   }, [user]);
+
+  useEffect(() => {
+    loadPendingAuth();
+    const interval = setInterval(loadPendingAuth, 30000);
+    return () => clearInterval(interval);
+  }, [user, profile?.role]);
 
   const enCurso    = sessions.filter(s => s.status === "en_curso").length;
   const pendiente  = sessions.filter(s => s.status === "pendiente").length;
@@ -142,6 +205,41 @@ export default function Dashboard() {
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {profile?.role === "jefe" && (
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+            <div style={{ fontSize: 11, color: "#555", letterSpacing: 2, textTransform: "uppercase" }}>Solicitudes pendientes de autorizar</div>
+            {pendingAuth.length > 0 && (
+              <span style={{ fontSize:11, fontWeight:700, padding:"2px 9px", borderRadius:99, background:"rgba(255,107,107,0.12)", color:"#ff6b6b" }}>{pendingAuth.length}</span>
+            )}
+          </div>
+          {pendingAuth.length === 0 ? (
+            <div style={{ color: "#444", fontSize: 13, padding: 18, textAlign: "center", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 14 }}>
+              Sin pendientes -- todo lo validado por Paola ya está autorizado.
+            </div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {pendingAuth.map(s => (
+                <div key={s.id} style={{ background:"rgba(255,107,107,0.04)", border:"1px solid rgba(255,107,107,0.2)", borderRadius:12, padding:"12px 16px", display:"flex", alignItems:"center", gap:14 }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:14, color:"#f0f0f0", fontWeight:600 }}>{s.patientName}</div>
+                    <div style={{ fontSize:11, color:"#666", marginTop:2 }}>{s.date} · {s.cycle} · {s.center}</div>
+                    <div style={{ fontSize:10, color:"#888", marginTop:2 }}>Validado por {s.medsValidatedByName || ""}{s.medsValidatedAt ? ` · ${new Date(s.medsValidatedAt).toLocaleDateString("es-MX")}` : ""}</div>
+                  </div>
+                  <button onClick={() => navigate("/insumos")} style={{ padding:"7px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                    Ver en Insumos
+                  </button>
+                  <button onClick={() => authorizeMeds(s)} disabled={authorizingId === s.id}
+                    style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor: authorizingId === s.id ? "wait" : "pointer", background:"rgba(29,158,117,0.12)", border:"1px solid rgba(29,158,117,0.35)", color:"#1D9E75" }}>
+                    {authorizingId === s.id ? "Autorizando…" : "✓ Autorizar"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
