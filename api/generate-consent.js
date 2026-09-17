@@ -105,11 +105,17 @@ export default async function handler(req, res) {
       const r = i.riesgos_por_frecuencia;
       return r && ((r.frecuentes || []).length || (r.menos_frecuentes || []).length || (r.raros_pero_importantes || []).length);
     });
-    // Sin datos de ficha para ningún medicamento (aún no cargadas, o
-    // sesión antigua) -- se asume oncológico, que es el caso de siempre
-    // hasta ahora. Con datos, basta que UNO de los fármacos del tratamiento
-    // sea oncológico para tratar todo el documento como tal.
-    const isOncologic = infoList.length === 0 ? true : infoList.some(i => i.es_oncologico === true);
+    // Sin datos de ficha para ningún medicamento (aún no cargadas, o sesión
+    // antigua) -- se asume oncológico, que es el caso de siempre hasta
+    // ahora. Con datos, basta que UNO de los fármacos del tratamiento sea
+    // oncológico para tratar todo el documento como tal. Importante: solo
+    // cuentan los valores booleanos EXPLÍCITOS -- si es_oncologico viene
+    // vacío/ausente en la ficha (dato incompleto, no necesariamente que no
+    // aplique), NO se trata como "no oncológico" -- eso apagaba casi todo
+    // el documento (efectos, lista de 14 categorías) para un fármaco que sí
+    // era oncológico, solo porque le faltaba ese campo en la ficha.
+    const oncologicFlags = infoList.map(i => i.es_oncologico).filter(v => typeof v === "boolean");
+    const isOncologic = oncologicFlags.length === 0 ? true : oncologicFlags.some(v => v === true);
     const dedupList = (arrs) => {
       const seen = new Set(), out = [];
       arrs.forEach(arr => (arr || []).forEach(s => { const t = (s || "").trim(); if (t && !seen.has(t)) { seen.add(t); out.push(t); } }));
