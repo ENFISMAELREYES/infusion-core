@@ -1189,19 +1189,21 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
         </div>
         {events.ingreso && <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace" }}>{pct}%</div>}
         {!session.authorized && <span style={{ fontSize:11, color:"#ffb347", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", padding:"3px 10px", borderRadius:99 }}>⏳ Sin autorizar</span>}
-        {session.authorized && session.sessionType !== "procedimiento" && (() => {
-          // C1D1 sin consentimiento generado se destaca -- es el aviso de
-          // "este ciclo necesita consentimiento nuevo" (inicio de línea de
-          // tratamiento), un clic y queda marcado en la sesión/Historial.
-          const needsC1D1Consent = session.isC1D1 && !session.consentGeneratedAt;
+        {session.authorized && session.sessionType !== "procedimiento" && session.isC1D1 && (() => {
+          // Solo C1D1 (inicio de línea de tratamiento) -- las demás sesiones
+          // no necesitan un consentimiento nuevo. Si ya se generó antes
+          // (para otra C1D1 anterior, o desde una versión previa de la app
+          // que lo permitía en cualquier sesión), se puede reimprimir desde
+          // Historial aunque aquí ya no aparezca el botón.
+          const needsC1D1Consent = !session.consentGeneratedAt;
           return (
             <button onClick={e => { e.stopPropagation(); setShowRepModal(true); }} disabled={generatingConsent}
               title={needsC1D1Consent ? "Este ciclo es C1D1 -- requiere generar un consentimiento nuevo" : "Generar el consentimiento informado con los datos de esta sesión"}
               style={{ fontSize:11, fontWeight:600, padding:"3px 10px", borderRadius:99, cursor: generatingConsent ? "wait" : "pointer",
-                border: `1px solid ${needsC1D1Consent ? "rgba(255,179,71,0.4)" : session.consentGeneratedAt ? "rgba(29,158,117,0.3)" : "rgba(79,195,247,0.3)"}`,
-                background: needsC1D1Consent ? "rgba(255,179,71,0.12)" : session.consentGeneratedAt ? "rgba(29,158,117,0.1)" : "rgba(79,195,247,0.1)",
-                color: needsC1D1Consent ? "#ffb347" : session.consentGeneratedAt ? "#1D9E75" : "#4fc3f7" }}>
-              {generatingConsent ? "Generando…" : needsC1D1Consent ? "⚠️ Consentimiento nuevo (C1D1)" : session.consentGeneratedAt ? "✓ Consentimiento" : "📄 Consentimiento"}
+                border: `1px solid ${needsC1D1Consent ? "rgba(255,179,71,0.4)" : "rgba(29,158,117,0.3)"}`,
+                background: needsC1D1Consent ? "rgba(255,179,71,0.12)" : "rgba(29,158,117,0.1)",
+                color: needsC1D1Consent ? "#ffb347" : "#1D9E75" }}>
+              {generatingConsent ? "Generando…" : needsC1D1Consent ? "⚠️ Consentimiento nuevo (C1D1)" : "✓ Consentimiento"}
             </button>
           );
         })()}
