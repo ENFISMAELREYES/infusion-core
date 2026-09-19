@@ -720,6 +720,7 @@ function RepresentanteModal({ session, onClose, onConfirm, saving }) {
   const [nombre, setNombre] = useState(session.consentRepNombre || "");
   const [edad, setEdad] = useState(session.consentRepEdad || "");
   const [parentesco, setParentesco] = useState(session.consentRepParentesco || "");
+  const [testigo, setTestigo] = useState(session.consentTestigoNombre || "");
   const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
   const labelStyle = { fontSize:11, color:"#666", letterSpacing:1.5, textTransform:"uppercase", display:"block", marginBottom:6 };
   const needsDetails = tipo && tipo !== "paciente_mismo";
@@ -759,15 +760,19 @@ function RepresentanteModal({ session, onClose, onConfirm, saving }) {
             </div>
           </>
         )}
+        <div>
+          <label style={labelStyle}>Testigo (opcional)</label>
+          <input value={testigo} onChange={e => setTestigo(e.target.value)} placeholder="Nombre completo del testigo, si hay uno" style={inputStyle} />
+        </div>
         <div style={{ display:"flex", gap:8 }}>
           <button onClick={onClose} disabled={saving} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: saving ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
-          <button onClick={() => onConfirm({ tipo, nombre, edad, parentesco })} disabled={saving || !canConfirm}
+          <button onClick={() => onConfirm({ tipo, nombre, edad, parentesco }, testigo)} disabled={saving || !canConfirm}
             style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (saving || !canConfirm) ? "not-allowed" : "pointer", background:"linear-gradient(135deg,#00d4aa,#0F6E56)", border:"none", color:"#fff", opacity: (saving || !canConfirm) ? 0.6 : 1 }}>
             {saving ? "Generando…" : "✓ Generar consentimiento"}
           </button>
         </div>
-        <button onClick={() => onConfirm(null)} disabled={saving} style={{ padding:"7px", fontSize:11, cursor: saving ? "wait" : "pointer", background:"transparent", border:"none", color:"#555", textDecoration:"underline" }}>
-          Omitir y dejar esta parte en blanco
+        <button onClick={() => onConfirm(null, testigo)} disabled={saving} style={{ padding:"7px", fontSize:11, cursor: saving ? "wait" : "pointer", background:"transparent", border:"none", color:"#555", textDecoration:"underline" }}>
+          Omitir tutor/representante y dejar esa parte en blanco
         </button>
       </div>
     </div>
@@ -795,7 +800,7 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
   // y las firmas siguen en blanco para llenarse/firmarse en el momento.
   const [generatingConsent, setGeneratingConsent] = useState(false);
   const [showRepModal, setShowRepModal] = useState(false);
-  const generateConsent = async (representante) => {
+  const generateConsent = async (representante, testigo) => {
     setGeneratingConsent(true);
     try {
       const freshToken = await user.getIdToken(true);
@@ -823,7 +828,7 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
           center: session.center, cipiVariant: session.cipiVariant,
           patientName: session.patientName, dob: session.dob, diagnosis: session.diagnosis,
           physician: session.physician, allergies: session.allergies, meds: session.meds || [],
-          requestedByName: profile?.name || "", treatmentInfo, representante,
+          requestedByName: profile?.name || "", treatmentInfo, representante, testigo,
         }),
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
@@ -839,6 +844,7 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
       await patchSession(freshToken, session.id, {
         consentGeneratedAt: new Date().toISOString(),
         consentGeneratedByName: profile?.name || "",
+        consentTestigoNombre: testigo || "",
         ...(representante ? {
           consentRepTipo: representante.tipo || "",
           consentRepNombre: representante.nombre || "",
@@ -1287,7 +1293,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
       {showRepModal && (
         <RepresentanteModal session={session} saving={generatingConsent}
           onClose={() => setShowRepModal(false)}
-          onConfirm={(representante) => { setShowRepModal(false); generateConsent(representante); }} />
+          onConfirm={(representante, testigo) => { setShowRepModal(false); generateConsent(representante, testigo); }} />
       )}
 
       {open && (
