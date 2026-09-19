@@ -162,26 +162,61 @@ function getProgress(s) {
 
 // Minutos restantes para terminar la sesión: toma lo programado (medicamento
 // + sus lavados) y le resta lo que ya se completó, según los eventos
-// registrados. Es un estimado basado en lo programado, no en el reloj real.
-function getRemainingMinutes(s) {
+// registrados. Los pasos ya terminados cuentan completos; el paso que está
+// en curso ahora mismo cuenta lo que lleva transcurrido (según nowMin) para
+// que el estimado baje en tiempo real, no solo cuando algo termina.
+function getRemainingMinutes(s, nowMin) {
   const me = s.medEvents || {};
   const we = s.washEvents || {};
   let total = 0, done = 0;
+  const credit = (scheduled, ev) => {
+    if (!scheduled) return 0;
+    if (ev?.fin) return scheduled;
+    if (ev?.inicio && nowMin != null) {
+      const start = parseTimeToMin(ev.inicio);
+      if (start != null) {
+        const elapsed = nowMin - start;
+        if (elapsed > 0) return Math.min(scheduled, elapsed);
+      }
+    }
+    return 0;
+  };
   (s.meds || []).forEach(m => {
     const medTime = m.time || 0;
     total += medTime;
-    if (me[`med_${m.id}`]?.fin) done += medTime;
+    done += credit(medTime, me[`med_${m.id}`]);
     if (m.wash?.time && !m.washNA) {
       total += m.wash.time;
-      if (we[`wash_${m.id}`]?.fin) done += m.wash.time;
+      done += credit(m.wash.time, we[`wash_${m.id}`]);
     }
     if (m.wash2?.time) {
       total += m.wash2.time;
-      if (we[`wash2_${m.id}`]?.fin) done += m.wash2.time;
+      done += credit(m.wash2.time, we[`wash2_${m.id}`]);
     }
   });
   if (total === 0) return null;
   return Math.max(0, total - done);
+}
+
+// Envoltura que se refresca sola cada minuto, para que el estimado de
+// arriba baje solo en vivo (antes solo se recalculaba cuando llegaban
+// datos nuevos del servidor cada 15s, y esos datos no cambian mientras un
+// medicamento sigue en curso).
+function RemainingTime({ s }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60000);
+    return () => clearInterval(id);
+  }, []);
+  if (s.status === "completado") return null;
+  const now = new Date();
+  const remaining = getRemainingMinutes(s, now.getHours() * 60 + now.getMinutes());
+  if (remaining === null) return null;
+  return (
+    <div style={{ fontSize:11, color:"#1D9E75", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
+      ⏳ {remaining === 0 ? "Por terminar" : `Tiempo restante: ${Math.floor(remaining/60)}h ${remaining%60}m`}
+    </div>
+  );
 }
 
 function MedTimeline({ meds, medEvents }) {
@@ -437,15 +472,7 @@ function PatientRow({ s, onNoShow, isJefe, fichasByName }) {
           <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:99, height:4, overflow:"hidden" }}>
             <div style={{ height:"100%", borderRadius:99, transition:"width 0.5s", width:`${pct}%`, background:s.status==="completado"?"#4fc3f7":"#1D9E75" }} />
           </div>
-          {s.status !== "completado" && (() => {
-            const remaining = getRemainingMinutes(s);
-            if (remaining === null) return null;
-            return (
-              <div style={{ fontSize:11, color:"#1D9E75", marginTop:4, fontFamily:"'IBM Plex Mono', monospace" }}>
-                ⏳ {remaining === 0 ? "Por terminar" : `Tiempo restante: ${Math.floor(remaining/60)}h ${remaining%60}m`}
-              </div>
-            );
-          })()}
+          <RemainingTime s={s} />
         </div>
       )}
       {fichaModalMed && (
