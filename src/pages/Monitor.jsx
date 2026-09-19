@@ -219,6 +219,23 @@ function RemainingTime({ s }) {
   );
 }
 
+// Tiempo transcurrido de un medicamento en curso, mismo dato que ya se
+// muestra en Sesión de hoy (vista de enfermería) -- aquí también, al lado
+// de "en curso", para que el jefe lo vea sin entrar a esa sesión.
+function ElapsedTime({ startTime }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60000);
+    return () => clearInterval(id);
+  }, []);
+  const start = parseTimeToMin(startTime);
+  if (start == null) return null;
+  const now = new Date();
+  const diff = (now.getHours() * 60 + now.getMinutes()) - start;
+  if (diff < 0) return null;
+  return <span style={{ fontFamily:"'IBM Plex Mono', monospace" }}> · {Math.floor(diff/60)}h {diff%60}m</span>;
+}
+
 function MedTimeline({ meds, medEvents }) {
   const me = medEvents || {};
   return (
@@ -291,7 +308,7 @@ function PatientRow({ s, onNoShow, isJefe, fichasByName }) {
         <div style={{ flex:"2 1 260px" }}>
           <div style={{ fontSize:10, color:"#555", letterSpacing:1, textTransform:"uppercase", marginBottom:7 }}>Secuencia</div>
           <MedTimeline meds={s.meds} medEvents={s.medEvents} />
-          {activeMed && <div style={{ fontSize:11, color:"#1D9E75", marginTop:5 }}>⏳ {activeMed.name} {activeMed.dose} en curso</div>}
+          {activeMed && <div style={{ fontSize:11, color:"#1D9E75", marginTop:5 }}>⏳ {activeMed.name} {activeMed.dose} en curso<ElapsedTime startTime={me[`med_${activeMed.id}`]?.inicio} /></div>}
           <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:3 }}>
   {(s.meds||[]).map(m => {
     const me = s.medEvents || {};
