@@ -124,7 +124,7 @@ const [editDraft, setEditDraft] = useState(null);
         body: JSON.stringify({
           center: s.center, cipiVariant: s.cipiVariant, patientName: s.patientName, dob: s.dob, diagnosis: s.diagnosis,
           physician: s.physician, allergies: s.allergies, meds: s.meds || [],
-          requestedByName: s.consentGeneratedByName || "", treatmentInfo, representante,
+          requestedByName: s.consentGeneratedByName || "", treatmentInfo, representante, testigo: s.consentTestigoNombre || "",
         }),
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }

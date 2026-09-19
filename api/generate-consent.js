@@ -48,7 +48,7 @@ export const config = { api: { responseLimit: "10mb" } };
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { center, cipiVariant, patientName, dob, diagnosis, physician, allergies, meds, requestedByName, treatmentInfo, representante, token } = req.body;
+  const { center, cipiVariant, patientName, dob, diagnosis, physician, allergies, meds, requestedByName, treatmentInfo, representante, testigo, token } = req.body;
 
   // Es un documento legal con datos clínicos del paciente -- a diferencia de
   // generate-material-order.js (solo insumos/cantidades), aquí sí se exige
@@ -379,7 +379,7 @@ export default async function handler(req, res) {
     );
     sigBlock(requestedByName || "", "Nombre completo y firma de quien proporciona la información y recaba el consentimiento");
     sigBlock(physician || "", "Nombre completo del Médico Tratante");
-    sigBlock("", "Nombre completo y firma del Testigo 1");
+    sigBlock(testigo || "", "Nombre completo y firma del Testigo 1");
 
     newPage();
     doc.fontSize(12).fillColor(NAVY).font("Helvetica-Bold").text("NEGACIÓN DEL CONSENTIMIENTO", 45, doc.y, { width: W, align: "center" });
