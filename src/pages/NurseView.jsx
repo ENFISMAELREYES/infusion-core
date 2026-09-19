@@ -281,7 +281,7 @@ function WashCard({ wash, washEvents, medId, eventKey = "wash", label = "Lavado"
         {!started && <button onClick={onStart} disabled={!canStart} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:canStart?"pointer":"not-allowed", background:canStart?"rgba(79,195,247,0.12)":"rgba(255,255,255,0.03)", border:`1px solid ${canStart?"rgba(79,195,247,0.3)":"rgba(255,255,255,0.06)"}`, color:canStart?"#4fc3f7":"#444" }}>▶ Iniciar {label.toLowerCase()}</button>}
         {started && !ended && (
           <>
-            <div style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(79,195,247,0.07)", border:"1px solid rgba(79,195,247,0.18)", color:"#4fc3f7" }}>▶ {ev.inicio}</div>
+            <div style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, textAlign:"center", background:"rgba(79,195,247,0.07)", border:"1px solid rgba(79,195,247,0.18)", color:"#4fc3f7" }}>▶ {ev.inicio}<ElapsedTimer startTime={ev.inicio} /></div>
             <button onClick={onEnd} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.12)", border:"1px solid rgba(29,158,117,0.3)", color:"#1D9E75" }}>■ Terminar {label.toLowerCase()}</button>
           </>
         )}
