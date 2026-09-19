@@ -69,6 +69,17 @@ export function findFichaMatch(medName, fichasByName) {
   return fuzzy.length === 1 ? fuzzy[0] : null;
 }
 
+// Una sesión cuenta como C1D1 (inicio de línea de tratamiento, requiere
+// consentimiento nuevo) si la casilla explícita de Nueva sesión quedó
+// marcada, O si el texto libre de "Ciclo" dice literalmente "C1D1" -- la
+// casilla es la señal confiable, pero en la práctica a veces no se marca
+// aunque el ciclo sí diga C1D1, así que el texto sirve de respaldo (solo
+// para ese patrón exacto, no interpretaciones más amplias como "Ciclo 1
+// Día 1", que son las que se descartaron por poco confiables).
+export function isSessionC1D1(session) {
+  return !!session?.isC1D1 || /\bC1D1\b/i.test(session?.cycle || "");
+}
+
 function ficha_docId(nombreGenerico) {
   return normalizeMedName(nombreGenerico).replace(/[^A-Z0-9]/g, "_").slice(0, 200);
 }

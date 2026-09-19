@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
-import { normalizeMedName, findFichaMatch } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch, isSessionC1D1 } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -356,7 +356,7 @@ const saveEdit = async () => {
           </div>
           <div style={{ fontSize:12, color:"#666", display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
             <span>{s.diagnosis} · {s.cycle}</span>
-            {s.isC1D1 && (
+            {isSessionC1D1(s) && (
               <span title={s.consentGeneratedAt ? `Consentimiento generado ${new Date(s.consentGeneratedAt).toLocaleString("es-MX")} por ${s.consentGeneratedByName || ""}` : "C1D1 sin consentimiento generado"}
                 style={{ fontSize:10, fontWeight:600, padding:"1px 7px", borderRadius:99,
                   background: s.consentGeneratedAt ? "rgba(29,158,117,0.12)" : "rgba(255,179,71,0.12)",

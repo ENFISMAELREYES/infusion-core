@@ -3,7 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { uploadSignature, uploadUserSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { computeSessionMaterial } from "../data/materialCatalog";
-import { normalizeMedName, findFichaMatch } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch, isSessionC1D1 } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -1189,7 +1189,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
         </div>
         {events.ingreso && <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace" }}>{pct}%</div>}
         {!session.authorized && <span style={{ fontSize:11, color:"#ffb347", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", padding:"3px 10px", borderRadius:99 }}>⏳ Sin autorizar</span>}
-        {session.authorized && session.sessionType !== "procedimiento" && session.isC1D1 && (() => {
+        {session.authorized && session.sessionType !== "procedimiento" && isSessionC1D1(session) && (() => {
           // Solo C1D1 (inicio de línea de tratamiento) -- las demás sesiones
           // no necesitan un consentimiento nuevo. Si ya se generó antes
           // (para otra C1D1 anterior, o desde una versión previa de la app
