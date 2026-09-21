@@ -164,6 +164,10 @@ const SECTIONS = [
   ]},
 ];
 
+// Etiqueta legible de cada campo, para mostrar "qué cambió" sin tener que
+// repetir a mano la lista de SECTIONS.
+const FIELD_LABELS = Object.fromEntries(SECTIONS.flatMap(s => s.fields));
+
 const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:9, padding:"9px 12px", color:"#f0f0f0", fontSize:13, outline:"none" };
 const labelStyle = { fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:5 };
 
@@ -175,6 +179,30 @@ async function fetchFichas(token) {
   const data = await res.json();
   if (!Array.isArray(data)) return [];
   return data.filter(d => d.document).map(d => parseDoc(d.document));
+}
+
+// Marca o quita una de las dos validaciones independientes de una ficha
+// (técnica/farmacia y clínica oncológica) -- no toca el contenido clínico
+// de la ficha para nada, es un campo aparte que solo jefe/Carlos/Omar
+// pueden tocar (ver canValidate más abajo).
+async function setValidation(token, fichaId, slot, value) {
+  const fieldName = slot === "farmacia" ? "validacion_farmacia" : "validacion_clinica";
+  const fields = { [fieldName]: value ? toFV(value) : { nullValue: null } };
+  const res = await fetch(`${FIRESTORE_BASE_URL}/fichas_tecnicas/${fichaId}?updateMask.fieldPaths=${fieldName}`,
+    { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) });
+  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${res.status}`); }
+}
+
+// Una validación cuenta como vigente solo si es posterior a la última
+// modificación de contenido de la ficha -- si la ficha se editó después de
+// que alguien la validó, esa validación queda desactualizada aunque el
+// registro siga ahí (para no perder el rastro de quién la validó antes).
+function validationState(ficha, slot) {
+  const v = ficha[slot === "farmacia" ? "validacion_farmacia" : "validacion_clinica"];
+  if (!v?.fecha) return "sin_validar";
+  const updatedAt = ficha.updatedAt || ficha.createdAt;
+  if (updatedAt && new Date(updatedAt) > new Date(v.fecha)) return "desactualizada";
+  return "vigente";
 }
 
 // Modal para dar de alta o editar una ficha pegando el JSON tal cual lo
@@ -203,13 +231,25 @@ function FichaJsonModal({ initialFicha, onClose, onSaved, token }) {
     reader.readAsText(file);
   };
 
-  const saveOne = async (parsed) => {
+  const saveOne = async (parsed, baseFicha) => {
     const docId = ficha_docId(parsed.nombre_generico);
     const fields = {};
     FICHA_FIELDS.forEach(k => { fields[k] = toFV(parsed[k] ?? ""); });
     fields.updatedAt = { stringValue: new Date().toISOString() };
-    if (!initialFicha) fields.createdAt = { stringValue: new Date().toISOString() };
-    const mask = [...FICHA_FIELDS, "updatedAt", ...(initialFicha ? [] : ["createdAt"])].map(k => `updateMask.fieldPaths=${k}`).join("&");
+    const extraKeys = ["updatedAt"];
+    if (!baseFicha) {
+      fields.createdAt = { stringValue: new Date().toISOString() };
+      extraKeys.push("createdAt");
+    } else {
+      // Qué campos cambiaron respecto a la versión anterior -- para que
+      // Carlos/Omar sepan exactamente qué revisar de nuevo en vez de releer
+      // las 32 columnas cada vez que se corrige algo (ver sección de
+      // pendientes de validar, más abajo).
+      const changed = FICHA_FIELDS.filter(k => JSON.stringify(baseFicha[k] ?? "") !== JSON.stringify(parsed[k] ?? ""));
+      fields.campos_modificados = toFV(changed);
+      extraKeys.push("campos_modificados");
+    }
+    const mask = [...FICHA_FIELDS, ...extraKeys].map(k => `updateMask.fieldPaths=${k}`).join("&");
     const res = await fetch(`${FIRESTORE_BASE_URL}/fichas_tecnicas/${docId}?${mask}`,
       { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) });
     if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${res.status}`); }
@@ -256,7 +296,7 @@ function FichaJsonModal({ initialFicha, onClose, onSaved, token }) {
     if (!parsed.nombre_generico || !parsed.nombre_generico.trim()) { setError("Falta \"nombre_generico\" -- es el campo con el que se identifica y se busca la ficha."); return; }
     setSaving(true);
     try {
-      const saved = await saveOne(parsed);
+      const saved = await saveOne(parsed, initialFicha);
       onSaved(saved);
       onClose();
     } catch (e) {
@@ -304,6 +344,12 @@ export default function FichasTecnicas() {
   // y admisión (mismo criterio que ya aplica el ícono de Monitor). Solo
   // entra aquí si es jefe, enfermera, o visualizador marcado como médico.
   const blocked = profile?.role === "visualizador" && !profile?.isMedico;
+  // Validar una ficha (gobernanza clínica: Carlos/farmacia y el oncólogo)
+  // es aparte de poder editar su contenido -- lo hace jefe o cualquier
+  // visualizador médico, pero no enfermería (no es su rol validar el
+  // catálogo, solo consultarlo durante la atención).
+  const canValidate = isJefe || (profile?.role === "visualizador" && profile?.isMedico);
+  const [validating, setValidating] = useState(null); // `${fichaId}_${slot}` mientras se guarda
   const [token, setToken] = useState(null);
   const [fichas, setFichas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -340,10 +386,36 @@ export default function FichasTecnicas() {
     }
   };
 
+  // Alterna una validación: si ya estaba vigente, se quita (por si se marcó
+  // por error); si no, se marca con quien está firmando y ahora mismo.
+  const toggleValidation = async (ficha, slot) => {
+    const key = `${ficha.id}_${slot}`;
+    const isVigente = validationState(ficha, slot) === "vigente";
+    setValidating(key);
+    try {
+      const freshToken = await user.getIdToken(true);
+      const value = isVigente ? null : { validado_por: profile?.name || user?.email || "", fecha: new Date().toISOString() };
+      await setValidation(freshToken, ficha.id, slot, value);
+      const fieldName = slot === "farmacia" ? "validacion_farmacia" : "validacion_clinica";
+      setFichas(prev => prev.map(f => f.id === ficha.id ? { ...f, [fieldName]: value } : f));
+    } catch (e) {
+      alert("Error al guardar la validación: " + e.message);
+    } finally {
+      setValidating(null);
+    }
+  };
+
   const term = search.trim().toUpperCase();
   const filtered = term
     ? fichas.filter(f => (f.nombre_generico||"").toUpperCase().includes(term) || (f.nombre_comercial||"").toUpperCase().includes(term))
     : fichas;
+
+  // Fichas a las que les falta alguna de las dos validaciones, o que se
+  // modificaron después de haberse validado -- para que Carlos/Omar sepan
+  // qué revisar sin tener que abrir las 46 una por una.
+  const pending = canValidate ? fichas.filter(f =>
+    validationState(f, "farmacia") !== "vigente" || validationState(f, "clinica") !== "vigente"
+  ) : [];
 
   if (blocked) return (
     <div style={{ padding:40, color:"#666", textAlign:"center" }}>
@@ -365,6 +437,31 @@ export default function FichasTecnicas() {
           </button>
         )}
       </div>
+
+      {canValidate && pending.length > 0 && (
+        <div style={{ marginBottom:20, background:"rgba(255,179,71,0.05)", border:"1px solid rgba(255,179,71,0.2)", borderRadius:12, padding:14 }}>
+          <div style={{ fontSize:12, color:"#ffb347", fontWeight:600, marginBottom:10 }}>⚠ Pendientes de validar ({pending.length})</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {pending.map(f => {
+              const st = { farmacia: validationState(f, "farmacia"), clinica: validationState(f, "clinica") };
+              const changedLabels = (f.campos_modificados || []).map(k => FIELD_LABELS[k] || k);
+              const stLabel = { vigente: "✓ vigente", desactualizada: "⚠ desactualizada", sin_validar: "sin validar" };
+              return (
+                <div key={f.id} onClick={() => setExpanded(f.id)} style={{ cursor:"pointer", fontSize:12, padding:"8px 10px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:8, alignItems:"center" }}>
+                    <span style={{ color:"#f0f0f0", fontWeight:600 }}>{f.nombre_generico}</span>
+                    <span style={{ color: st.farmacia === "vigente" ? "#1D9E75" : "#888" }}>Dr. Carlos Sorroza: {stLabel[st.farmacia]}</span>
+                    <span style={{ color: st.clinica === "vigente" ? "#1D9E75" : "#888" }}>Dr. Omar Macedo: {stLabel[st.clinica]}</span>
+                  </div>
+                  {(st.farmacia === "desactualizada" || st.clinica === "desactualizada") && changedLabels.length > 0 && (
+                    <div style={{ color:"#666", marginTop:3 }}>Cambió: {changedLabels.join(", ")}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <input placeholder="Buscar por nombre genérico o comercial…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, marginBottom:16 }} />
 
@@ -469,6 +566,40 @@ export default function FichasTecnicas() {
                         </div>
                       );
                     })}
+                    {canValidate && (() => {
+                      const changedLabels = (f.campos_modificados || []).map(k => FIELD_LABELS[k] || k);
+                      const slotInfo = [
+                        ["farmacia", "Dr. Carlos Sorroza", f.validacion_farmacia],
+                        ["clinica", "Dr. Omar Macedo", f.validacion_clinica],
+                      ];
+                      return (
+                        <div>
+                          <div style={{ fontSize:11, color:"#00d4aa", fontWeight:600, textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>Validación clínica</div>
+                          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                            {slotInfo.map(([slot, who, v]) => {
+                              const st = validationState(f, slot);
+                              const key = `${f.id}_${slot}`;
+                              return (
+                                <div key={slot} style={{ display:"flex", alignItems:"center", gap:8, fontSize:12 }}>
+                                  <button onClick={() => toggleValidation(f, slot)} disabled={validating === key}
+                                    style={{ padding:"4px 10px", borderRadius:99, fontSize:11, fontWeight:600, cursor: validating===key ? "wait" : "pointer",
+                                      background: st === "vigente" ? "rgba(29,158,117,0.12)" : "rgba(255,255,255,0.05)",
+                                      border: `1px solid ${st === "vigente" ? "rgba(29,158,117,0.3)" : "rgba(255,255,255,0.09)"}`,
+                                      color: st === "vigente" ? "#1D9E75" : "#888" }}>
+                                    {st === "vigente" ? "✓" : "☐"} {who}
+                                  </button>
+                                  {st === "desactualizada" && <span style={{ color:"#ffb347" }}>⚠ desactualizada desde la última edición</span>}
+                                  {v?.fecha && <span style={{ color:"#555" }}>{st === "vigente" ? "validado" : "última vez"} el {new Date(v.fecha).toLocaleDateString("es-MX")}</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {changedLabels.length > 0 && (
+                            <div style={{ fontSize:11, color:"#666", marginTop:6 }}>Última edición cambió: {changedLabels.join(", ")}</div>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {isJefe && (
                       <div style={{ display:"flex", gap:8, marginTop:4 }}>
                         <button onClick={() => setShowModal(f)} style={{ padding:"6px 14px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>✏️ Editar</button>
