@@ -2115,6 +2115,16 @@ function normalize(s) {
     .replace(/Á/g,"A").replace(/É/g,"E").replace(/Í/g,"I").replace(/Ó/g,"O").replace(/Ú/g,"U");
 }
 
+// Palabras/símbolos que no cambian de qué fármaco se trata -- solo dosis,
+// unidades y formato (mismo criterio que isDoseNoise en FichasTecnicas.jsx).
+const DOSE_UNITS = new Set(["MG","MCG","UG","ML","UI","G","MEQ","L","KG","MMOL"]);
+function isDoseNoise(leftover) {
+  // Se quitan números/puntuación primero -- así "90MG" (pegado, sin
+  // espacio) también se reconoce como unidad y no como palabra real.
+  const tokens = leftover.replace(/[0-9.,%x×/()\-]/g, " ").split(/\s+/).filter(Boolean);
+  return tokens.every(t => DOSE_UNITS.has(t));
+}
+
 export function matchMedication(medName, extraDefaults = {}) {
   const allDefaults = { ...MATERIAL_DEFAULTS, ...extraDefaults };
   const norm = normalize(medName);
@@ -2126,8 +2136,17 @@ export function matchMedication(medName, extraDefaults = {}) {
   // nombre capturado es ambiguo entre dos medicamentos distintos, no se
   // adivina cuál es el correcto (mismo criterio que findFichaMatch en
   // FichasTecnicas.jsx, que corrigió el mismo problema con Doxorrubicina
-  // simple vs liposomal).
-  const candidates = keys.filter(k => norm.includes(k) || k.includes(norm));
+  // simple vs liposomal). Además, si lo que se capturó trae MÁS texto que
+  // una llave (ej. "Trastuzumab Emtansina" vs llave "Trastuzumab"), esa
+  // llave solo cuenta como candidata si lo que sobra es ruido de
+  // dosis/formato -- si sobra una palabra real, podría ser una variante
+  // sin catálogo propio todavía (mismo caso que Kadcyla/T-DM1), y asumir
+  // que es el genérico llevaría a calcular insumos equivocados.
+  const candidates = keys.filter(k => {
+    if (k.includes(norm)) return true;
+    if (norm.includes(k)) return isDoseNoise(norm.replace(k, ""));
+    return false;
+  });
   return candidates.length === 1 ? candidates[0] : null;
 }
 

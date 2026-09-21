@@ -35,6 +35,18 @@ export function normalizeMedName(s) {
     .replace(/Á/g,"A").replace(/É/g,"E").replace(/Í/g,"I").replace(/Ó/g,"O").replace(/Ú/g,"U");
 }
 
+// Palabras/símbolos que no cambian de qué fármaco se trata -- solo dosis,
+// unidades y formato. Si lo que sobra al comparar un nombre capturado
+// contra el de una ficha es SOLO esto, es seguro asumir que es el mismo
+// fármaco (ej. "Dexametasona 8MG" vs ficha "Dexametasona").
+const DOSE_UNITS = new Set(["MG","MCG","UG","ML","UI","G","MEQ","L","KG","MMOL"]);
+function isDoseNoise(leftover) {
+  // Se quitan números/puntuación primero -- así "90MG" (pegado, sin
+  // espacio) también se reconoce como unidad y no como palabra real.
+  const tokens = leftover.replace(/[0-9.,%x×/()\-]/g, " ").split(/\s+/).filter(Boolean);
+  return tokens.every(t => DOSE_UNITS.has(t));
+}
+
 // Busca la ficha técnica de un medicamento capturado, con el mismo criterio
 // en todos los consumidores (Autorizar, NurseView, Monitor, Historial) --
 // antes cada archivo repetía su propia versión de esto, y la búsqueda
@@ -48,10 +60,19 @@ export function normalizeMedName(s) {
 //  2. Coincidencia exacta ignorando el texto entre paréntesis (ej.
 //     "Carboplatino" capturado vs ficha guardada como
 //     "Carboplatino (CBDCA)") -- solo si un único fármaco calza así.
-//  3. Contención difusa (como antes) -- pero solo si UN único fármaco
-//     calza; si el nombre capturado es ambiguo entre dos o más fichas, no
-//     se adivina cuál es la correcta -- se prefiere no mostrar nada a
-//     mostrar la alerta de un fármaco distinto.
+//  3. Contención difusa -- pero solo si UN único fármaco calza, Y solo si
+//     lo que sobra al comparar es ruido de dosis/formato (números,
+//     unidades, paréntesis) cuando el nombre CAPTURADO es el más largo.
+//     Si sobra una palabra real (ej. capturan "Trastuzumab Emtansina" y
+//     solo existe la ficha "Trastuzumab"), NO se asume que es el mismo
+//     fármaco -- podría ser una variante sin ficha propia todavía
+//     (mismo caso que Kadcyla/T-DM1, que hoy no está en el catálogo), y
+//     mostrarle a la enfermera los datos del fármaco genérico sería
+//     peligroso, no solo impreciso. Cuando es la FICHA la que trae más
+//     texto que lo capturado (ej. "Zoledronico" vs ficha "Ácido
+//     zoledrónico", o "Brentuximab" vs "Brentuximab vedotina"), no hay
+//     ese riesgo -- ya existe una ficha específica para ese fármaco, solo
+//     falta una palabra que la enfermera no escribió.
 export function findFichaMatch(medName, fichasByName) {
   if (!medName || !fichasByName) return null;
   const norm = normalizeMedName(medName);
@@ -64,7 +85,10 @@ export function findFichaMatch(medName, fichasByName) {
 
   const fuzzy = Object.values(fichasByName).filter(f => {
     const fn = normalizeMedName(f.nombre_generico);
-    return fn && (norm.includes(fn) || fn.includes(norm));
+    if (!fn) return false;
+    if (fn.includes(norm)) return true;
+    if (norm.includes(fn)) return isDoseNoise(norm.replace(fn, ""));
+    return false;
   });
   return fuzzy.length === 1 ? fuzzy[0] : null;
 }
