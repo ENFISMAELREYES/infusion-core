@@ -3,7 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { uploadSignature, uploadUserSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { computeSessionMaterial } from "../data/materialCatalog";
-import { normalizeMedName, findFichaMatch, isSessionC1D1 } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch, isSessionC1D1, valorTexto } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -694,7 +694,7 @@ function FichaResumenModal({ med, ficha, onClose }) {
         ].map(([field, label, color]) => ficha[field] && (
           <div key={field}>
             <div style={{ fontSize:11, color, textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>{label}</div>
-            <div style={{ fontSize:13, color:"#ccc", lineHeight:1.5, whiteSpace:"pre-line" }}>{ficha[field]}</div>
+            <div style={{ fontSize:13, color:"#ccc", lineHeight:1.5, whiteSpace:"pre-line" }}>{valorTexto(ficha[field])}</div>
           </div>
         ))}
 

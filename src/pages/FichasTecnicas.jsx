@@ -128,18 +128,54 @@ const FICHA_FIELDS = [
   // alimenta directamente el contenido del PDF cuando están capturados.
   "es_oncologico","categoria_farmaco","rol_en_esquema","especialidad_clinica",
   "beneficios_esperados","alternativas_tratamiento","mecanismo_accion_paciente","riesgos_por_frecuencia",
+  // Modelo v2 (piloto de reestructura, sept. 2026) -- conviven con los
+  // campos planos de arriba mientras se migra el resto del catálogo.
+  // productos_comerciales reemplaza a nombre_comercial (varias marcas por
+  // fármaco, con su propia estabilidad/registro sanitario en vez de un
+  // solo texto libre); premedicacion reemplaza a premedicacion_requerida
+  // (registro estructurado en vez de texto libre); modulos_compartidos
+  // referencia por id contenido común a varios fármacos (extravasación,
+  // hipersensibilidad, toxicidad inmunomediada -- ver colección aparte
+  // modulos_clinicos_compartidos). id_interno/version/historial_cambios
+  // son metadatos de gobernanza del propio contenido.
+  "id_interno","version","historial_cambios","productos_comerciales","premedicacion","modulos_compartidos",
 ];
+
+// Un campo puede venir como texto plano (fichas viejas) o como
+// {valor, reference_id} (modelo v2, con trazabilidad de la fuente por
+// dato) -- esto siempre da el texto a mostrar, sin importar cuál trajo.
+export function valorTexto(v) {
+  if (v && typeof v === "object" && !Array.isArray(v)) return v.valor || "";
+  return v || "";
+}
+
+// alerta_critica_seguridad viene como texto ("Sí"/"No", fichas viejas) o
+// como booleano real (modelo v2) -- compararlo como texto sin más revienta
+// cuando es un booleano (true/false no tienen .trim()).
+export function isAlertaCritica(v) {
+  if (typeof v === "boolean") return v;
+  return ["SI","SÍ"].includes((v || "").trim().toUpperCase());
+}
+
+// Nombre(s) comercial(es) a mostrar, sea el campo viejo (nombre_comercial,
+// un texto) o el nuevo (productos_comerciales, un arreglo de marcas).
+export function nombresComerciales(f) {
+  if (f.nombre_comercial) return f.nombre_comercial;
+  return (f.productos_comerciales || []).map(p => p.marca).filter(Boolean).join(", ");
+}
 
 const SECTIONS = [
   { title: "Información clínica", fields: [
-    ["nombre_comercial","Nombre comercial"], ["clasificacion_terapeutica","Clasificación terapéutica"],
+    ["nombre_comercial","Nombre comercial"], ["productos_comerciales","Productos comerciales"],
+    ["clasificacion_terapeutica","Clasificación terapéutica"],
     ["presentacion_concentracion_vial","Presentación / concentración del vial"], ["dosis_estandar","Dosis estándar"],
   ]},
   { title: "Parámetros de administración", fields: [
     ["dilucion_solucion_tecnica","Dilución / técnica"], ["volumen_concentracion_final","Volumen / concentración final"],
     ["estabilidad_post_dilucion","Estabilidad post-dilución"], ["via_administracion","Vía de administración"],
     ["velocidad_tiempo_infusion","Velocidad / tiempo de infusión"], ["acceso_vascular_requerido","Acceso vascular requerido"],
-    ["premedicacion_requerida","Premedicación requerida"], ["secuencia_en_esquema","Secuencia en esquema"],
+    ["premedicacion_requerida","Premedicación requerida"], ["premedicacion","Premedicación"],
+    ["secuencia_en_esquema","Secuencia en esquema"],
     ["compatibilidad_y","Compatibilidad"], ["incompatibilidades_conocidas","Incompatibilidades conocidas"],
     ["puntos_criticos_doble_verificacion","Puntos críticos de doble verificación"],
   ]},
@@ -179,6 +215,37 @@ async function fetchFichas(token) {
   const data = await res.json();
   if (!Array.isArray(data)) return [];
   return data.filter(d => d.document).map(d => parseDoc(d.document));
+}
+
+// Contenido común a varios fármacos (extravasación, hipersensibilidad,
+// toxicidad inmunomediada) -- colección aparte, referenciada por id desde
+// modulos_compartidos en cada ficha, en vez de repetir el mismo texto en
+// cada una (modelo v2).
+async function fetchModulos(token) {
+  const res = await fetch(`${FIRESTORE_BASE_URL}:runQuery`, {
+    method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: "modulos_clinicos_compartidos" }], limit: 200 } }),
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return {};
+  const byId = {};
+  data.filter(d => d.document).map(d => parseDoc(d.document)).forEach(m => { if (m.modulo_id) byId[m.modulo_id] = m; });
+  return byId;
+}
+
+// Fuentes citadas por reference_id desde cualquier campo con trazabilidad
+// (modelo v2) -- solo se usa para mostrar la cita completa al pasar el
+// cursor, no se pinta de por sí en ningún lado.
+async function fetchReferencias(token) {
+  const res = await fetch(`${FIRESTORE_BASE_URL}:runQuery`, {
+    method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: "referencias_bibliograficas" }], limit: 500 } }),
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return {};
+  const byId = {};
+  data.filter(d => d.document).map(d => parseDoc(d.document)).forEach(r => { if (r.reference_id) byId[r.reference_id] = r; });
+  return byId;
 }
 
 // Marca o quita una de las dos validaciones independientes de una ficha
@@ -337,6 +404,93 @@ function FichaJsonModal({ initialFicha, onClose, onSaved, token }) {
   );
 }
 
+// Alta de módulos clínicos compartidos o referencias bibliográficas --
+// colecciones nuevas del modelo v2, chicas y de edición poco frecuente, así
+// que no necesitan un editor campo por campo como las fichas: se pega el
+// arreglo completo tal cual lo arma el agente de contenido y se sobrescribe
+// cada documento por su id (modulo_id o reference_id). Sin lista blanca de
+// campos -- a diferencia de FICHA_FIELDS, aquí no hay riesgo de perder
+// datos clínicos sensibles por un campo inesperado, así que se guarda tal
+// cual viene.
+function ImportJsonModal({ title, placeholder, collectionId, idField, onClose, onImported, token }) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const onFileSelected = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => setText(String(reader.result || ""));
+    reader.onerror = () => setError("No se pudo leer el archivo.");
+    reader.readAsText(file);
+  };
+
+  const save = async () => {
+    setError("");
+    let parsed;
+    try { parsed = JSON.parse(text); } catch (e) { setError("El JSON no es válido: " + e.message); return; }
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    const badIndex = items.findIndex(it => !it?.[idField]);
+    if (badIndex !== -1) { setError(`El elemento #${badIndex + 1} no trae "${idField}" -- es el campo con el que se identifica.`); return; }
+    setSaving(true);
+    const failedMsgs = [];
+    let savedCount = 0;
+    for (let i = 0; i < items.length; i++) {
+      setProgress({ done: i, total: items.length });
+      const item = items[i];
+      try {
+        const docId = String(item[idField]).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 200);
+        const fields = {};
+        Object.entries(item).forEach(([k, v]) => { fields[k] = toFV(v); });
+        const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${k}`).join("&");
+        const res = await fetch(`${FIRESTORE_BASE_URL}/${collectionId}/${docId}?${mask}`,
+          { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) });
+        if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${res.status}`); }
+        savedCount++;
+      } catch (e) {
+        failedMsgs.push(`${item[idField]}: ${e.message}`);
+      }
+    }
+    setProgress(null);
+    setSaving(false);
+    if (savedCount > 0) onImported();
+    if (failedMsgs.length > 0) setError(`${failedMsgs.length} de ${items.length} no se guardaron:\n` + failedMsgs.join("\n"));
+    else onClose();
+  };
+
+  return (
+    <div onClick={() => !saving && onClose()} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:640, maxHeight:"88vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
+        <div>
+          <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>{title}</div>
+          <div style={{ fontSize:12, color:"#888", marginTop:2 }}>Pega el arreglo JSON completo tal cual lo genere el agente de contenido -- reemplaza cada elemento existente por su "{idField}".</div>
+        </div>
+        <div>
+          <input ref={fileInputRef} type="file" accept=".json,application/json" onChange={onFileSelected} style={{ display:"none" }} />
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={saving}
+            style={{ padding:"7px 12px", borderRadius:8, fontSize:12, fontWeight:600, cursor: saving ? "wait" : "pointer", background:"rgba(79,195,247,0.08)", border:"1px solid rgba(79,195,247,0.25)", color:"#4fc3f7" }}>
+            📎 Subir archivo .json
+          </button>
+        </div>
+        <textarea value={text} onChange={e => setText(e.target.value)} placeholder={placeholder}
+          rows={14} style={{ ...inputStyle, fontFamily:"'IBM Plex Mono', monospace", fontSize:11, resize:"vertical" }} />
+        {error && <div style={{ fontSize:12, color:"#ff6b6b", padding:"8px 10px", background:"rgba(255,107,107,0.08)", border:"1px solid rgba(255,107,107,0.25)", borderRadius:8, whiteSpace:"pre-line" }}>{error}</div>}
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={onClose} disabled={saving} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: saving ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cancelar</button>
+          <button onClick={save} disabled={saving || !text.trim()} style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: saving ? "wait" : "pointer", background:"linear-gradient(135deg,#00d4aa,#0F6E56)", border:"none", color:"#fff", opacity: (saving || !text.trim()) ? 0.6 : 1 }}>
+            {saving ? (progress ? `Guardando ${progress.done + 1} de ${progress.total}…` : "Guardando…") : "✓ Guardar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function FichasTecnicas() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
@@ -356,7 +510,11 @@ export default function FichasTecnicas() {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [showModal, setShowModal] = useState(false); // false | true (nueva) | ficha (editar)
+  const [showImportModulos, setShowImportModulos] = useState(false);
+  const [showImportRefs, setShowImportRefs] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  const [modulosById, setModulosById] = useState({});
+  const [refsById, setRefsById] = useState({});
 
   const load = async (t) => {
     setLoading(true);
@@ -367,7 +525,12 @@ export default function FichasTecnicas() {
 
   useEffect(() => {
     if (blocked) { setLoading(false); return; }
-    user.getIdToken().then(t => { setToken(t); load(t); });
+    user.getIdToken().then(t => {
+      setToken(t);
+      load(t);
+      fetchModulos(t).then(setModulosById);
+      fetchReferencias(t).then(setRefsById);
+    });
   }, [user, blocked]);
 
   const deleteFicha = async (ficha) => {
@@ -407,7 +570,7 @@ export default function FichasTecnicas() {
 
   const term = search.trim().toUpperCase();
   const filtered = term
-    ? fichas.filter(f => (f.nombre_generico||"").toUpperCase().includes(term) || (f.nombre_comercial||"").toUpperCase().includes(term))
+    ? fichas.filter(f => (f.nombre_generico||"").toUpperCase().includes(term) || nombresComerciales(f).toUpperCase().includes(term))
     : fichas;
 
   // Fichas a las que les falta alguna de las dos validaciones, o que se
@@ -432,9 +595,17 @@ export default function FichasTecnicas() {
           <p style={{ fontSize:13, color:"#555" }}>Manual de referencia rápida de medicamentos, por si necesitas consultar dilución, tiempos o manejo de seguridad durante la atención.</p>
         </div>
         {isJefe && (
-          <button onClick={() => setShowModal(true)} style={{ padding:"9px 16px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa", whiteSpace:"nowrap" }}>
-            ＋ Nueva ficha
-          </button>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <button onClick={() => setShowImportRefs(true)} style={{ padding:"9px 14px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888", whiteSpace:"nowrap" }}>
+              📖 Referencias
+            </button>
+            <button onClick={() => setShowImportModulos(true)} style={{ padding:"9px 14px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888", whiteSpace:"nowrap" }}>
+              📚 Módulos compartidos
+            </button>
+            <button onClick={() => setShowModal(true)} style={{ padding:"9px 16px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa", whiteSpace:"nowrap" }}>
+              ＋ Nueva ficha
+            </button>
+          </div>
         )}
       </div>
 
@@ -473,12 +644,12 @@ export default function FichasTecnicas() {
         <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
           {filtered.map(f => {
             const isOpen = expanded === f.id;
-            const hasCriticalAlert = (f.alerta_critica_seguridad || "").trim().toUpperCase() === "SI" || (f.alerta_critica_seguridad || "").trim().toUpperCase() === "SÍ";
+            const hasCriticalAlert = isAlertaCritica(f.alerta_critica_seguridad);
             return (
               <div key={f.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
                 <div onClick={() => setExpanded(isOpen ? null : f.id)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
                   <span style={{ flex:1, fontSize:14, color:"#f0f0f0", fontWeight:600, minWidth:160 }}>{f.nombre_generico}</span>
-                  {f.nombre_comercial && <span style={{ fontSize:11, color:"#666" }}>{f.nombre_comercial}</span>}
+                  {nombresComerciales(f) && <span style={{ fontSize:11, color:"#666" }}>{nombresComerciales(f)}</span>}
                   {f.clasificacion_peligrosidad && (
                     <span style={{ fontSize:11, fontWeight:600, padding:"2px 8px", borderRadius:99, background:"rgba(255,179,71,0.1)", color:"#ffb347" }}>{f.clasificacion_peligrosidad}</span>
                   )}
@@ -546,8 +717,45 @@ export default function FichasTecnicas() {
                                       )
                                     ))}
                                   </div>
+                                ) : key === "productos_comerciales" ? (
+                                  // Varias marcas por fármaco (modelo v2) -- cada una con su propio
+                                  // registro sanitario/estabilidad, en vez de un solo texto libre.
+                                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                                    {f[key].map((p, pi) => (
+                                      <div key={pi} style={{ fontSize:12, color:"#ccc", lineHeight:1.5 }}>
+                                        <span style={{ color:"#f0f0f0", fontWeight:600 }}>{p.marca || "Marca sin especificar"}</span>
+                                        {p.laboratorio && <span style={{ color:"#888" }}> — {p.laboratorio}</span>}
+                                        {p.registro_sanitario && <span style={{ color:"#666" }}> · Reg. {p.registro_sanitario}</span>}
+                                        {p.presentacion && <div>Presentación: {p.presentacion}</div>}
+                                        {p.estabilidad_post_dilucion && <div>Estabilidad: {valorTexto(p.estabilidad_post_dilucion)}</div>}
+                                        {p.disponibilidad && <div style={{ color:"#666" }}>Disponibilidad: {p.disponibilidad}</div>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : key === "premedicacion" ? (
+                                  // Registro estructurado (modelo v2) en vez del texto libre de
+                                  // premedicacion_requerida -- un renglón por medicamento.
+                                  <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                                    {f[key].map((p, pi) => (
+                                      <div key={pi} style={{ display:"flex", gap:6, fontSize:12, color:"#ccc", lineHeight:1.5 }}>
+                                        <span style={{ color: p.obligatorio ? "#ff6b6b" : "#00d4aa", flexShrink:0 }}>•</span>
+                                        <span>
+                                          {p.medicamento}{p.dosis && ` ${p.dosis}`}{p.via && ` ${p.via}`}
+                                          {p.tiempo_antes_min != null && ` — ${p.tiempo_antes_min} min antes`}
+                                          {p.obligatorio === false && " (a criterio médico)"}
+                                          {p.nota && ` · ${p.nota}`}
+                                        </span>
+                                      </div>
+                                    ))}
+                                    {f[key].length === 0 && <div style={{ color:"#666" }}>Sin premedicación requerida</div>}
+                                  </div>
                                 ) : typeof f[key] === "boolean" ? (
                                   <div style={{ fontSize:12, color:"#ccc" }}>{f[key] ? "Sí" : "No"}</div>
+                                ) : f[key] && typeof f[key] === "object" && !Array.isArray(f[key]) ? (
+                                  // {valor, reference_id} (modelo v2, trazabilidad por dato) en vez
+                                  // de texto plano -- se muestra el valor; la fuente exacta vive en
+                                  // referencias_bibliograficas por su reference_id.
+                                  <div style={{ fontSize:12, color:"#ccc", lineHeight:1.5, whiteSpace:"pre-wrap" }}>{valorTexto(f[key])}</div>
                                 ) : Array.isArray(f[key]) ? (
                                   <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
                                     {f[key].map((linea, li) => (
@@ -566,6 +774,54 @@ export default function FichasTecnicas() {
                         </div>
                       );
                     })}
+                    {(f.modulos_compartidos || []).length > 0 && (
+                      <div>
+                        <div style={{ fontSize:11, color:"#00d4aa", fontWeight:600, textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>Contenido compartido</div>
+                        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                          {f.modulos_compartidos.map(mid => {
+                            const m = modulosById[mid];
+                            if (!m) return <div key={mid} style={{ fontSize:12, color:"#666" }}>({mid} — módulo no encontrado)</div>;
+                            return (
+                              <div key={mid} style={{ padding:"10px 12px", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)", borderRadius:9 }}>
+                                <div style={{ fontSize:12, color:"#f0f0f0", fontWeight:600, marginBottom:6 }}>{m.nombre || mid}</div>
+                                {m.aim && <div style={{ fontSize:12, color:"#ccc", marginBottom:4 }}><strong>Objetivo:</strong> {m.aim}</div>}
+                                {(m.medidas_iniciales || []).length > 0 && (
+                                  <div style={{ marginBottom:4 }}>
+                                    <div style={{ fontSize:11, color:"#888" }}>Medidas iniciales:</div>
+                                    {m.medidas_iniciales.map((s,i) => <div key={i} style={{ fontSize:12, color:"#ccc", paddingLeft:10 }}>• {s}</div>)}
+                                  </div>
+                                )}
+                                {m.antidoto_especifico && <div style={{ fontSize:12, color:"#ccc", marginBottom:4 }}><strong>Antídoto:</strong> {m.antidoto_especifico}</div>}
+                                {m.referir_a && <div style={{ fontSize:12, color:"#ccc", marginBottom:4 }}><strong>Referir a:</strong> {m.referir_a}</div>}
+                                {m.seguimiento && <div style={{ fontSize:12, color:"#ccc", marginBottom:4 }}><strong>Seguimiento:</strong> {m.seguimiento}</div>}
+                                {(m.grados || []).length > 0 && (
+                                  <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                                    {m.grados.map((g,i) => (
+                                      <div key={i} style={{ fontSize:12, color:"#ccc" }}><strong>Grado {g.grado}:</strong> {g.sintomas} — {g.conducta}</div>
+                                    ))}
+                                  </div>
+                                )}
+                                {(m.sistemas_afectados || []).length > 0 && (
+                                  <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                                    {m.sistemas_afectados.map((s,i) => (
+                                      <div key={i} style={{ fontSize:12, color:"#ccc" }}><strong>{s.sistema}:</strong> {s.signo_alarma} → {s.conducta}</div>
+                                    ))}
+                                  </div>
+                                )}
+                                {m.nota_corticoides && <div style={{ fontSize:11, color:"#ffb347", marginTop:4 }}>⚠ {m.nota_corticoides}</div>}
+                                {m.rol_enfermeria && <div style={{ fontSize:11, color:"#666", marginTop:4 }}>Rol de enfermería: {m.rol_enfermeria}</div>}
+                                {m.notas && <div style={{ fontSize:11, color:"#666", marginTop:4 }}>{m.notas}</div>}
+                                {(m.reference_ids || []).length > 0 && (
+                                  <div style={{ fontSize:10, color:"#555", marginTop:6 }}>
+                                    Fuentes: {m.reference_ids.map(rid => refsById[rid]?.cita || rid).join(" · ")}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     {canValidate && (() => {
                       const changedLabels = (f.campos_modificados || []).map(k => FIELD_LABELS[k] || k);
                       const slotInfo = [
@@ -635,6 +891,28 @@ export default function FichasTecnicas() {
               return next.sort((a,b) => (a.nombre_generico||"").localeCompare(b.nombre_generico||""));
             });
           }}
+        />
+      )}
+      {showImportModulos && (
+        <ImportJsonModal
+          title="Módulos clínicos compartidos"
+          placeholder='[{"modulo_id": "extravasacion_...", "nombre": "...", ...}]'
+          collectionId="modulos_clinicos_compartidos"
+          idField="modulo_id"
+          token={token}
+          onClose={() => setShowImportModulos(false)}
+          onImported={() => fetchModulos(token).then(setModulosById)}
+        />
+      )}
+      {showImportRefs && (
+        <ImportJsonModal
+          title="Referencias bibliográficas"
+          placeholder='[{"reference_id": "ref_...", "cita": "...", ...}]'
+          collectionId="referencias_bibliograficas"
+          idField="reference_id"
+          token={token}
+          onClose={() => setShowImportRefs(false)}
+          onImported={() => fetchReferencias(token).then(setRefsById)}
         />
       )}
     </div>

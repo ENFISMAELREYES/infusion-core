@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { normalizeMedName, findFichaMatch } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch, isAlertaCritica } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -222,7 +222,7 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
   // Fase 1 -- casos como dilución condicional por dosis no se reducen a un
   // simple rango).
   const ficha = !isNew ? findFichaMatch(med.name, fichasByName) : null;
-  const fichaHasCriticalAlert = ficha && ["SI","SÍ"].includes((ficha.alerta_critica_seguridad || "").trim().toUpperCase());
+  const fichaHasCriticalAlert = ficha && isAlertaCritica(ficha.alerta_critica_seguridad);
   const ctCheck = ficha ? computeCtCheck(med, ficha) : null;
 
   const save = () => {
