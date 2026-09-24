@@ -111,15 +111,20 @@ function reorderInfo(item) {
 export default function Inventario() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
-  // Solo Paola Vargas puede ver ambos centros siendo enfermera (incluyendo
-  // Qual); el resto solo ve el inventario de su propio centro asignado.
-  const canSeeAllCenters = isJefe || profile?.name === "Paola Vargas";
+  // Solo Paola puede ver ambos centros siendo enfermera (incluyendo Qual);
+  // el resto solo ve el inventario de su propio centro asignado. Se marca
+  // con un campo aparte en su documento de usuario (puedeValidarInsumos:
+  // true en Firestore, users/{uid}) en vez de comparar su nombre -- un
+  // nombre puede cambiar (ej. al ponerse el nombre completo para el
+  // consentimiento informado) y comparar el string exacto se rompe en
+  // silencio justo cuando eso pasa.
+  const canSeeAllCenters = isJefe || profile?.puedeValidarInsumos;
   // Firma a distancia en solicitudes de compra: a diferencia del material
   // por paciente (que solo pasa por el checkup de Paola), una solicitud de
   // compra siempre lleva la cadena completa Paola (VALIDA) -> jefe
   // (AUTORIZA), sea de medicamento o de insumo -- es dinero/reabasto, no
   // solo dispensar lo que ya hay.
-  const canValidate = isJefe || profile?.name === "Paola Vargas";
+  const canValidate = isJefe || profile?.puedeValidarInsumos;
   const canAuthorize = isJefe;
   const allowedWarehouses = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI_PRO","CIPI_PED"] : ["CITIO"]);
   const [tab, setTab] = useState("existencias"); // "existencias" | "movimientos"
