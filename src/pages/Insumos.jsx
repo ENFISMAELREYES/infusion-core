@@ -123,9 +123,9 @@ function CatalogSuggestions({ query, catalog, onSelect }) {
 function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user, onRefresh, setSessions, downloadPharmacyOrder, showAnexo, mode }) {
   const { profile } = useAuth();
   // Solo Paola (el filtro universal de todas las solicitudes) o el jefe
-  // pueden hacer el checkup de material -- mismo criterio de nombre que ya
-  // usa el resto de la app para darle a Paola permisos especiales.
-  const canValidate = profile?.role === "jefe" || profile?.name === "Paola Vargas";
+  // pueden hacer el checkup de material -- por el campo puedeValidarInsumos
+  // en su perfil (ver Inventario.jsx), no por su nombre, que puede cambiar.
+  const canValidate = profile?.role === "jefe" || profile?.puedeValidarInsumos;
   // Autorizar (segunda firma, solo medicamentos/anexo con medicamento) es
   // exclusiva del jefe -- Paola solo hace el checkup/filtro, la autorización
   // final de oncológicos siempre pasa por él.
@@ -866,10 +866,10 @@ export default function Insumos() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
   const isVisualizador = profile?.role === "visualizador";
-  // Solo Paola Vargas puede ver ambos centros siendo enfermera; el resto solo
-  // ve el material/inventario de su propio centro asignado. Visualizador ve
-  // todos los centros, igual que el jefe (pero en modo de solo lectura).
-  const canSeeAllCenters = isJefe || isVisualizador || profile?.name === "Paola Vargas";
+  // Solo Paola puede ver ambos centros siendo enfermera; el resto solo ve el
+  // material/inventario de su propio centro asignado. Visualizador ve todos
+  // los centros, igual que el jefe (pero en modo de solo lectura).
+  const canSeeAllCenters = isJefe || isVisualizador || profile?.puedeValidarInsumos;
   const [tab, setTab] = useState("consolidado");
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);

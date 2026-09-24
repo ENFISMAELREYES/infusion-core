@@ -105,8 +105,30 @@ service cloud.firestore {
     }
 
     // Fichas técnicas de medicamentos: manual de referencia rápida para
-    // enfermería (lectura de todos) -- solo el jefe las captura/edita/borra.
+    // enfermería (lectura de todos) -- solo el jefe las captura/edita/borra
+    // el contenido clínico. Además, Carlos y el oncólogo (visualizador
+    // marcado como médico) pueden marcar/quitar SU propia validación
+    // (validacion_farmacia/validacion_clinica) sin poder tocar el resto de
+    // la ficha -- mismo criterio de "campo restringido" que ya usa
+    // users/{userId} para la firma.
     match /fichas_tecnicas/{id} {
+      allow read: if isAuth();
+      allow write: if isAuth() && userRole() == "jefe";
+      allow update: if isAuth() && userRole() == "visualizador"
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isMedico == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['validacion_farmacia', 'validacion_clinica']);
+    }
+
+    // Modelo v2 de fichas técnicas (piloto): módulos clínicos compartidos
+    // (extravasación, hipersensibilidad, toxicidad inmunomediada) y
+    // referencias bibliográficas citadas por reference_id -- mismo criterio
+    // que fichas_tecnicas, lectura de todos los autenticados, solo el jefe
+    // las importa/edita.
+    match /modulos_clinicos_compartidos/{id} {
+      allow read: if isAuth();
+      allow write: if isAuth() && userRole() == "jefe";
+    }
+    match /referencias_bibliograficas/{id} {
       allow read: if isAuth();
       allow write: if isAuth() && userRole() == "jefe";
     }

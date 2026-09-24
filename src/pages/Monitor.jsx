@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { normalizeMedName, findFichaMatch } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch, isAlertaCritica, valorTexto } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -68,7 +68,7 @@ function MedFichaModal({ med, ficha, onClose }) {
   const vol       = volMatch ? parseFloat(volMatch[1]) : null;
   const ct        = (dose && vol) ? dose / vol : null;
   const mentionsPVC = /PVC/i.test(ficha.dilucion_solucion_tecnica || "");
-  const hasCriticalAlert = ["SI","SÍ"].includes((ficha.alerta_critica_seguridad || "").trim().toUpperCase());
+  const hasCriticalAlert = isAlertaCritica(ficha.alerta_critica_seguridad);
 
   return (
     <div onClick={e => { e.stopPropagation(); onClose(); }} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
@@ -108,7 +108,7 @@ function MedFichaModal({ med, ficha, onClose }) {
         ].map(([field, label, color]) => ficha[field] && (
           <div key={field}>
             <div style={{ fontSize:11, color, textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>{label}</div>
-            <div style={{ fontSize:13, color:"#ccc", lineHeight:1.5, whiteSpace:"pre-line" }}>{ficha[field]}</div>
+            <div style={{ fontSize:13, color:"#ccc", lineHeight:1.5, whiteSpace:"pre-line" }}>{valorTexto(ficha[field])}</div>
           </div>
         ))}
 
