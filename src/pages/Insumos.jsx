@@ -939,7 +939,7 @@ export default function Insumos() {
   };
 
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
-  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => !!s.materialSolicitudGuardada && (
+  const dateFiltered = dateFilter === "todas" ? sessions.filter(s => (!!s.materialSolicitudGuardada || !!s.medsSolicitudGuardada) && (
       todasMode === "todo" ? true
       : todasMode === "rango" ? (s.date >= rangeFrom && s.date <= rangeTo)
       : s.date === selectedDay
