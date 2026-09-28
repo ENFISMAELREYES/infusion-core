@@ -630,28 +630,6 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                   {medsHecho ? "✓ Medicamentos" : "💊 Medicamentos"}
                 </button>
 
-                {canValidate && s.medsSolicitudGuardada && (
-                  <button onClick={validateMeds} disabled={savingMedsValidation || !!s.medsValidatedBy}
-                    title={s.medsValidatedBy ? `Ya validado por ${s.medsValidatedByName || ""}` : "Marcar que ya revisaste estos medicamentos (checkup de Paola)"}
-                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: (savingMedsValidation || s.medsValidatedBy) ? "default" : "pointer",
-                      background: s.medsValidatedBy ? "rgba(0,212,170,0.08)" : "rgba(255,179,71,0.1)",
-                      border: `1px solid ${s.medsValidatedBy ? "rgba(0,212,170,0.2)" : "rgba(255,179,71,0.25)"}`,
-                      color: s.medsValidatedBy ? "#00d4aa" : "#ffb347", opacity: savingMedsValidation ? 0.6 : 1 }}>
-                    {savingMedsValidation ? "Guardando…" : s.medsValidatedBy ? "✓ Meds validados" : "✓ Validar meds"}
-                  </button>
-                )}
-
-                {canAuthorize && s.medsSolicitudGuardada && (
-                  <button onClick={authorizeMeds} disabled={savingMedsAuth || !s.medsValidatedBy || !!s.medsAuthorizedBy}
-                    title={s.medsAuthorizedBy ? `Ya autorizado por ${s.medsAuthorizedByName || ""}` : !s.medsValidatedBy ? "Falta el checkup de Paola antes de poder autorizar" : "Dar tu autorización final para estos medicamentos"}
-                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: (savingMedsAuth || !s.medsValidatedBy || s.medsAuthorizedBy) ? "default" : "pointer",
-                      background: s.medsAuthorizedBy ? "rgba(0,212,170,0.08)" : "rgba(175,169,236,0.1)",
-                      border: `1px solid ${s.medsAuthorizedBy ? "rgba(0,212,170,0.2)" : "rgba(175,169,236,0.3)"}`,
-                      color: s.medsAuthorizedBy ? "#00d4aa" : !s.medsValidatedBy ? "#555" : "#AFA9EC", opacity: savingMedsAuth ? 0.6 : (!s.medsValidatedBy ? 0.5 : 1) }}>
-                    {savingMedsAuth ? "Guardando…" : s.medsAuthorizedBy ? "✓ Meds autorizados" : "✓ Autorizar meds"}
-                  </button>
-                )}
-
                 <button onClick={async e => { e.stopPropagation(); await downloadPharmacyOrder(s, material, note, cipiVariant, "material"); await markPedidoHecho("materialPedidoGeneradoAt"); }}
                   title={materialHecho ? `Material solicitado ${new Date(s.materialPedidoGeneradoAt).toLocaleString("es-MX")} — clic para volver a descargar` : "Solicitar material (días antes o el mismo día)"}
                   style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
@@ -660,17 +638,6 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                     color: materialHecho ? "#666" : "#00d4aa" }}>
                   {materialHecho ? "✓ Material" : "🧰 Material"}
                 </button>
-
-                {canValidate && s.materialSolicitudGuardada && (
-                  <button onClick={validateMaterial} disabled={savingValidation || !!s.materialValidatedBy}
-                    title={s.materialValidatedBy ? `Ya validado por ${s.materialValidatedByName || ""}` : "Marcar que ya revisaste este material (checkup de Paola)"}
-                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: (savingValidation || s.materialValidatedBy) ? "default" : "pointer",
-                      background: s.materialValidatedBy ? "rgba(0,212,170,0.08)" : "rgba(255,179,71,0.1)",
-                      border: `1px solid ${s.materialValidatedBy ? "rgba(0,212,170,0.2)" : "rgba(255,179,71,0.25)"}`,
-                      color: s.materialValidatedBy ? "#00d4aa" : "#ffb347", opacity: savingValidation ? 0.6 : 1 }}>
-                    {savingValidation ? "Guardando…" : s.materialValidatedBy ? "✓ Validado" : "✓ Validar"}
-                  </button>
-                )}
 
                 {showAnexo && anexos.length < 3 && (
                   <button onClick={e => { e.stopPropagation(); setShowAnexoModal(true); }}
@@ -696,6 +663,43 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                   {s.inventorySalidaDone ? "✓ Inventario dado de baja" : "📦 Dar de baja inventario"}
                 </button>
               </>
+            )}
+
+            {/* Validar/autorizar no dependen de haber revelado los botones de
+                generar documento (docsRevealed) -- son dos cosas aparte: se
+                puede validar en cuanto se guardó la solicitud, sin necesidad
+                de haber generado ningún PDF todavía. */}
+            {canValidate && s.medsSolicitudGuardada && (
+              <button onClick={validateMeds} disabled={savingMedsValidation || !!s.medsValidatedBy}
+                title={s.medsValidatedBy ? `Ya validado por ${s.medsValidatedByName || ""}` : "Marcar que ya revisaste estos medicamentos (checkup de Paola)"}
+                style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: (savingMedsValidation || s.medsValidatedBy) ? "default" : "pointer",
+                  background: s.medsValidatedBy ? "rgba(0,212,170,0.08)" : "rgba(255,179,71,0.1)",
+                  border: `1px solid ${s.medsValidatedBy ? "rgba(0,212,170,0.2)" : "rgba(255,179,71,0.25)"}`,
+                  color: s.medsValidatedBy ? "#00d4aa" : "#ffb347", opacity: savingMedsValidation ? 0.6 : 1 }}>
+                {savingMedsValidation ? "Guardando…" : s.medsValidatedBy ? "✓ Meds validados" : "✓ Validar meds"}
+              </button>
+            )}
+
+            {canAuthorize && s.medsSolicitudGuardada && (
+              <button onClick={authorizeMeds} disabled={savingMedsAuth || !s.medsValidatedBy || !!s.medsAuthorizedBy}
+                title={s.medsAuthorizedBy ? `Ya autorizado por ${s.medsAuthorizedByName || ""}` : !s.medsValidatedBy ? "Falta el checkup de Paola antes de poder autorizar" : "Dar tu autorización final para estos medicamentos"}
+                style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: (savingMedsAuth || !s.medsValidatedBy || s.medsAuthorizedBy) ? "default" : "pointer",
+                  background: s.medsAuthorizedBy ? "rgba(0,212,170,0.08)" : "rgba(175,169,236,0.1)",
+                  border: `1px solid ${s.medsAuthorizedBy ? "rgba(0,212,170,0.2)" : "rgba(175,169,236,0.3)"}`,
+                  color: s.medsAuthorizedBy ? "#00d4aa" : !s.medsValidatedBy ? "#555" : "#AFA9EC", opacity: savingMedsAuth ? 0.6 : (!s.medsValidatedBy ? 0.5 : 1) }}>
+                {savingMedsAuth ? "Guardando…" : s.medsAuthorizedBy ? "✓ Meds autorizados" : "✓ Autorizar meds"}
+              </button>
+            )}
+
+            {canValidate && s.materialSolicitudGuardada && (
+              <button onClick={validateMaterial} disabled={savingValidation || !!s.materialValidatedBy}
+                title={s.materialValidatedBy ? `Ya validado por ${s.materialValidatedByName || ""}` : "Marcar que ya revisaste este material (checkup de Paola)"}
+                style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: (savingValidation || s.materialValidatedBy) ? "default" : "pointer",
+                  background: s.materialValidatedBy ? "rgba(0,212,170,0.08)" : "rgba(255,179,71,0.1)",
+                  border: `1px solid ${s.materialValidatedBy ? "rgba(0,212,170,0.2)" : "rgba(255,179,71,0.25)"}`,
+                  color: s.materialValidatedBy ? "#00d4aa" : "#ffb347", opacity: savingValidation ? 0.6 : 1 }}>
+                {savingValidation ? "Guardando…" : s.materialValidatedBy ? "✓ Validado" : "✓ Validar"}
+              </button>
             )}
           </>
         )}
