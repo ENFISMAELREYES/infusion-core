@@ -4,6 +4,7 @@ import { computeSessionMaterial, computeMedicationPieces, MASTER_CATALOG, MATERI
 import MaterialModal from "../components/MaterialModal";
 
 import { PROJECT_ID, DATABASE_ID } from "../config";
+import { openPdfBlob } from "../pdfOpen";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -307,9 +308,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       });
       if (!res.ok) throw new Error(`Error ${res.status} al generar el anexo`);
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      openPdfBlob(blob, `ANEXO${anexoNumber}_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`);
 
       const newAnexos = [...anexos, { number: anexoNumber, items: anexoItems, note: anexoNote, generatedAt: new Date().toISOString(),
         hasMed: anexoHasMed,
@@ -402,9 +401,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       });
       if (!res.ok) throw new Error(`Error ${res.status} al reimprimir el anexo`);
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      openPdfBlob(blob, `ANEXO${an.number}_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`);
     } catch (e) {
       alert("Error al reimprimir el anexo: " + e.message);
     } finally {
@@ -1023,9 +1020,7 @@ export default function Insumos() {
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      openPdfBlob(blob, `SOLICITUD_${scope.toUpperCase()}_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`);
     } catch (e) {
       alert("Error al generar el pedido: " + e.message);
     }

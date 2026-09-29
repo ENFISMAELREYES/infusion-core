@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
+import { openPdfBlob } from "../pdfOpen";
 
 const PATIENT_STATUS = {
   activo:      { label:"Activo",      color:"#1D9E75" },
@@ -511,9 +512,6 @@ const handleDataEdit = async (patientName, draft) => {
   };
 
   const handlePrint = async (patientName, center, sessionIds, headerOnly) => {
-    // Abrir la pestaña de inmediato (síncrono con el click) para que el navegador
-    // no bloquee el pop-up; luego apuntamos su location al PDF ya generado.
-    const win = window.open("", "_blank");
     setPrinting(patientName);
     try {
       const res = await fetch("/api/generate-pdf", {
@@ -526,13 +524,8 @@ const handleDataEdit = async (patientName, draft) => {
         throw new Error(err.error || "No se pudo generar el PDF");
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      if (win) win.location = url;
-      else window.open(url, "_blank");
-      // Liberar memoria una vez que la pestaña tuvo tiempo de cargar el PDF
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      openPdfBlob(blob, `tratamiento-${(patientName || "paciente").replace(/\s+/g, "_")}${headerOnly ? "-plantilla" : ""}.pdf`);
     } catch(e) {
-      if (win) win.close();
       alert("Error al generar PDF: " + e.message);
     } finally {
       setPrinting(null);
