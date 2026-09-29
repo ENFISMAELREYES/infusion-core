@@ -147,7 +147,17 @@ function computeCtCheck(med, ficha) {
     if (acceptsSF || acceptsSG) dilTypeOk = capturedType === "SG" ? acceptsSG : acceptsSF;
   }
 
-  return { ct, min, max, inRange, dilTypeOk };
+  // Ct = dosis ÷ volumen -- para que Ct quede dentro de [min, max] con la
+  // MISMA dosis ya capturada, el volumen tiene que quedar dentro de
+  // [dosis/max, dosis/min] (a mayor volumen, menor concentración, por eso
+  // el rango se invierte). volSuggested es el punto medio de ese rango,
+  // redondeado a un múltiplo de 10 mL -- un punto de partida razonable
+  // para que quien autoriza lo ajuste al tamaño de bolsa real que se vaya
+  // a usar, no un valor que deba tomarse tal cual.
+  const volMin = dose / max, volMax = dose / min;
+  const volSuggested = Math.round((volMin + volMax) / 2 / 10) * 10;
+
+  return { ct, min, max, inRange, dilTypeOk, capturedType, volMin, volMax, volSuggested };
 }
 
 function calcWash(med, draft) {
@@ -301,6 +311,18 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
                       <span style={{ color: ctCheck.inRange ? "#00d4aa" : "#ff6b6b" }}>{ctCheck.inRange ? "✓" : "⚠️"}</span>
                       <span style={{ fontSize:12, color:"#ccc" }}>{ctCheck.inRange ? "Dentro de rango de dilución" : "Fuera de rango de dilución"} ({ctCheck.min}–{ctCheck.max} mg/mL)</span>
                     </div>
+                    {!ctCheck.inRange && (
+                      <div style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", borderRadius:8, background:"rgba(255,179,71,0.06)", border:"1px solid rgba(255,179,71,0.2)", flexWrap:"wrap" }}>
+                        <span style={{ fontSize:12, color:"#ccc" }}>
+                          Con {med.dose}, el volumen debe quedar entre <strong style={{ color:"#f0f0f0" }}>{ctCheck.volMin.toFixed(0)}–{ctCheck.volMax.toFixed(0)} mL</strong> para caer en rango.
+                        </span>
+                        <button type="button"
+                          onClick={() => setDraft(d => ({ ...d, diluent: `${ctCheck.volSuggested} ML${ctCheck.capturedType ? " " + ctCheck.capturedType : ""}` }))}
+                          style={{ padding:"5px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.12)", border:"1px solid rgba(255,179,71,0.3)", color:"#ffb347" }}>
+                          Usar {ctCheck.volSuggested} mL
+                        </button>
+                      </div>
+                    )}
                     {ctCheck.dilTypeOk !== null && (
                       <div style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 10px", borderRadius:8, background: ctCheck.dilTypeOk ? "rgba(0,212,170,0.08)" : "rgba(255,107,107,0.08)" }}>
                         <span style={{ color: ctCheck.dilTypeOk ? "#00d4aa" : "#ff6b6b" }}>{ctCheck.dilTypeOk ? "✓" : "⚠️"}</span>
