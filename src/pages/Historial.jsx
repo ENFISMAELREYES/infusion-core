@@ -93,6 +93,11 @@ const STATUS_META = {
 function SessionRow({ s, selected, onSelect, isJefe, canSign, token, onRefresh, profile, user, fichasByName }) {
   const sm = STATUS_META[s.status] || STATUS_META.pendiente;
   const isSelected = selected?.id === s.id;
+  // Editar sesión / Duplicar permiten corregir fechas, medicamentos y
+  // anexar ciclos retroactivamente (ej. para trámites de seguro de gastos
+  // médicos) -- además del jefe, se puede habilitar en una cuenta puntual
+  // sin darle el rol completo de jefe, vía profile.puedeEditarTratamientos.
+  const canEditTratamientos = isJefe || profile?.puedeEditarTratamientos;
   const [editing, setEditing] = useState(false);
 const [editDraft, setEditDraft] = useState(null);
   const [showSignModal, setShowSignModal] = useState(false);
@@ -515,9 +520,9 @@ const saveEdit = async () => {
             </div>
           )}
 
-         {!editing && (canSign || isJefe) && (
+         {!editing && (canSign || isJefe || canEditTratamientos) && (
             <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap" }}>
-              {isJefe && !s.eliminado && (
+              {canEditTratamientos && !s.eliminado && (
                 <button onClick={e => { e.stopPropagation(); openEditor(); }} style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>
                   ✏️ Editar sesión
                 </button>
@@ -534,7 +539,7 @@ const saveEdit = async () => {
                   {reprintingConsent ? "Generando…" : "🖨️ Reimprimir consentimiento"}
                 </button>
               )}
-              {isJefe && !s.eliminado && (
+              {canEditTratamientos && !s.eliminado && (
                 <button onClick={e => { e.stopPropagation(); openDupModal(); }} title="Duplicar como plantilla (temporal, captura retrospectiva)"
                   style={{ padding:"7px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
                   📋 Duplicar
