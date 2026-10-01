@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import UpdateBanner from "./UpdateBanner";
 import MySignatureModal from "./MySignatureModal";
+import HelpPanel from "./HelpPanel";
 
 const NAV = {
   jefe: [
@@ -134,6 +135,7 @@ export default function Layout() {
       </nav>
 
       <UpdateBanner />
+      <HelpPanel />
     </div>
   );
 }

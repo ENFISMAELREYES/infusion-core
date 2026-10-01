@@ -25,9 +25,12 @@ button { font-family: inherit; cursor: pointer; }
 .desktop-only { display: flex !important; }
 .mobile-only  { display: none !important; }
 
+.help-fab { bottom: 24px !important; }
+
 @media (max-width: 768px) {
   .desktop-only { display: none !important; }
   .mobile-only  { display: flex !important; }
+  .help-fab { bottom: calc(env(safe-area-inset-bottom) + 80px) !important; }
 
   /* Ajustes para móvil */
   div[style*="padding: 24px 28px"],

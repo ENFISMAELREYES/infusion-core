@@ -4,6 +4,7 @@ import { uploadSignature, uploadUserSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { computeSessionMaterial } from "../data/materialCatalog";
 import { normalizeMedName, findFichaMatch, isSessionC1D1, valorTexto } from "./FichasTecnicas";
+import { openPdfBlob } from "../pdfOpen";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -833,9 +834,7 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      openPdfBlob(blob, `Consentimiento_${(session.patientName || "paciente").replace(/\s+/g, "_")}.pdf`);
       // Se marca en la sesión -- así Historial puede mostrar si a un C1D1
       // ya se le generó su consentimiento o sigue pendiente. Los datos del
       // representante también se guardan aquí, para que la próxima vez que

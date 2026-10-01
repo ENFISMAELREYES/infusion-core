@@ -3,6 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { normalizeMedName, findFichaMatch, isSessionC1D1 } from "./FichasTecnicas";
+import { openPdfBlob } from "../pdfOpen";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -129,9 +130,7 @@ const [editDraft, setEditDraft] = useState(null);
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      openPdfBlob(blob, `Consentimiento_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`);
     } catch (e) {
       alert("Error al reimprimir el consentimiento: " + e.message);
     } finally {

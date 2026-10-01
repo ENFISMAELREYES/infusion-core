@@ -2,6 +2,7 @@
 import { useAuth } from "../hooks/useAuth";
 import { PROJECT_ID, FIRESTORE_BASE_URL, IS_TEST_ENV } from "../config";
 import { MASTER_CATALOG } from "../data/materialCatalog";
+import { openPdfBlob } from "../pdfOpen";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -630,9 +631,7 @@ export default function Inventario() {
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || `Error ${res.status}`); }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      openPdfBlob(blob, `Solicitud_Compra_${(purchaseConcept || "solicitud").replace(/\s+/g, "_").slice(0, 40)}.pdf`);
 
       const itemsFv = toFV(moveList.map(({ item, qty }) => ({ item, qty })));
       if (editingPO) {
@@ -768,9 +767,7 @@ export default function Inventario() {
       });
       if (!res.ok) throw new Error(`Error ${res.status} al reimprimir`);
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      openPdfBlob(blob, `Solicitud_Compra_${(po.concepto || "solicitud").replace(/\s+/g, "_").slice(0, 40)}.pdf`);
     } catch (e) {
       alert("Error al reimprimir la solicitud: " + e.message);
     } finally {
