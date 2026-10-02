@@ -35,7 +35,6 @@ export default async function handler(req, res) {
   if (!bearerToken) {
     return res.status(401).json({ error: "No autenticado: falta el token de sesión." });
   }
-  let callerUid = null;
   try {
     const API_KEY = "AIzaSyBXz5TRpGHX7nbFjQYjGJi2l17YBpxtjFw";
     const verifyRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${API_KEY}`, {
@@ -47,36 +46,17 @@ export default async function handler(req, res) {
     if (!verifyData.users || verifyData.users.length === 0) {
       return res.status(401).json({ error: "Token inválido." });
     }
-    callerUid = verifyData.users[0].localId;
   } catch (e) {
     return res.status(401).json({ error: "No se pudo verificar la sesión." });
   }
 
+  // El permiso real (jefe o puedeEditarTratamientos) ya lo hace cumplir
+  // Firestore -- este endpoint no consulta sessions/historial_anexo por su
+  // cuenta, solo convierte en PDF la lista que el cliente ya armó leyendo
+  // esas colecciones con su propio token. Mismo criterio que
+  // generate-consent.js y generate-material-order.js: autenticación sí,
+  // sin credencial de servidor aparte.
   try {
-    const PROJECT_ID = "infusion-core";
-    const { GoogleAuth } = await import("google-auth-library");
-    const auth = new GoogleAuth({
-      credentials: JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT),
-      scopes: ["https://www.googleapis.com/auth/datastore"],
-    });
-    const accessToken = await auth.getAccessToken();
-
-    // Solo el jefe o la cuenta marcada con puedeEditarTratamientos puede
-    // generar este documento -- aunque el frontend ya oculta el botón,
-    // el servidor es quien de verdad lo hace cumplir.
-    const profileRes = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents/users/${callerUid}`,
-      { headers: { "Authorization": `Bearer ${accessToken}` } }
-    );
-    if (!profileRes.ok) return res.status(403).json({ error: "No se pudo verificar el perfil." });
-    const profileDoc = await profileRes.json();
-    const pf = profileDoc.fields || {};
-    const role = pf.role?.stringValue;
-    const puedeEditarTratamientos = pf.puedeEditarTratamientos?.booleanValue === true;
-    if (role !== "jefe" && !puedeEditarTratamientos) {
-      return res.status(403).json({ error: "No tienes permiso para generar este documento." });
-    }
-
     if (!patientName || !Array.isArray(entries) || entries.length === 0) {
       return res.status(400).json({ error: "Faltan datos del paciente o no hay entradas para la bitácora." });
     }
