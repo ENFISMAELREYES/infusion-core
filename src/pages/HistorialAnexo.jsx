@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { PROJECT_ID, DATABASE_ID } from "../config";
+import { openPdfBlob } from "../pdfOpen";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -58,6 +59,7 @@ export default function HistorialAnexo() {
   const [anexos, setAnexos] = useState([]);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
     if (!user || !allowed) return;
@@ -159,6 +161,53 @@ export default function HistorialAnexo() {
     } catch (e) { alert("Error: " + e.message); }
   };
 
+  // Arma la lista final para la bitácora en PDF: cada sesión real se
+  // reemplaza por su versión corregida si tiene un anexo que la referencia
+  // (sourceSessionId), y los anexos sin sesión de origen se agregan como
+  // ciclos nuevos -- el PDF sale exactamente igual al de una sesión real,
+  // sin marcar nada como "corregido", porque es lo que se entrega al seguro.
+  const buildBitacoraEntries = () => {
+    const bySource = {};
+    anexos.forEach(a => { if (a.sourceSessionId) bySource[a.sourceSessionId] = a; });
+    const fromSessions = patientSessions.map(s => {
+      const a = bySource[s.id];
+      if (a) {
+        return { id: `anexo_${a.id}`, date: a.date, cycle: a.cycle, schemeName: s.schemeName, events: s.events, meds: a.meds, globalNote: a.note || "" };
+      }
+      return { id: s.id, date: s.date, cycle: s.cycle, schemeName: s.schemeName, events: s.events, meds: s.meds, globalNote: s.globalNote, signatures: s.signatures };
+    });
+    const standaloneAnexos = anexos.filter(a => !a.sourceSessionId).map(a => ({
+      id: `anexo_${a.id}`, date: a.date, cycle: a.cycle, meds: a.meds, globalNote: a.note || "",
+    }));
+    return [...fromSessions, ...standaloneAnexos];
+  };
+
+  const generateBitacora = async () => {
+    if (!selectedPatient) return;
+    const entries = buildBitacoraEntries();
+    if (entries.length === 0) { alert("No hay sesiones ni anexos para este paciente."); return; }
+    setGeneratingPdf(true);
+    try {
+      const t = token || await user.getIdToken(true);
+      const sample = patientSessions[0] || {};
+      const res = await fetch("/api/generate-bitacora-anexo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t}` },
+        body: JSON.stringify({
+          patientName: selectedPatient,
+          center: sample.center || profile?.center || "CITIO",
+          sample: { dob: sample.dob, diagnosis: sample.diagnosis, physician: sample.physician, allergies: sample.allergies, insurance: sample.insurance },
+          entries,
+          token: t,
+        }),
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error || "Error al generar la bitácora"); }
+      const blob = await res.blob();
+      openPdfBlob(blob, `bitacora-${selectedPatient.replace(/\s+/g, "_")}.pdf`);
+    } catch (e) { alert("Error: " + e.message); }
+    finally { setGeneratingPdf(false); }
+  };
+
   if (!allowed) return (
     <div style={{ padding: 40, color: "#666", textAlign: "center" }}>No tienes acceso a esta sección.</div>
   );
@@ -211,11 +260,16 @@ export default function HistorialAnexo() {
             ))}
           </div>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
             <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1 }}>Anexos (seguro)</div>
-            <button onClick={openNewBlank} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 600, cursor: "pointer", background: "rgba(0,212,170,0.1)", border: "1px solid rgba(0,212,170,0.25)", color: "#00d4aa" }}>
-              + Nuevo anexo (ciclo nuevo)
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={generateBitacora} disabled={generatingPdf} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 600, cursor: generatingPdf ? "wait" : "pointer", background: "rgba(255,179,71,0.1)", border: "1px solid rgba(255,179,71,0.25)", color: "#ffb347", opacity: generatingPdf ? 0.6 : 1 }}>
+                {generatingPdf ? "Generando…" : "🖨️ Generar bitácora (PDF)"}
+              </button>
+              <button onClick={openNewBlank} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 600, cursor: "pointer", background: "rgba(0,212,170,0.1)", border: "1px solid rgba(0,212,170,0.25)", color: "#00d4aa" }}>
+                + Nuevo anexo (ciclo nuevo)
+              </button>
+            </div>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
