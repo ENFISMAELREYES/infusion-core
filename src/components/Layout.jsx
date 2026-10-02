@@ -51,9 +51,14 @@ export default function Layout() {
   // isMedico en su documento de usuario) además puede consultar fichas
   // técnicas, a diferencia de contabilidad/admisión que comparten el mismo
   // rol pero no deben verlas (mismo criterio que el ícono de Monitor).
-  const nav = (role === "visualizador" && profile?.isMedico)
+  let nav = (role === "visualizador" && profile?.isMedico)
     ? [...NAV.visualizador, { to:"/fichas-tecnicas", icon:"📋", label:"Fichas técnicas" }]
     : (NAV[role] || []);
+  // Historial anexo: herramienta puntual para trámites de seguro de gastos
+  // médicos, sin importar el rol -- se activa por cuenta (ver firestore.rules).
+  if (profile?.puedeEditarTratamientos) {
+    nav = [...nav, { to:"/historial-anexo", icon:"📎", label:"Historial anexo" }];
+  }
 
   return (
     <div style={{ display:"flex", minHeight:"100vh", background:"#080a0f", color:"#f0f0f0", fontFamily:"'Inter', sans-serif" }}>

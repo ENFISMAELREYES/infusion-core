@@ -16,6 +16,7 @@ import Insumos from "./pages/Insumos";
 import Auditoria from "./pages/Auditoria";
 import Inventario from "./pages/Inventario";
 import FichasTecnicas from "./pages/FichasTecnicas";
+import HistorialAnexo from "./pages/HistorialAnexo";
 function PrivateRoute({ children, roles }) {
   const { user, profile, loading } = useAuth();
   if (loading) return (
@@ -66,6 +67,10 @@ function AppRoutes() {
             si además es personal médico (profile.isMedico); así contabilidad/
             admisión, que también son "visualizador", quedan bloqueados. */}
         <Route path="fichas-tecnicas" element={<PrivateRoute roles={["jefe","enfermera","visualizador"]}><FichasTecnicas /></PrivateRoute>} />
+        {/* Historial anexo: igual que fichas-tecnicas, la ruta queda abierta
+            a los 3 roles y HistorialAnexo.jsx filtra adentro -- solo entra
+            el jefe o la cuenta puntual marcada con profile.puedeEditarTratamientos. */}
+        <Route path="historial-anexo" element={<PrivateRoute roles={["jefe","enfermera","visualizador"]}><HistorialAnexo /></PrivateRoute>} />
       </Route>
     </Routes>
   );

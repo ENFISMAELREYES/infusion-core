@@ -161,5 +161,18 @@ service cloud.firestore {
       allow update: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera");
       allow delete: if false;
     }
+
+    // Historial anexo: registros paralelos al historial clínico real
+    // (sessions), usados para trámites de seguro de gastos médicos --
+    // corrigen fecha/medicamentos/ciclo de una sesión, o capturan un ciclo
+    // que nunca se registró, SIN tocar la sesión original. Solo el jefe y
+    // la cuenta puntual marcada con puedeEditarTratamientos pueden
+    // leer/escribir -- nadie más necesita ver estas correcciones.
+    function puedeEditarTratamientos() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.puedeEditarTratamientos == true;
+    }
+    match /historial_anexo/{id} {
+      allow read, write: if isAuth() && (userRole() == "jefe" || puedeEditarTratamientos());
+    }
   }
 }
