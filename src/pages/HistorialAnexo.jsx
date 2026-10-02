@@ -153,12 +153,47 @@ export default function HistorialAnexo() {
   };
 
   const deleteAnexo = async (a) => {
-    if (!confirm(`¿Eliminar este anexo (${a.date})? Esto no afecta el historial clínico real.`)) return;
+    const msg = a.eliminada
+      ? `¿Quitar la exclusión? La sesión del ${a.date} volverá a aparecer en la bitácora.`
+      : `¿Eliminar este anexo (${a.date})? Esto no afecta el historial clínico real.`;
+    if (!confirm(msg)) return;
     try {
       await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/historial_anexo/${a.id}`,
         { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
       refreshAnexos();
     } catch (e) { alert("Error: " + e.message); }
+  };
+
+  // Excluye una sesión real de la bitácora de seguro -- no la toca ni la
+  // borra del historial clínico (sessions), solo guarda un anexo marcado
+  // eliminada:true que buildBitacoraEntries() usa para saltarla al generar
+  // el PDF. Igual que una corrección: un anexo por sesión, nunca los dos.
+  const excludeSession = async (s) => {
+    if (!confirm(`¿Excluir la sesión del ${s.date} de la bitácora para el seguro? No se borra del historial real, solo no va a aparecer en el PDF.`)) return;
+    setSaving(true);
+    try {
+      const data = {
+        patientName: selectedPatient,
+        center: profile?.center || "",
+        date: s.date || "",
+        cycle: s.cycle || "",
+        meds: [],
+        note: "Excluida de la bitácora",
+        sourceSessionId: s.id,
+        sourceSessionDate: s.date || "",
+        eliminada: true,
+        createdAt: new Date().toISOString(),
+        createdBy: profile?.name || profile?.email || "",
+        updatedAt: new Date().toISOString(),
+        updatedBy: profile?.name || profile?.email || "",
+      };
+      const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toFV(v)]));
+      const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/historial_anexo`,
+        { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || "Error al excluir"); }
+      refreshAnexos();
+    } catch (e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
   };
 
   // Arma la lista final para la bitácora en PDF: cada sesión real se
@@ -169,14 +204,16 @@ export default function HistorialAnexo() {
   const buildBitacoraEntries = () => {
     const bySource = {};
     anexos.forEach(a => { if (a.sourceSessionId) bySource[a.sourceSessionId] = a; });
-    const fromSessions = patientSessions.map(s => {
-      const a = bySource[s.id];
-      if (a) {
-        return { id: `anexo_${a.id}`, date: a.date, cycle: a.cycle, schemeName: s.schemeName, events: s.events, meds: a.meds, globalNote: a.note || "" };
-      }
-      return { id: s.id, date: s.date, cycle: s.cycle, schemeName: s.schemeName, events: s.events, meds: s.meds, globalNote: s.globalNote, signatures: s.signatures };
-    });
-    const standaloneAnexos = anexos.filter(a => !a.sourceSessionId).map(a => ({
+    const fromSessions = patientSessions
+      .filter(s => !bySource[s.id]?.eliminada)
+      .map(s => {
+        const a = bySource[s.id];
+        if (a) {
+          return { id: `anexo_${a.id}`, date: a.date, cycle: a.cycle, schemeName: s.schemeName, events: s.events, meds: a.meds, globalNote: a.note || "" };
+        }
+        return { id: s.id, date: s.date, cycle: s.cycle, schemeName: s.schemeName, events: s.events, meds: s.meds, globalNote: s.globalNote, signatures: s.signatures };
+      });
+    const standaloneAnexos = anexos.filter(a => !a.sourceSessionId && !a.eliminada).map(a => ({
       id: `anexo_${a.id}`, date: a.date, cycle: a.cycle, meds: a.meds, globalNote: a.note || "",
     }));
     return [...fromSessions, ...standaloneAnexos];
@@ -247,17 +284,29 @@ export default function HistorialAnexo() {
           <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Sesiones reales — solo consulta</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
             {patientSessions.length === 0 && <div style={{ color: "#555", fontSize: 13 }}>Sin sesiones registradas para este paciente.</div>}
-            {patientSessions.map(s => (
-              <div key={s.id} style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <div>
-                  <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 600 }}>{s.date} · {s.cycle}</div>
-                  <div style={{ fontSize: 11.5, color: "#777", marginTop: 2 }}>{(s.meds || []).map(m => m.name).filter(Boolean).join(", ") || "—"}</div>
+            {patientSessions.map(s => {
+              const linkedAnexo = anexos.find(a => a.sourceSessionId === s.id);
+              return (
+                <div key={s.id} style={{ padding: "10px 14px", borderRadius: 10, background: linkedAnexo?.eliminada ? "rgba(255,107,107,0.04)" : "rgba(255,255,255,0.02)", border: `1px solid ${linkedAnexo?.eliminada ? "rgba(255,107,107,0.2)" : "rgba(255,255,255,0.06)"}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 600, textDecoration: linkedAnexo?.eliminada ? "line-through" : "none" }}>{s.date} · {s.cycle}</div>
+                    <div style={{ fontSize: 11.5, color: "#777", marginTop: 2 }}>{(s.meds || []).map(m => m.name).filter(Boolean).join(", ") || "—"}</div>
+                    {linkedAnexo?.eliminada && <div style={{ fontSize: 10.5, color: "#ff6b6b", marginTop: 4 }}>🗑 Excluida de la bitácora</div>}
+                    {linkedAnexo && !linkedAnexo.eliminada && <div style={{ fontSize: 10.5, color: "#4fc3f7", marginTop: 4 }}>📎 Ya tiene una corrección anexada</div>}
+                  </div>
+                  {!linkedAnexo && (
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => openNewFromSession(s)} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 600, cursor: "pointer", background: "rgba(79,195,247,0.1)", border: "1px solid rgba(79,195,247,0.3)", color: "#4fc3f7" }}>
+                        📎 Anexar corrección
+                      </button>
+                      <button onClick={() => excludeSession(s)} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 600, cursor: "pointer", background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff6b6b" }}>
+                        🗑 Excluir de bitácora
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <button onClick={() => openNewFromSession(s)} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11.5, fontWeight: 600, cursor: "pointer", background: "rgba(79,195,247,0.1)", border: "1px solid rgba(79,195,247,0.3)", color: "#4fc3f7", flexShrink: 0 }}>
-                  📎 Anexar corrección
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
@@ -275,19 +324,29 @@ export default function HistorialAnexo() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
             {anexos.length === 0 && <div style={{ color: "#555", fontSize: 13 }}>Sin anexos para este paciente todavía.</div>}
             {anexos.map(a => (
-              <div key={a.id} style={{ padding: "12px 14px", borderRadius: 10, background: "rgba(79,195,247,0.04)", border: "1px solid rgba(79,195,247,0.18)" }}>
+              <div key={a.id} style={{ padding: "12px 14px", borderRadius: 10, background: a.eliminada ? "rgba(255,107,107,0.05)" : "rgba(79,195,247,0.04)", border: `1px solid ${a.eliminada ? "rgba(255,107,107,0.2)" : "rgba(79,195,247,0.18)"}` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 600 }}>{a.date} · {a.cycle}</div>
-                    <div style={{ fontSize: 11.5, color: "#777", marginTop: 2 }}>{(a.meds || []).map(m => `${m.name}${m.dose ? " " + m.dose : ""}`).filter(Boolean).join(", ") || "—"}</div>
-                    <div style={{ fontSize: 10.5, color: "#4fc3f7", marginTop: 4 }}>
-                      {a.sourceSessionDate ? `Corrige la sesión del ${a.sourceSessionDate}` : "Ciclo nuevo — no existe en el historial real"}
-                    </div>
-                    {a.note && <div style={{ fontSize: 11.5, color: "#999", marginTop: 4 }}>📋 {a.note}</div>}
+                    {a.eliminada ? (
+                      <div style={{ fontSize: 10.5, color: "#ff6b6b", marginTop: 4 }}>🗑 Excluida de la bitácora — no aparecerá en el PDF</div>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: 11.5, color: "#777", marginTop: 2 }}>{(a.meds || []).map(m => `${m.name}${m.dose ? " " + m.dose : ""}`).filter(Boolean).join(", ") || "—"}</div>
+                        <div style={{ fontSize: 10.5, color: "#4fc3f7", marginTop: 4 }}>
+                          {a.sourceSessionDate ? `Corrige la sesión del ${a.sourceSessionDate}` : "Ciclo nuevo — no existe en el historial real"}
+                        </div>
+                      </>
+                    )}
+                    {a.note && !a.eliminada && <div style={{ fontSize: 11.5, color: "#999", marginTop: 4 }}>📋 {a.note}</div>}
                   </div>
                   <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                    <button onClick={() => openEdit(a)} style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", background: "rgba(255,179,71,0.1)", border: "1px solid rgba(255,179,71,0.25)", color: "#ffb347" }}>✏️ Editar</button>
-                    <button onClick={() => deleteAnexo(a)} style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff6b6b" }}>🗑</button>
+                    {!a.eliminada && (
+                      <button onClick={() => openEdit(a)} style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", background: "rgba(255,179,71,0.1)", border: "1px solid rgba(255,179,71,0.25)", color: "#ffb347" }}>✏️ Editar</button>
+                    )}
+                    <button onClick={() => deleteAnexo(a)} style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff6b6b" }}>
+                      {a.eliminada ? "↺ Quitar exclusión" : "🗑"}
+                    </button>
                   </div>
                 </div>
               </div>
