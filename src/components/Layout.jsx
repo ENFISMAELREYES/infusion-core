@@ -55,8 +55,9 @@ export default function Layout() {
     ? [...NAV.visualizador, { to:"/fichas-tecnicas", icon:"📋", label:"Fichas técnicas" }]
     : (NAV[role] || []);
   // Historial anexo: herramienta puntual para trámites de seguro de gastos
-  // médicos, sin importar el rol -- se activa por cuenta (ver firestore.rules).
-  if (profile?.puedeEditarTratamientos) {
+  // médicos -- el jefe siempre la ve; en cualquier otro rol se activa por
+  // cuenta vía profile.puedeEditarTratamientos (ver firestore.rules).
+  if (role === "jefe" || profile?.puedeEditarTratamientos) {
     nav = [...nav, { to:"/historial-anexo", icon:"📎", label:"Historial anexo" }];
   }
 
