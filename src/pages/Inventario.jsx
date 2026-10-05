@@ -209,8 +209,16 @@ export default function Inventario() {
   // Catálogo maestro + extras dados de alta desde Insumos o desde aquí --
   // usar SIEMPRE este en vez de MASTER_CATALOG a secas en esta página.
   const effectiveCatalog = [...MASTER_CATALOG, ...extraCatalog];
+  const isMedItem = (itemName) => MED_CATEGORIES.includes(effectiveCatalog.find(c => c.item === itemName)?.category);
 
-  const warehouseInventory = inventory.filter(i => i.warehouse === warehouse);
+  // Insumos y medicamentos viven en el mismo almacén de centro (CITIO, CIPI
+  // PRO/PED) -- este filtro es solo de vista, para poder trabajar uno sin
+  // que el otro estorbe. No aplica a Qual (ahí solo hay medicamento).
+  const [catFilter, setCatFilter] = useState(""); // "" | "insumos" | "medicamentos"
+  const catFilterActive = catFilter && !warehouse.startsWith("QUAL");
+
+  const warehouseInventory = inventory.filter(i => i.warehouse === warehouse
+    && (!catFilterActive || (catFilter === "medicamentos" ? isMedItem(i.item) : !isMedItem(i.item))));
   const filteredInventory = search.trim()
     ? warehouseInventory.filter(i => i.item.toUpperCase().includes(search.toUpperCase()))
     : warehouseInventory;
@@ -984,6 +992,18 @@ export default function Inventario() {
 
       {tab === "existencias" && (
         <div>
+          {!warehouse.startsWith("QUAL") && (
+            <div style={{ display:"flex", gap:6, marginBottom:12 }}>
+              {[["", "Todos"], ["insumos", "🧰 Insumos"], ["medicamentos", "💊 Medicamentos"]].map(([val, label]) => (
+                <button key={val} onClick={() => setCatFilter(val)} style={{
+                  padding:"6px 12px", borderRadius:99, fontSize:11.5, fontWeight:600, cursor:"pointer",
+                  background: catFilter === val ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.03)",
+                  border: `1px solid ${catFilter === val ? "rgba(0,212,170,0.3)" : "rgba(255,255,255,0.08)"}`,
+                  color: catFilter === val ? "#00d4aa" : "#888",
+                }}>{label}</button>
+              ))}
+            </div>
+          )}
           <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
             <input placeholder="Buscar artículo..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, flex:1, minWidth:200 }} />
             <button onClick={() => { setShowMoveModal("entrada"); setMoveList([]); setXmlReview(null); setXmlReceptor(""); setInvoiceFolio(""); setNewItemDraft(null); setLinkedPO(null); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
@@ -1073,13 +1093,28 @@ export default function Inventario() {
         </div>
       )}
 
-      {tab === "movimientos" && (
+      {tab === "movimientos" && (() => {
+        const warehouseEvents = events.filter(e => e.warehouse === warehouse
+          && (!catFilterActive || (Array.isArray(e.items) ? e.items : []).some(it => catFilter === "medicamentos" ? isMedItem(it.item) : !isMedItem(it.item))));
+        return (
         <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-          {events.filter(e => e.warehouse === warehouse).length === 0 ? (
+          {!warehouse.startsWith("QUAL") && (
+            <div style={{ display:"flex", gap:6, marginBottom:4 }}>
+              {[["", "Todos"], ["insumos", "🧰 Insumos"], ["medicamentos", "💊 Medicamentos"]].map(([val, label]) => (
+                <button key={val} onClick={() => setCatFilter(val)} style={{
+                  padding:"6px 12px", borderRadius:99, fontSize:11.5, fontWeight:600, cursor:"pointer",
+                  background: catFilter === val ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.03)",
+                  border: `1px solid ${catFilter === val ? "rgba(0,212,170,0.3)" : "rgba(255,255,255,0.08)"}`,
+                  color: catFilter === val ? "#00d4aa" : "#888",
+                }}>{label}</button>
+              ))}
+            </div>
+          )}
+          {warehouseEvents.length === 0 ? (
             <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
               Sin movimientos registrados todavía en este almacén.
             </div>
-          ) : events.filter(e => e.warehouse === warehouse).map(ev => {
+          ) : warehouseEvents.map(ev => {
             const isOpen = expandedEvent === ev.id;
             const evItems = Array.isArray(ev.items) ? ev.items : [];
             const itemCount = evItems.length;
@@ -1125,7 +1160,8 @@ export default function Inventario() {
             );
           })}
         </div>
-      )}
+        );
+      })()}
 
       {tab === "compras" && (
         <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
