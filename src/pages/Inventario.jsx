@@ -1273,18 +1273,17 @@ export default function Inventario() {
           byItem[i.item][i.warehouse] = i.currentStock;
         });
         const allRows = Object.values(byItem).sort((a,b) => a.item.localeCompare(b.item));
-        // Cloruro, glucosa y Hartmann están catalogados como "Medicamentos"
-        // en el catálogo, pero funcionalmente son soluciones -- van con
-        // material e insumos, igual que en el resto de la app (PDF, consolidado).
-        const isSolution = (name) => /CLORURO DE SODIO|GLUCOSA|HARTMANN/i.test(name);
         // La categoría GUARDADA en el documento de inventario puede haber
         // quedado desactualizada (si el catálogo cambió después); se
         // reconsulta el catálogo actual por nombre para clasificar bien.
+        // Cloruro de sodio, glucosa 5%, Hartmann y agua estéril ya están
+        // catalogados como "Soluciones" (no "Medicamentos") -- se compran al
+        // mayoreo como insumo, no por paciente vía Qual (ver materialCatalog.js).
         const catalogByNameGeneral = {};
         effectiveCatalog.forEach(c => { catalogByNameGeneral[c.item.toUpperCase()] = c.category; });
         const currentCategory = (r) => catalogByNameGeneral[r.item.toUpperCase()] || r.category;
-        const materialRows = allRows.filter(r => !MED_CATEGORIES.includes(currentCategory(r)) || isSolution(r.item));
-        const medRows = allRows.filter(r => MED_CATEGORIES.includes(currentCategory(r)) && !isSolution(r.item));
+        const materialRows = allRows.filter(r => !MED_CATEGORIES.includes(currentCategory(r)));
+        const medRows = allRows.filter(r => MED_CATEGORIES.includes(currentCategory(r)));
 
         const Section = ({ title, rows }) => (
           <div style={{ marginBottom:24 }}>
@@ -1445,7 +1444,7 @@ export default function Inventario() {
                             placeholder="Nombre del producto" style={{ ...inputStyle, fontSize:12 }} />
                           <div style={{ display:"flex", gap:6 }}>
                             <select value={newItemDraft.categoria} onChange={e => setNewItemDraft(d => ({ ...d, categoria: e.target.value }))} style={{ ...inputStyle, fontSize:12, flex:1 }}>
-                              <option>Insumos</option><option>Medicamentos</option><option>Oncológicos</option><option>Inmunoterapia</option>
+                              <option>Insumos</option><option>Soluciones</option><option>Medicamentos</option><option>Oncológicos</option><option>Inmunoterapia</option>
                             </select>
                             <input value={newItemDraft.unidad} onChange={e => setNewItemDraft(d => ({ ...d, unidad: e.target.value }))}
                               placeholder="Unidad" style={{ ...inputStyle, fontSize:12, width:80 }} />

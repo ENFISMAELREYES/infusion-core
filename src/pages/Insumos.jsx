@@ -1390,7 +1390,7 @@ export default function Insumos() {
                 <div style={{ marginBottom:10 }}>
                   <div style={{ display:"flex", gap:8 }}>
                     <select value={newCatCategory} onChange={e => setNewCatCategory(e.target.value)} style={{ ...inputStyle, flex:"0 0 160px" }}>
-                      <option>Insumos</option><option>Medicamentos</option><option>Oncológicos</option><option>Inmunoterapia</option>
+                      <option>Insumos</option><option>Soluciones</option><option>Medicamentos</option><option>Oncológicos</option><option>Inmunoterapia</option>
                     </select>
                     <input value={newCatItem} onChange={e => setNewCatItem(e.target.value)} placeholder="Nombre del artículo..." style={inputStyle} />
                     <button onClick={addCatalogItem} disabled={savingCat || !!exact} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, fontWeight:600, cursor: exact ? "not-allowed" : "pointer", background: exact ? "rgba(255,255,255,0.03)" : "rgba(0,212,170,0.12)", border: `1px solid ${exact ? "rgba(255,255,255,0.06)" : "rgba(0,212,170,0.3)"}`, color: exact ? "#555" : "#00d4aa", whiteSpace:"nowrap" }}>
@@ -1616,7 +1616,7 @@ export default function Insumos() {
             <div style={{ display:"flex", gap:8, marginBottom:10 }}>
               <input value={catalogSearch} onChange={e => setCatalogSearch(e.target.value)} placeholder="Buscar artículo..." style={inputStyle} />
               <select value={catalogCategoryFilter} onChange={e => setCatalogCategoryFilter(e.target.value)} style={{ ...inputStyle, flex:"0 0 160px" }}>
-                <option>Todos</option><option>Insumos</option><option>Medicamentos</option><option>Oncológicos</option><option>Inmunoterapia</option>
+                <option>Todos</option><option>Insumos</option><option>Soluciones</option><option>Medicamentos</option><option>Oncológicos</option><option>Inmunoterapia</option>
               </select>
             </div>
             {(() => {
@@ -1627,7 +1627,7 @@ export default function Insumos() {
                 .filter(c => !term || c.item.toUpperCase().includes(term));
               const grouped = {};
               filteredAll.forEach(c => { (grouped[c.category] = grouped[c.category] || []).push(c); });
-              const categoryOrder = ["Insumos", "Medicamentos", "Oncológicos", "Inmunoterapia"];
+              const categoryOrder = ["Insumos", "Soluciones", "Medicamentos", "Oncológicos", "Inmunoterapia"];
               const categories = categoryOrder.filter(cat => grouped[cat]);
               return (
                 <div style={{ display:"flex", flexDirection:"column", gap:12 }}>

@@ -1488,7 +1488,7 @@ export const MASTER_CATALOG = [
     "unit": "FRASCO"
   },
   {
-    "category": "Medicamentos",
+    "category": "Soluciones",
     "item": "AGUA ESTERIL 10 ML",
     "unit": "AMPOLLETA"
   },
@@ -1523,27 +1523,27 @@ export const MASTER_CATALOG = [
     "unit": "AMPOLLETA"
   },
   {
-    "category": "Medicamentos",
+    "category": "Soluciones",
     "item": "CLORURO DE SODIO 0.9% 100 ML",
     "unit": "FRASCO"
   },
   {
-    "category": "Medicamentos",
+    "category": "Soluciones",
     "item": "CLORURO DE SODIO 0.9% 1000 ML",
     "unit": "FRASCO"
   },
   {
-    "category": "Medicamentos",
+    "category": "Soluciones",
     "item": "CLORURO DE SODIO 0.9% 250 ML",
     "unit": "FRASCO"
   },
   {
-    "category": "Medicamentos",
+    "category": "Soluciones",
     "item": "CLORURO DE SODIO 0.9% 50 ML",
     "unit": "FRASCO"
   },
   {
-    "category": "Medicamentos",
+    "category": "Soluciones",
     "item": "CLORURO DE SODIO 0.9% 500 ML",
     "unit": "FRASCO"
   },
@@ -1603,17 +1603,17 @@ export const MASTER_CATALOG = [
     "unit": "AMPOLLETA"
   },
   {
-    "category": "Medicamentos",
+    "category": "Soluciones",
     "item": "GLUCOSA 5% 100 ML",
     "unit": "FRASCO"
   },
   {
-    "category": "Medicamentos",
+    "category": "Soluciones",
     "item": "GLUCOSA 5% 250 ML",
     "unit": "FRASCO"
   },
   {
-    "category": "Medicamentos",
+    "category": "Soluciones",
     "item": "GLUCOSA 5% 500 ML",
     "unit": "FRASCO"
   },
@@ -1703,12 +1703,12 @@ export const MASTER_CATALOG = [
     "unit": "CAJA"
   },
   {
-    "category": "Medicamentos",
+    "category": "Soluciones",
     "item": "HARTMANN 1000 ML",
     "unit": "FRASCO"
   },
   {
-    "category": "Medicamentos",
+    "category": "Soluciones",
     "item": "HARTMANN 500 ML",
     "unit": "FRASCO"
   },
