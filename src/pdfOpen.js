@@ -12,7 +12,9 @@
 // atrás. Ahora se abre un visor dentro de la misma app (modal con iframe)
 // con botones aparte para Imprimir y Descargar -- nada se guarda solo, y
 // "Imprimir" no depende de que el WebView sepa abrir pestañas nuevas.
-export function openPdfBlob(blob, filename) {
+// allowDownload:false quita el botón de Descargar -- solo consulta/imprime
+// (ej. Manuales y guías, para que un manual del centro no se pueda bajar).
+export function openPdfBlob(blob, filename, { allowDownload = true } = {}) {
   const url = URL.createObjectURL(blob);
   let closed = false;
 
@@ -54,21 +56,22 @@ export function openPdfBlob(blob, filename) {
     }
   };
 
-  const downloadBtn = mkBtn("⬇️ Descargar", "rgba(255,255,255,0.06)", "rgba(255,255,255,0.15)", "#ccc");
-  downloadBtn.onclick = () => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename || "documento.pdf";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
   const closeBtn = mkBtn("✕ Cerrar", "rgba(255,255,255,0.06)", "rgba(255,255,255,0.15)", "#999");
   closeBtn.onclick = close;
 
   bar.appendChild(printBtn);
-  bar.appendChild(downloadBtn);
+  if (allowDownload) {
+    const downloadBtn = mkBtn("⬇️ Descargar", "rgba(255,255,255,0.06)", "rgba(255,255,255,0.15)", "#ccc");
+    downloadBtn.onclick = () => {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename || "documento.pdf";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+    bar.appendChild(downloadBtn);
+  }
   bar.appendChild(closeBtn);
   overlay.appendChild(bar);
   overlay.appendChild(iframe);

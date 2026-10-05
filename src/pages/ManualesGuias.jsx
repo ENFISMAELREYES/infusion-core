@@ -7,6 +7,46 @@ import { openPdfBlob } from "../pdfOpen";
 
 const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents`;
 
+// Son manuales del centro: cualquier copia fuera de la app queda marcada
+// como no controlada (mismo criterio que una leyenda de "copia no
+// controlada" en un sistema de calidad) -- se estampa en el PDF mismo, así
+// que viaja con el archivo sin importar cómo se imprima/capture/comparta.
+const WATERMARK_TEXT = "COPIA NO CONTROLADA — SOLO CONSULTA DENTRO DE INFUSIONCORE";
+
+// pdf-lib pesa bastante (~180 KB) y solo lo usa el jefe al subir un
+// manual -- se carga bajo demanda en vez de ir en el paquete principal
+// que descarga todo el personal cada vez que abre la app.
+async function watermarkPdf(file) {
+  const { PDFDocument, rgb, degrees, StandardFonts } = await import("pdf-lib");
+  const bytes = await file.arrayBuffer();
+  const pdfDoc = await PDFDocument.load(bytes);
+  const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  pdfDoc.getPages().forEach(page => {
+    const { width, height } = page.getSize();
+    const size = 20;
+    const textWidth = font.widthOfTextAtSize(WATERMARK_TEXT, size);
+    page.drawText(WATERMARK_TEXT, {
+      x: width / 2 - textWidth / 2,
+      y: height / 2,
+      size,
+      font,
+      color: rgb(0.8, 0.1, 0.1),
+      opacity: 0.16,
+      rotate: degrees(45),
+    });
+    page.drawText(WATERMARK_TEXT, {
+      x: 20,
+      y: 16,
+      size: 7,
+      font,
+      color: rgb(0.4, 0.4, 0.4),
+      opacity: 0.6,
+    });
+  });
+  const watermarkedBytes = await pdfDoc.save();
+  return new Blob([watermarkedBytes], { type: "application/pdf" });
+}
+
 function parseDoc(doc) {
   const parse = (v) => {
     if (!v) return null;
@@ -175,7 +215,8 @@ function UploadPdfModal({ onClose, onSaved }) {
         .normalize("NFD").replace(/[̀-ͯ]/g, "")
         .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")
         .slice(0, 80) + "-" + Date.now();
-      const archivoUrl = await uploadManualFile(idInterno, file);
+      const watermarked = await watermarkPdf(file);
+      const archivoUrl = await uploadManualFile(idInterno, watermarked);
       const token = await user.getIdToken(true);
       const data = {
         id_interno: idInterno,
@@ -206,7 +247,7 @@ function UploadPdfModal({ onClose, onSaved }) {
       <div onClick={e => e.stopPropagation()} style={{ background: "#161616", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: 20, width: "100%", maxWidth: 480, maxHeight: "88vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 600, color: "#f0f0f0" }}>📄 Subir manual / guía en PDF</div>
-          <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>El personal lo va a poder ver e imprimir directo dentro de la app.</div>
+          <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>El personal solo puede ver/imprimir, no descargar. Se marca automáticamente como "copia no controlada" en el PDF.</div>
         </div>
 
         <div>
@@ -280,7 +321,7 @@ export default function ManualesGuias() {
       const res = await fetch(it.archivo_url);
       if (!res.ok) throw new Error("No se pudo descargar el archivo.");
       const blob = await res.blob();
-      openPdfBlob(blob, (it.archivo_nombre || `${it.titulo}.pdf`));
+      openPdfBlob(blob, (it.archivo_nombre || `${it.titulo}.pdf`), { allowDownload: false });
     } catch (e) {
       alert("Error al abrir el PDF: " + e.message);
     } finally {
