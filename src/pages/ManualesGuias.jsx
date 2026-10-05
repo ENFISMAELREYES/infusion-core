@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { PROJECT_ID, DATABASE_ID } from "../config";
 import { Block } from "../components/ContentBlocks";
+import { uploadManualFile } from "../firebase";
+import { openPdfBlob } from "../pdfOpen";
 
 const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents`;
 
@@ -141,6 +143,120 @@ function ImportModal({ token, onClose, onImported }) {
   );
 }
 
+const CATEGORIAS_SUGERIDAS = ["Equipo médico", "Procedimiento", "Protocolo de emergencia", "Guía rápida", "Otro"];
+
+function UploadPdfModal({ onClose, onSaved }) {
+  const { user } = useAuth();
+  const [titulo, setTitulo] = useState("");
+  const [categoria, setCategoria] = useState("");
+  const [tipo, setTipo] = useState("manual");
+  const [resumen, setResumen] = useState("");
+  const [file, setFile] = useState(null);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const onFileSelected = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    if (f.type !== "application/pdf") { setError("Solo se aceptan archivos PDF."); return; }
+    setError("");
+    setFile(f);
+  };
+
+  const save = async () => {
+    if (!titulo.trim()) { setError("Falta el título."); return; }
+    if (!file) { setError("Falta elegir el archivo PDF."); return; }
+    setError("");
+    setSaving(true);
+    try {
+      const idInterno = titulo.trim().toLowerCase()
+        .normalize("NFD").replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")
+        .slice(0, 80) + "-" + Date.now();
+      const archivoUrl = await uploadManualFile(idInterno, file);
+      const token = await user.getIdToken(true);
+      const data = {
+        id_interno: idInterno,
+        titulo: titulo.trim(),
+        categoria: categoria.trim(),
+        tipo,
+        resumen: resumen.trim(),
+        archivo_url: archivoUrl,
+        archivo_nombre: file.name,
+        updatedAt: new Date().toISOString(),
+      };
+      const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toFV(v)]));
+      const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${k}`).join("&");
+      const res = await fetch(`${FIRESTORE_BASE_URL}/manuales_guias/${idInterno}?${mask}`,
+        { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify({ fields }) });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${res.status}`); }
+      onSaved();
+      onClose();
+    } catch (e) {
+      setError("Error al guardar: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div onClick={() => !saving && onClose()} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#161616", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: 20, width: "100%", maxWidth: 480, maxHeight: "88vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "#f0f0f0" }}>📄 Subir manual / guía en PDF</div>
+          <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>El personal lo va a poder ver e imprimir directo dentro de la app.</div>
+        </div>
+
+        <div>
+          <label style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 4 }}>Título</label>
+          <input value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="ej: Manual de uso — Desfibrilador Philips HeartStart" style={inputStyle} />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 4 }}>Categoría</label>
+            <input value={categoria} onChange={e => setCategoria(e.target.value)} placeholder="ej: Equipo médico" list="categorias-sugeridas" style={inputStyle} />
+            <datalist id="categorias-sugeridas">
+              {CATEGORIAS_SUGERIDAS.map(c => <option key={c} value={c} />)}
+            </datalist>
+          </div>
+          <div>
+            <label style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 4 }}>Tipo</label>
+            <select value={tipo} onChange={e => setTipo(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+              <option value="manual">📘 Manual completo</option>
+              <option value="guia_rapida">⚡ Guía rápida</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 4 }}>Resumen (opcional)</label>
+          <textarea value={resumen} onChange={e => setResumen(e.target.value)} rows={2} placeholder="Una línea de qué trata, se ve en la lista antes de abrirlo" style={{ ...inputStyle, resize: "vertical" }} />
+        </div>
+
+        <div>
+          <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" onChange={onFileSelected} style={{ display: "none" }} />
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={saving}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: saving ? "wait" : "pointer", background: "rgba(79,195,247,0.08)", border: "1px solid rgba(79,195,247,0.25)", color: "#4fc3f7" }}>
+            {file ? `📄 ${file.name}` : "📎 Elegir archivo PDF"}
+          </button>
+        </div>
+
+        {error && <div style={{ fontSize: 12, color: "#ff6b6b", padding: "8px 10px", background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.25)", borderRadius: 8, whiteSpace: "pre-line" }}>{error}</div>}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} disabled={saving} style={{ flex: 1, padding: "10px", borderRadius: 9, fontSize: 13, cursor: saving ? "wait" : "pointer", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", color: "#888" }}>Cancelar</button>
+          <button onClick={save} disabled={saving} style={{ flex: 2, padding: "10px", borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: saving ? "wait" : "pointer", background: "linear-gradient(135deg,#00d4aa,#0F6E56)", border: "none", color: "#fff", opacity: saving ? 0.6 : 1 }}>
+            {saving ? "Subiendo…" : "✓ Guardar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ManualesGuias() {
   const { user, profile } = useAuth();
   const isJefe = profile?.role === "jefe";
@@ -154,7 +270,23 @@ export default function ManualesGuias() {
   const [categoriaFilter, setCategoriaFilter] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [showImport, setShowImport] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  const [openingPdf, setOpeningPdf] = useState(null);
+
+  const viewPdf = async (it) => {
+    setOpeningPdf(it.id);
+    try {
+      const res = await fetch(it.archivo_url);
+      if (!res.ok) throw new Error("No se pudo descargar el archivo.");
+      const blob = await res.blob();
+      openPdfBlob(blob, (it.archivo_nombre || `${it.titulo}.pdf`));
+    } catch (e) {
+      alert("Error al abrir el PDF: " + e.message);
+    } finally {
+      setOpeningPdf(null);
+    }
+  };
 
   const load = async (t) => {
     setLoading(true);
@@ -208,9 +340,14 @@ export default function ManualesGuias() {
           <p style={{ fontSize: 13, color: "#555" }}>Procedimientos, manuales de equipo y guías rápidas de referencia -- consulta libre para todo el personal.</p>
         </div>
         {isJefe && (
-          <button onClick={() => setShowImport(true)} style={{ padding: "9px 16px", borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: "pointer", background: "rgba(0,212,170,0.12)", border: "1px solid rgba(0,212,170,0.3)", color: "#00d4aa", whiteSpace: "nowrap" }}>
-            ＋ Importar
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => setShowUpload(true)} style={{ padding: "9px 16px", borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: "pointer", background: "rgba(0,212,170,0.12)", border: "1px solid rgba(0,212,170,0.3)", color: "#00d4aa", whiteSpace: "nowrap" }}>
+              ＋ Subir PDF
+            </button>
+            <button onClick={() => setShowImport(true)} style={{ padding: "9px 16px", borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: "pointer", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", color: "#888", whiteSpace: "nowrap" }}>
+              ＋ Importar JSON
+            </button>
+          </div>
         )}
       </div>
 
@@ -251,6 +388,7 @@ export default function ManualesGuias() {
                   <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 99, background: it.tipo === "manual" ? "rgba(79,195,247,0.1)" : "rgba(255,179,71,0.1)", color: it.tipo === "manual" ? "#4fc3f7" : "#ffb347" }}>
                     {TIPO_LABEL[it.tipo] || it.tipo}
                   </span>
+                  {it.archivo_url && <span style={{ fontSize: 13 }}>📄</span>}
                   {it.categoria && <span style={{ fontSize: 11, color: "#666" }}>{it.categoria}</span>}
                   <span style={{ color: "#555" }}>{isOpen ? "▲" : "▼"}</span>
                 </div>
@@ -260,6 +398,11 @@ export default function ManualesGuias() {
                 {isOpen && (
                   <div style={{ padding: "0 16px 16px" }}>
                     {it.resumen && <p style={{ fontSize: 12.5, color: "#999", fontStyle: "italic", marginBottom: 10 }}>{it.resumen}</p>}
+                    {it.archivo_url && (
+                      <button onClick={() => viewPdf(it)} disabled={openingPdf === it.id} style={{ padding: "9px 16px", borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: openingPdf === it.id ? "wait" : "pointer", background: "rgba(79,195,247,0.1)", border: "1px solid rgba(79,195,247,0.3)", color: "#4fc3f7", marginBottom: 10 }}>
+                        {openingPdf === it.id ? "Abriendo…" : "🖨️ Ver / Imprimir PDF"}
+                      </button>
+                    )}
                     {(it.bloques || []).map((b, i) => <Block key={i} block={b} />)}
                     {isJefe && (
                       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
@@ -281,6 +424,13 @@ export default function ManualesGuias() {
           token={token}
           onClose={() => setShowImport(false)}
           onImported={() => load()}
+        />
+      )}
+
+      {showUpload && (
+        <UploadPdfModal
+          onClose={() => setShowUpload(false)}
+          onSaved={() => load()}
         />
       )}
     </div>

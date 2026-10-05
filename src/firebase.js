@@ -1,6 +1,6 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getMessaging, getToken } from "firebase/messaging";
-import { getStorage, ref, uploadString, getDownloadURL } from "firebase/storage";
+import { getStorage, ref, uploadString, uploadBytes, getDownloadURL } from "firebase/storage";
 import { FIREBASE_CONFIG, VAPID_KEY as VAPID_KEY_CFG, PROJECT_ID, DATABASE_ID } from "./config";
 
 const firebaseConfig = FIREBASE_CONFIG;
@@ -36,6 +36,16 @@ export async function uploadUserSignature(uid, dataUrl) {
   const path = `signatures/users/${uid}/${Date.now()}.png`;
   const storageRef = ref(storage, path);
   await uploadString(storageRef, dataUrl, "data_url");
+  return await getDownloadURL(storageRef);
+}
+
+// Sube el PDF de un manual/guía (Manuales y guías) y devuelve su URL pública.
+// El nombre de archivo incluye timestamp para no chocar con una versión
+// anterior del mismo manual si se reemplaza.
+export async function uploadManualFile(idInterno, file) {
+  const path = `manuales/${idInterno}_${Date.now()}.pdf`;
+  const storageRef = ref(storage, path);
+  await uploadBytes(storageRef, file);
   return await getDownloadURL(storageRef);
 }
 

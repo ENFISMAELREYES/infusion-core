@@ -15,5 +15,13 @@ service firebase.storage {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == uid;
     }
+    // Manuales y guías: PDF de manuales/protocolos subidos por el jefe.
+    // El permiso real de quién puede subir ya lo cubre Firestore
+    // (manuales_guias solo lo escribe el jefe) y la UI; aquí se sigue el
+    // mismo criterio ya usado en signatures/{sessionId} -- cualquier
+    // autenticado puede leer, igual que firma de sesión.
+    match /manuales/{fileName} {
+      allow read, write: if request.auth != null;
+    }
   }
 }
