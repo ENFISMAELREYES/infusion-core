@@ -376,58 +376,104 @@ export default function Inventario() {
         fullText += content.items.map(item => item.str).join(" ") + " ";
       }
 
-      const folioMatch = fullText.match(/FOLIO:\s*(\S+)/i);
-      const folio = folioMatch ? folioMatch[1] : "";
-
-      const MESES = "ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic";
-      const MES_NUM = { ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,oct:10,nov:11,dic:12 };
-      // Antes esto se descartaba (el lote y la caducidad SÍ vienen en la
-      // cotización de QualMedical, ej. "M2510429 nov-27") -- ahora se
-      // extraen para precargarlos en vez de tirarlos; "caducidad" queda
-      // como el último día de ese mes, ya que el PDF solo trae mes-año.
-      const extractLoteCaducidad = (desc) => {
-        const m = desc.match(new RegExp(`\\s+(\\S+)\\s+(${MESES})-(\\d{2})\\s*$`, "i"));
-        if (!m) return { lote: "", caducidad: "", rest: desc };
-        const mesNum = MES_NUM[m[2].toLowerCase()];
-        const anio = 2000 + parseInt(m[3]);
-        const lastDay = new Date(anio, mesNum, 0).getDate();
-        const caducidad = `${anio}-${String(mesNum).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`;
-        return { lote: m[1], caducidad, rest: desc.slice(0, m.index) + desc.slice(m.index + m[0].length) };
-      };
-      const cleanDescription = (desc) => {
-        let d = desc;
-        // Encabezados de columna y de sección que pueden quedar pegados
-        // antes de la descripción real (ej. "INSUMOS CLORURO DE SODIO...").
-        d = d.replace(/\b(DESCRIPCION|UNIDAD|LOTE|CAD\.?|CANT\.?|PRECIO\s+UNITARIO|IVA|PRECIO|INSUMOS|MEDICAMENTOS|SOLUCIONES)\b/gi, " ");
-        d = d.replace(/\s+-\s*$/, "");
-        d = d.replace(/^[\s.]+/, ""); // puntos/espacios sueltos al inicio, residuo de encabezados removidos
-        return d.replace(/\s+/g, " ").trim();
-      };
-
-      // Ancla: cantidad seguida de 3 importes con $ (unitario, IVA, precio).
-      const anchorRegex = /(\d+)\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})/g;
+      // Dos formatos de PDF de QualMedical, con columnas distintas:
+      // - "Transferencia entre almacenes" (TR-xxx): es el que de verdad
+      //   llega a Qual·CITIO -- trae MARCA, LOTE y CADUCIDAD (fecha
+      //   completa DD/MM/AAAA) en columnas limpias, sin precios.
+      // - "Cotización" (COT-QUAL-xxx): la venta oficial que Qual regresa
+      //   después -- trae LOTE y CAD. (mes-año nomás) pero no marca en
+      //   columna aparte, con precios por renglón.
+      const isTransferencia = /TRANSFERENCIA\s+ENTRE\s+ALMACENES/i.test(fullText);
+      let folio = "";
       const review = [];
-      let lastEnd = 0;
-      let m;
-      while ((m = anchorRegex.exec(fullText)) !== null) {
-        const rawSlice = fullText.slice(lastEnd, m.index);
-        const { lote, caducidad, rest } = extractLoteCaducidad(rawSlice);
-        const descRaw = cleanDescription(rest);
-        lastEnd = anchorRegex.lastIndex;
-        const cantidad = parseInt(m[1]) || 1;
-        const precioTotal = parseFloat(m[4].replace(/,/g, ""));
-        const valorUnitario = cantidad > 0 ? precioTotal / cantidad : parseFloat(m[2].replace(/,/g, ""));
-        if (!descRaw || /^(SUB\s?TOTAL|IMPUESTOS|TOTAL)$/i.test(descRaw)) continue;
-        review.push({ descripcion: descRaw, cantidad, valorUnitario, matchedItem: suggestCatalogMatch(descRaw), lote, caducidad });
+
+      if (isTransferencia) {
+        const folioMatch = fullText.match(/\bTR-\d+\b/);
+        folio = folioMatch ? folioMatch[0] : "";
+
+        // Se busca desde después del encabezado de la tabla -- si no, la
+        // fecha del documento ("TR-074 02/10/2026 02 de octubre...") que
+        // sale ANTES de la tabla se puede confundir con un renglón real.
+        const headerMatch = fullText.match(/MARCA\s+LOTE\s+CADUCIDAD\s+CANT\.?\s+UNIDAD/i);
+        const searchText = headerMatch ? fullText.slice(headerMatch.index + headerMatch[0].length) : fullText;
+
+        // Ancla: MARCA LOTE DD/MM/AAAA CANT UNIDAD (un solo token cada uno
+        // de marca/lote/unidad -- si la marca real trae espacio, queda
+        // incompleta pero se puede corregir a mano antes de guardar).
+        const anchorRegex = /(\S+)\s+(\S+)\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\d+)\s+(\S+)/g;
+        let lastEnd = 0;
+        let m;
+        while ((m = anchorRegex.exec(searchText)) !== null) {
+          // El renglón 1 a veces arrastra texto de las cajas de ALMACÉN
+          // ORIGEN/DESTINO y de los encabezados DETALLE/NO./DESCRIPCIÓN --
+          // el PDF los coloca fuera de orden visual en el flujo de texto.
+          const descRaw = searchText.slice(lastEnd, m.index)
+            .replace(/\b(ALMAC[ÉE]N\s+(ORIGEN|DESTINO|PRINCIPAL|CITIO|CIPI)|DETALLE\s+DE\s+PRODUCTOS\s+TRANSFERIDOS|NO\.|DESCRIPCI[ÓO]N)(?=\s|$)/gi, " ")
+            .replace(/^\s*\d+\s+/, "").replace(/\s+/g, " ").trim();
+          lastEnd = anchorRegex.lastIndex;
+          if (!descRaw) continue;
+          const [, marca, lote, dd, mm, yyyy, cantStr] = m;
+          const cantidad = parseInt(cantStr) || 1;
+          const caducidad = `${yyyy}-${mm}-${dd}`;
+          review.push({ descripcion: descRaw, cantidad, valorUnitario: undefined, matchedItem: suggestCatalogMatch(descRaw), lote, caducidad, marca });
+        }
+        if (review.length === 0) throw new Error("No se encontraron artículos reconocibles en la transferencia.");
+      } else {
+        const folioMatch = fullText.match(/FOLIO:\s*(\S+)/i);
+        folio = folioMatch ? folioMatch[1] : "";
+
+        const MESES = "ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic";
+        const MES_NUM = { ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,oct:10,nov:11,dic:12 };
+        // El lote y la caducidad SÍ vienen en la cotización de QualMedical
+        // (ej. "M2510429 nov-27") -- se extraen para precargarlos en vez de
+        // tirarlos; "caducidad" queda como el último día de ese mes, ya que
+        // el PDF solo trae mes-año. La marca aquí NO viene en columna
+        // aparte (va mezclada en "UNIDAD", sin anclaje confiable) -- se
+        // deja siempre para captura a mano.
+        const extractLoteCaducidad = (desc) => {
+          const mm = desc.match(new RegExp(`\\s+(\\S+)\\s+(${MESES})-(\\d{2})\\s*$`, "i"));
+          if (!mm) return { lote: "", caducidad: "", rest: desc };
+          const mesNum = MES_NUM[mm[2].toLowerCase()];
+          const anio = 2000 + parseInt(mm[3]);
+          const lastDay = new Date(anio, mesNum, 0).getDate();
+          const caducidad = `${anio}-${String(mesNum).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`;
+          return { lote: mm[1], caducidad, rest: desc.slice(0, mm.index) + desc.slice(mm.index + mm[0].length) };
+        };
+        const cleanDescription = (desc) => {
+          let d = desc;
+          // Encabezados de columna y de sección que pueden quedar pegados
+          // antes de la descripción real (ej. "INSUMOS CLORURO DE SODIO...").
+          d = d.replace(/\b(DESCRIPCION|UNIDAD|LOTE|CAD\.?|CANT\.?|PRECIO\s+UNITARIO|IVA|PRECIO|INSUMOS|MEDICAMENTOS|SOLUCIONES)\b/gi, " ");
+          d = d.replace(/\s+-\s*$/, "");
+          d = d.replace(/^[\s.]+/, ""); // puntos/espacios sueltos al inicio, residuo de encabezados removidos
+          return d.replace(/\s+/g, " ").trim();
+        };
+
+        // Ancla: cantidad seguida de 3 importes con $ (unitario, IVA, precio).
+        const anchorRegex = /(\d+)\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})\s+\$\s?([\d,]+\.\d{2})/g;
+        let lastEnd = 0;
+        let m;
+        while ((m = anchorRegex.exec(fullText)) !== null) {
+          const rawSlice = fullText.slice(lastEnd, m.index);
+          const { lote, caducidad, rest } = extractLoteCaducidad(rawSlice);
+          const descRaw = cleanDescription(rest);
+          lastEnd = anchorRegex.lastIndex;
+          const cantidad = parseInt(m[1]) || 1;
+          const precioTotal = parseFloat(m[4].replace(/,/g, ""));
+          const valorUnitario = cantidad > 0 ? precioTotal / cantidad : parseFloat(m[2].replace(/,/g, ""));
+          if (!descRaw || /^(SUB\s?TOTAL|IMPUESTOS|TOTAL)$/i.test(descRaw)) continue;
+          review.push({ descripcion: descRaw, cantidad, valorUnitario, matchedItem: suggestCatalogMatch(descRaw), lote, caducidad });
+        }
+        if (review.length === 0) throw new Error("No se encontraron artículos reconocibles en el PDF.");
       }
-      if (review.length === 0) throw new Error("No se encontraron artículos reconocibles en el PDF.");
+
       setXmlReview(review);
 
       if (folio) {
         setInvoiceFolio(folio);
         const yaCargada = events.some(ev => ev.invoiceFolio && ev.invoiceFolio.toUpperCase() === folio.toUpperCase());
         if (yaCargada) {
-          alert(`⚠️ Esta cotización (folio ${folio}) ya se había cargado antes. Revisa en "Movimientos" antes de continuar para no duplicarla.`);
+          alert(`⚠️ Este documento (folio ${folio}) ya se había cargado antes. Revisa en "Movimientos" antes de continuar para no duplicarlo.`);
         }
       }
     } catch (e) {
@@ -449,7 +495,7 @@ export default function Inventario() {
           cost: r.valorUnitario || existing?.cost,
           lote: r.lote || existing?.lote,
           caducidad: r.caducidad || existing?.caducidad,
-          marca: existing?.marca,
+          marca: r.marca || existing?.marca,
         });
       });
       return Array.from(map, ([item, v]) => ({ item, qty: v.qty, cost: v.cost, lote: v.lote, caducidad: v.caducidad, marca: v.marca }));
@@ -1527,7 +1573,7 @@ export default function Inventario() {
                   <input type="file" accept=".xml" style={{ display:"none" }} onChange={e => handleXmlFile(e.target.files?.[0])} />
                 </label>
                 <label style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px dashed rgba(255,179,71,0.35)", color:"#ffb347" }}>
-                  📑 Cotización (PDF)
+                  📑 Transferencia/Cotización (PDF)
                   <input type="file" accept=".pdf" style={{ display:"none" }} onChange={e => handlePdfFile(e.target.files?.[0])} />
                 </label>
               </div>
@@ -1550,8 +1596,8 @@ export default function Inventario() {
                   {xmlReview.map((r, i) => (
                     <div key={i} style={{ padding:"8px 10px", borderRadius:8, background: r.matchedItem ? "rgba(255,255,255,0.03)" : "rgba(255,107,107,0.06)", border:`1px solid ${r.matchedItem ? "rgba(255,255,255,0.07)" : "rgba(255,107,107,0.25)"}` }}>
                       <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>Factura: "{r.descripcion}" · cant. {r.cantidad}{r.valorUnitario ? ` · $${r.valorUnitario.toFixed(2)} c/u (con IVA)` : ""}</div>
-                      {(r.lote || r.caducidad) && (
-                        <div style={{ fontSize:10, color:"#00d4aa", marginBottom:4 }}>Detectado en el PDF: {r.lote && `lote ${r.lote}`}{r.lote && r.caducidad && " · "}{r.caducidad && `caduca ${r.caducidad}`} (se puede corregir abajo)</div>
+                      {(r.lote || r.caducidad || r.marca) && (
+                        <div style={{ fontSize:10, color:"#00d4aa", marginBottom:4 }}>Detectado en el PDF: {[r.marca && `marca ${r.marca}`, r.lote && `lote ${r.lote}`, r.caducidad && `caduca ${r.caducidad}`].filter(Boolean).join(" · ")} (se puede corregir abajo)</div>
                       )}
                       <select value={r.matchedItem} onChange={e => {
                           if (e.target.value === "__new__") {
