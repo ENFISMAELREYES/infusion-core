@@ -168,5 +168,13 @@ service cloud.firestore {
     match /historial_anexo/{id} {
       allow read, write: if isAuth() && (userRole() == "jefe" || puedeEditarTratamientos());
     }
+
+    // Manuales y guías: procedimientos, manuales de equipo (ej. desfibrilador)
+    // y guías rápidas de referencia -- lectura de todos los autenticados,
+    // solo el jefe las sube/edita/borra. Mismo criterio que fichas_tecnicas.
+    match /manuales_guias/{id} {
+      allow read: if isAuth();
+      allow write: if isAuth() && userRole() == "jefe";
+    }
   }
 }

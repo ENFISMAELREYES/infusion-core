@@ -17,6 +17,7 @@ const NAV = {
     { to:"/reportes", icon:"📊", label:"Reportes" },
     { to:"/inventario", icon:"📦", label:"Inventario" },
     { to:"/fichas-tecnicas", icon:"📋", label:"Fichas técnicas" },
+    { to:"/manuales-guias", icon:"📘", label:"Manuales y guías" },
     { to:"/auditoria", icon:"🛡️", label:"Auditoría" },
   ],
   enfermera: [
@@ -28,6 +29,7 @@ const NAV = {
     { to:"/insumos", icon:"🧰", label:"Insumos" },
     { to:"/inventario", icon:"📦", label:"Inventario" },
     { to:"/fichas-tecnicas", icon:"📋", label:"Fichas técnicas" },
+    { to:"/manuales-guias", icon:"📘", label:"Manuales y guías" },
     { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
   ],
   visualizador: [
@@ -52,7 +54,9 @@ export default function Layout() {
   // técnicas, a diferencia de contabilidad/admisión que comparten el mismo
   // rol pero no deben verlas (mismo criterio que el ícono de Monitor).
   let nav = (role === "visualizador" && profile?.isMedico)
-    ? [...NAV.visualizador, { to:"/fichas-tecnicas", icon:"📋", label:"Fichas técnicas" }]
+    ? [...NAV.visualizador,
+       { to:"/fichas-tecnicas", icon:"📋", label:"Fichas técnicas" },
+       { to:"/manuales-guias", icon:"📘", label:"Manuales y guías" }]
     : (NAV[role] || []);
   // Historial anexo: herramienta puntual para trámites de seguro de gastos
   // médicos -- el jefe siempre la ve; en cualquier otro rol se activa por
