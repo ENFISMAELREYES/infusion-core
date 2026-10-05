@@ -138,6 +138,12 @@ service cloud.firestore {
       allow read: if isAuth();
       allow write: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera");
     }
+    // Lotes de medicamento (trazabilidad por lote/caducidad/marca, solo
+    // CITIO por ahora) -- mismo criterio que inventory.
+    match /inventory_lots/{id} {
+      allow read: if isAuth();
+      allow write: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera");
+    }
     // Movimientos de inventario, agrupados por evento. Nunca se editan ni se
     // borran una vez creados (una anulación crea un movimiento contrario).
     match /inventory_events/{id} {
