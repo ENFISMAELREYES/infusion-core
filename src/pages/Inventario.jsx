@@ -91,6 +91,12 @@ function inventoryDocId(warehouse, item) {
   return `${warehouse}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
 }
 
+// Mismo criterio que inventoryDocId, pero el lote entra en el ID -- así una
+// segunda entrada del mismo lote suma a lo disponible en vez de duplicar.
+function inventoryLotDocId(warehouse, item, lote) {
+  return `${warehouse}_${item}_${lote}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 300);
+}
+
 function warehouseLabel(key) {
   return [...WAREHOUSES, ...QUAL_WAREHOUSES].find(w => w.key === key)?.label || key;
 }
@@ -140,6 +146,7 @@ export default function Inventario() {
   const [events, setEvents] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [extraCatalog, setExtraCatalog] = useState([]); // artículos dados de alta desde Insumos o desde aquí mismo (settings/materialCatalog)
+  const [inventoryLots, setInventoryLots] = useState([]); // lotes de medicamento (Fase 2 de trazabilidad, solo CITIO por ahora)
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [search, setSearch] = useState("");
@@ -170,16 +177,18 @@ export default function Inventario() {
     try {
       const t = await user.getIdToken(true);
       setToken(t);
-      const [inv, ev, po, extraCat] = await Promise.all([
+      const [inv, ev, po, extraCat, lots] = await Promise.all([
         fetchCollection(t, "inventory"),
         fetchCollection(t, "inventory_events"),
         fetchCollection(t, "purchase_orders"),
         fetchExtraCatalog(t),
+        fetchCollection(t, "inventory_lots"),
       ]);
       setInventory(inv);
       setEvents(ev.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")));
       setPurchaseOrders(po.sort((a, b) => (b.requestedAt || "").localeCompare(a.requestedAt || "")));
       setExtraCatalog(extraCat);
+      setInventoryLots(lots);
     } catch (e) {
       console.error(e);
     } finally {
@@ -236,6 +245,10 @@ export default function Inventario() {
   };
   const removeFromMoveList = (item) => setMoveList(prev => prev.filter(x => x.item !== item));
   const setMoveListQty = (item, qty) => setMoveList(prev => prev.map(x => x.item === item ? { ...x, qty: Math.max(0, qty) } : x));
+  const setMoveListField = (item, field, value) => setMoveList(prev => prev.map(x => x.item === item ? { ...x, [field]: value } : x));
+  // Entrada de medicamento real (no solución/insumo) a CITIO -- es el único
+  // caso que por ahora pide lote/caducidad/marca (Fase 2 de trazabilidad).
+  const needsLotCapture = (itemName) => warehouse === "CITIO" && MED_CATEGORIES.includes(effectiveCatalog.find(c => c.item === itemName)?.category);
 
   // Busca en el catálogo el artículo que mejor coincida con la descripción
   // que trae la factura (nunca son idénticas letra por letra).
@@ -347,13 +360,25 @@ export default function Inventario() {
       const folio = folioMatch ? folioMatch[1] : "";
 
       const MESES = "ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic";
+      const MES_NUM = { ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,oct:10,nov:11,dic:12 };
+      // Antes esto se descartaba (el lote y la caducidad SÍ vienen en la
+      // cotización de QualMedical, ej. "M2510429 nov-27") -- ahora se
+      // extraen para precargarlos en vez de tirarlos; "caducidad" queda
+      // como el último día de ese mes, ya que el PDF solo trae mes-año.
+      const extractLoteCaducidad = (desc) => {
+        const m = desc.match(new RegExp(`\\s+(\\S+)\\s+(${MESES})-(\\d{2})\\s*$`, "i"));
+        if (!m) return { lote: "", caducidad: "", rest: desc };
+        const mesNum = MES_NUM[m[2].toLowerCase()];
+        const anio = 2000 + parseInt(m[3]);
+        const lastDay = new Date(anio, mesNum, 0).getDate();
+        const caducidad = `${anio}-${String(mesNum).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`;
+        return { lote: m[1], caducidad, rest: desc.slice(0, m.index) + desc.slice(m.index + m[0].length) };
+      };
       const cleanDescription = (desc) => {
         let d = desc;
         // Encabezados de columna y de sección que pueden quedar pegados
         // antes de la descripción real (ej. "INSUMOS CLORURO DE SODIO...").
         d = d.replace(/\b(DESCRIPCION|UNIDAD|LOTE|CAD\.?|CANT\.?|PRECIO\s+UNITARIO|IVA|PRECIO|INSUMOS|MEDICAMENTOS|SOLUCIONES)\b/gi, " ");
-        // Lote (cualquier token) + mes-año de caducidad, ej. "M2510429 nov-27"
-        d = d.replace(new RegExp(`\\s+\\S+\\s+(${MESES})-\\d{2}\\s*$`, "i"), "");
         d = d.replace(/\s+-\s*$/, "");
         d = d.replace(/^[\s.]+/, ""); // puntos/espacios sueltos al inicio, residuo de encabezados removidos
         return d.replace(/\s+/g, " ").trim();
@@ -365,13 +390,15 @@ export default function Inventario() {
       let lastEnd = 0;
       let m;
       while ((m = anchorRegex.exec(fullText)) !== null) {
-        const descRaw = cleanDescription(fullText.slice(lastEnd, m.index));
+        const rawSlice = fullText.slice(lastEnd, m.index);
+        const { lote, caducidad, rest } = extractLoteCaducidad(rawSlice);
+        const descRaw = cleanDescription(rest);
         lastEnd = anchorRegex.lastIndex;
         const cantidad = parseInt(m[1]) || 1;
         const precioTotal = parseFloat(m[4].replace(/,/g, ""));
         const valorUnitario = cantidad > 0 ? precioTotal / cantidad : parseFloat(m[2].replace(/,/g, ""));
         if (!descRaw || /^(SUB\s?TOTAL|IMPUESTOS|TOTAL)$/i.test(descRaw)) continue;
-        review.push({ descripcion: descRaw, cantidad, valorUnitario, matchedItem: suggestCatalogMatch(descRaw) });
+        review.push({ descripcion: descRaw, cantidad, valorUnitario, matchedItem: suggestCatalogMatch(descRaw), lote, caducidad });
       }
       if (review.length === 0) throw new Error("No se encontraron artículos reconocibles en el PDF.");
       setXmlReview(review);
@@ -394,12 +421,18 @@ export default function Inventario() {
       if (!confirm(`${unmatched.length} artículo(s) de la factura no tienen un emparejamiento elegido y NO se agregarán. ¿Continuar de todas formas?`)) return;
     }
     setMoveList(prev => {
-      const map = new Map(prev.map(x => [x.item, { qty: x.qty, cost: x.cost }]));
+      const map = new Map(prev.map(x => [x.item, { qty: x.qty, cost: x.cost, lote: x.lote, caducidad: x.caducidad, marca: x.marca }]));
       xmlReview.filter(r => r.matchedItem).forEach(r => {
         const existing = map.get(r.matchedItem);
-        map.set(r.matchedItem, { qty: (existing?.qty || 0) + r.cantidad, cost: r.valorUnitario || existing?.cost });
+        map.set(r.matchedItem, {
+          qty: (existing?.qty || 0) + r.cantidad,
+          cost: r.valorUnitario || existing?.cost,
+          lote: r.lote || existing?.lote,
+          caducidad: r.caducidad || existing?.caducidad,
+          marca: existing?.marca,
+        });
       });
-      return Array.from(map, ([item, v]) => ({ item, qty: v.qty, cost: v.cost }));
+      return Array.from(map, ([item, v]) => ({ item, qty: v.qty, cost: v.cost, lote: v.lote, caducidad: v.caducidad, marca: v.marca }));
     });
     setXmlReview(null);
     setNewItemDraft(null);
@@ -785,9 +818,16 @@ export default function Inventario() {
 
   const registerMovement = async () => {
     if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
+    const type = showMoveModal; // "entrada" | "salida"
+    if (type === "entrada") {
+      const missing = moveList.filter(it => needsLotCapture(it.item) && (!it.lote?.trim() || !it.caducidad || !it.marca?.trim()));
+      if (missing.length > 0) {
+        alert(`Falta lote, caducidad o marca en: ${missing.map(m => m.item).join(", ")}. Son medicamentos de CITIO -- se necesitan los tres para poder darlos de baja por lote después.`);
+        return;
+      }
+    }
     setSaving(true);
     try {
-      const type = showMoveModal; // "entrada" | "salida"
       const checkOk = async (res, label) => {
         if (!res.ok) {
           let msg = `Error ${res.status}`;
@@ -911,6 +951,28 @@ export default function Inventario() {
               createdAt: { stringValue: new Date().toISOString() },
             }}),
           });
+        }
+      }
+
+      // Lotes de medicamento (Fase 2 de trazabilidad, solo CITIO): cada
+      // entrada suma a su lote -- si ya existía ese mismo número de lote
+      // (restock), se le suma a lo disponible en vez de duplicar el documento.
+      if (type === "entrada" && warehouse === "CITIO") {
+        const lotItems = moveList.filter(it => needsLotCapture(it.item));
+        for (const it of lotItems) {
+          const lotDocId = inventoryLotDocId(warehouse, it.item, it.lote);
+          const lotExisting = inventoryLots.find(l => l.id === lotDocId);
+          const lotRes = await fetch(`${FIRESTORE_BASE_URL}/inventory_lots/${lotDocId}`, {
+            method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({ fields: {
+              warehouse: { stringValue: warehouse }, item: { stringValue: it.item },
+              lote: { stringValue: it.lote }, caducidad: { stringValue: it.caducidad }, marca: { stringValue: it.marca },
+              cantidadInicial: toFV((lotExisting?.cantidadInicial ?? 0) + it.qty),
+              cantidadDisponible: toFV((lotExisting?.cantidadDisponible ?? 0) + it.qty),
+              lastUpdated: { stringValue: new Date().toISOString() },
+            }}),
+          });
+          await checkOk(lotRes, `Lote "${it.lote}" de "${it.item}"`);
         }
       }
 
@@ -1050,8 +1112,12 @@ export default function Inventario() {
                 const { min, suggestQty } = reorderInfo(i);
                 const low = i.currentStock < min;
                 const negative = i.currentStock < 0;
+                const itemLots = (warehouse === "CITIO" && needsLotCapture(i.item))
+                  ? inventoryLots.filter(l => l.warehouse === "CITIO" && l.item === i.item && (l.cantidadDisponible ?? 0) > 0).sort((a,b) => (a.caducidad||"").localeCompare(b.caducidad||""))
+                  : [];
                 return (
-                  <div key={i.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10, background: negative ? "rgba(255,107,107,0.06)" : "rgba(255,255,255,0.03)", border:`1px solid ${negative ? "rgba(255,107,107,0.4)" : low ? "rgba(255,107,107,0.3)" : "rgba(255,255,255,0.07)"}` }}>
+                  <div key={i.id} style={{ display:"flex", flexDirection:"column", gap:6, padding:"10px 14px", borderRadius:10, background: negative ? "rgba(255,107,107,0.06)" : "rgba(255,255,255,0.03)", border:`1px solid ${negative ? "rgba(255,107,107,0.4)" : low ? "rgba(255,107,107,0.3)" : "rgba(255,255,255,0.07)"}` }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                     <span style={{ flex:1, fontSize:13, color:"#f0f0f0" }}>{i.item}</span>
                     <span style={{ fontSize:10, color:"#555" }}>{i.category}</span>
                     {negative && (
@@ -1085,6 +1151,16 @@ export default function Inventario() {
                           style={{ width:46, background:"rgba(175,169,236,0.06)", border:"1px solid rgba(175,169,236,0.2)", borderRadius:6, padding:"3px 6px", color:"#AFA9EC", fontSize:11, outline:"none", textAlign:"center" }} />
                       </>
                     )}
+                  </div>
+                  {itemLots.length > 0 && (
+                    <div style={{ display:"flex", gap:6, flexWrap:"wrap", paddingLeft:2 }}>
+                      {itemLots.map(l => (
+                        <span key={l.id} title={`Marca: ${l.marca || "—"}`} style={{ fontSize:10, padding:"2px 8px", borderRadius:99, background:"rgba(0,212,170,0.08)", border:"1px solid rgba(0,212,170,0.2)", color:"#00d4aa" }}>
+                          🏷️ {l.lote} · cad. {l.caducidad} · {l.cantidadDisponible} {i.unit}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   </div>
                 );
               })}
@@ -1426,6 +1502,9 @@ export default function Inventario() {
                   {xmlReview.map((r, i) => (
                     <div key={i} style={{ padding:"8px 10px", borderRadius:8, background: r.matchedItem ? "rgba(255,255,255,0.03)" : "rgba(255,107,107,0.06)", border:`1px solid ${r.matchedItem ? "rgba(255,255,255,0.07)" : "rgba(255,107,107,0.25)"}` }}>
                       <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>Factura: "{r.descripcion}" · cant. {r.cantidad}{r.valorUnitario ? ` · $${r.valorUnitario.toFixed(2)} c/u (con IVA)` : ""}</div>
+                      {(r.lote || r.caducidad) && (
+                        <div style={{ fontSize:10, color:"#00d4aa", marginBottom:4 }}>Detectado en el PDF: {r.lote && `lote ${r.lote}`}{r.lote && r.caducidad && " · "}{r.caducidad && `caduca ${r.caducidad}`} (se puede corregir abajo)</div>
+                      )}
                       <select value={r.matchedItem} onChange={e => {
                           if (e.target.value === "__new__") {
                             setNewItemDraft({ rowIndex: i, nombre: r.descripcion, categoria: "Insumos", unidad: "PIEZA" });
@@ -1490,22 +1569,37 @@ export default function Inventario() {
 
             {/* Lista de artículos ya agregados a este movimiento -- pueden ser varios */}
             {moveList.length > 0 && (
-              <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:200, overflowY:"auto" }}>
-                {moveList.map((it, i) => (
-                  <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 8px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
-                    <span style={{ flex:1, fontSize:12, color:"#f0f0f0" }}>{it.item}</span>
-                    <input type="number" min="0" value={it.qty} onChange={e => setMoveListQty(it.item, parseInt(e.target.value) || 0)}
-                      title="Cantidad"
-                      style={{ width:56, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:12, outline:"none", textAlign:"center" }} />
-                    {showMoveModal === "entrada" && (
-                      <input type="number" min="0" step="0.01" placeholder="$ costo c/u" value={it.cost ?? ""}
-                        onChange={e => setMoveList(prev => prev.map(x => x.item===it.item ? { ...x, cost: e.target.value === "" ? undefined : parseFloat(e.target.value) } : x))}
-                        title="Costo unitario (opcional)"
-                        style={{ width:76, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#00d4aa", fontSize:12, outline:"none", textAlign:"center" }} />
+              <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:280, overflowY:"auto" }}>
+                {moveList.map((it, i) => {
+                  const showLot = showMoveModal === "entrada" && needsLotCapture(it.item);
+                  return (
+                  <div key={i} style={{ display:"flex", flexDirection:"column", gap:5, padding:"6px 8px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ flex:1, fontSize:12, color:"#f0f0f0" }}>{it.item}</span>
+                      <input type="number" min="0" value={it.qty} onChange={e => setMoveListQty(it.item, parseInt(e.target.value) || 0)}
+                        title="Cantidad"
+                        style={{ width:56, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:12, outline:"none", textAlign:"center" }} />
+                      {showMoveModal === "entrada" && (
+                        <input type="number" min="0" step="0.01" placeholder="$ costo c/u" value={it.cost ?? ""}
+                          onChange={e => setMoveList(prev => prev.map(x => x.item===it.item ? { ...x, cost: e.target.value === "" ? undefined : parseFloat(e.target.value) } : x))}
+                          title="Costo unitario (opcional)"
+                          style={{ width:76, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#00d4aa", fontSize:12, outline:"none", textAlign:"center" }} />
+                      )}
+                      <button onClick={() => removeFromMoveList(it.item)} style={{ padding:"3px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
+                    </div>
+                    {showLot && (
+                      <div style={{ display:"flex", gap:5, paddingLeft:2 }}>
+                        <input placeholder="Lote *" value={it.lote || ""} onChange={e => setMoveListField(it.item, "lote", e.target.value)}
+                          style={{ flex:1, minWidth:0, background: it.lote ? "rgba(255,255,255,0.05)" : "rgba(255,107,107,0.06)", border:`1px solid ${it.lote ? "rgba(255,255,255,0.09)" : "rgba(255,107,107,0.3)"}`, borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:11, outline:"none" }} />
+                        <input type="date" placeholder="Caducidad *" value={it.caducidad || ""} onChange={e => setMoveListField(it.item, "caducidad", e.target.value)}
+                          style={{ flex:1, minWidth:0, background: it.caducidad ? "rgba(255,255,255,0.05)" : "rgba(255,107,107,0.06)", border:`1px solid ${it.caducidad ? "rgba(255,255,255,0.09)" : "rgba(255,107,107,0.3)"}`, borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:11, outline:"none" }} />
+                        <input placeholder="Marca *" value={it.marca || ""} onChange={e => setMoveListField(it.item, "marca", e.target.value)}
+                          style={{ flex:1, minWidth:0, background: it.marca ? "rgba(255,255,255,0.05)" : "rgba(255,107,107,0.06)", border:`1px solid ${it.marca ? "rgba(255,255,255,0.09)" : "rgba(255,107,107,0.3)"}`, borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:11, outline:"none" }} />
+                      </div>
                     )}
-                    <button onClick={() => removeFromMoveList(it.item)} style={{ padding:"3px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
