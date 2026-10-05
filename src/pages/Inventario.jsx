@@ -246,9 +246,29 @@ export default function Inventario() {
   const removeFromMoveList = (item) => setMoveList(prev => prev.filter(x => x.item !== item));
   const setMoveListQty = (item, qty) => setMoveList(prev => prev.map(x => x.item === item ? { ...x, qty: Math.max(0, qty) } : x));
   const setMoveListField = (item, field, value) => setMoveList(prev => prev.map(x => x.item === item ? { ...x, [field]: value } : x));
-  // Entrada de medicamento real (no solución/insumo) a CITIO -- es el único
-  // caso que por ahora pide lote/caducidad/marca (Fase 2 de trazabilidad).
-  const needsLotCapture = (itemName) => warehouse === "CITIO" && MED_CATEGORIES.includes(effectiveCatalog.find(c => c.item === itemName)?.category);
+  // Elegir cuánto tomar de un lote específico de Qual·CITIO (CITIO jala,
+  // no vuelve a capturar) -- la cantidad total del renglón se recalcula
+  // sola como la suma de lo elegido en cada lote.
+  const setLotPickQty = (itemName, lot, qty) => setMoveList(prev => prev.map(x => {
+    if (x.item !== itemName) return x;
+    const picks = x.lotPicks ? [...x.lotPicks] : [];
+    const idx = picks.findIndex(p => p.lotId === lot.id);
+    const newQty = Math.max(0, qty);
+    if (idx >= 0) picks[idx] = { ...picks[idx], qty: newQty };
+    else picks.push({ lotId: lot.id, lote: lot.lote, caducidad: lot.caducidad, marca: lot.marca, qty: newQty });
+    return { ...x, lotPicks: picks, qty: picks.reduce((acc, p) => acc + p.qty, 0) };
+  }));
+  const isMedForLot = (itemName) => MED_CATEGORIES.includes(effectiveCatalog.find(c => c.item === itemName)?.category);
+  // Qual·CITIO es donde llega de verdad el medicamento (vía el PDF de
+  // transferencia de QualMedical) -- ahí se captura lote/caducidad/marca.
+  const needsLotEntry = (itemName) => warehouse === "QUAL_CITIO" && isMedForLot(itemName);
+  // CITIO ya no vuelve a capturar nada: "jala" un lote que ya existe en
+  // Qual·CITIO (la "venta oficial" que Qual regresa después) -- se elige
+  // de un listado en vez de escribirlo de nuevo.
+  const needsLotPick = (itemName) => warehouse === "CITIO" && isMedForLot(itemName);
+  const availableQualLots = (itemName) => inventoryLots
+    .filter(l => l.warehouse === "QUAL_CITIO" && l.item === itemName && (l.cantidadDisponible ?? 0) > 0)
+    .sort((a, b) => (a.caducidad || "").localeCompare(b.caducidad || ""));
 
   // Busca en el catálogo el artículo que mejor coincida con la descripción
   // que trae la factura (nunca son idénticas letra por letra).
@@ -820,10 +840,24 @@ export default function Inventario() {
     if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
     const type = showMoveModal; // "entrada" | "salida"
     if (type === "entrada") {
-      const missing = moveList.filter(it => needsLotCapture(it.item) && (!it.lote?.trim() || !it.caducidad || !it.marca?.trim()));
-      if (missing.length > 0) {
-        alert(`Falta lote, caducidad o marca en: ${missing.map(m => m.item).join(", ")}. Son medicamentos de CITIO -- se necesitan los tres para poder darlos de baja por lote después.`);
+      const missingEntry = moveList.filter(it => needsLotEntry(it.item) && (!it.lote?.trim() || !it.caducidad || !it.marca?.trim()));
+      if (missingEntry.length > 0) {
+        alert(`Falta lote, caducidad o marca en: ${missingEntry.map(m => m.item).join(", ")}. Es donde llega de verdad el medicamento -- se necesitan los tres.`);
         return;
+      }
+      for (const it of moveList) {
+        if (!needsLotPick(it.item)) continue;
+        const picks = (it.lotPicks || []).filter(p => p.qty > 0);
+        const pickedTotal = picks.reduce((acc, p) => acc + p.qty, 0);
+        if (pickedTotal === 0) { alert(`"${it.item}": elige de qué lote(s) de Qual·CITIO se va a tomar.`); return; }
+        if (pickedTotal !== it.qty) { alert(`"${it.item}": lo elegido por lote (${pickedTotal}) no coincide con la cantidad (${it.qty}).`); return; }
+        for (const p of picks) {
+          const lotNow = inventoryLots.find(l => l.id === p.lotId);
+          if ((lotNow?.cantidadDisponible ?? 0) < p.qty) {
+            alert(`"${it.item}" lote ${p.lote}: ya no hay ${p.qty} disponibles en Qual·CITIO (quedan ${lotNow?.cantidadDisponible ?? 0}). Actualiza la selección.`);
+            return;
+          }
+        }
       }
     }
     setSaving(true);
@@ -954,25 +988,39 @@ export default function Inventario() {
         }
       }
 
-      // Lotes de medicamento (Fase 2 de trazabilidad, solo CITIO): cada
-      // entrada suma a su lote -- si ya existía ese mismo número de lote
-      // (restock), se le suma a lo disponible en vez de duplicar el documento.
+      // Lotes de medicamento (Fase 2 de trazabilidad): Qual·CITIO es donde
+      // llega de verdad (vía el PDF de transferencia) -- ahí se crea/suma
+      // el lote. CITIO solo jala de esos lotes (la "venta oficial" que Qual
+      // regresa después): se descuenta del lote en Qual·CITIO y se crea/suma
+      // el mismo lote (mismo número) del lado de CITIO.
+      const upsertLot = async (lotWarehouse, item, lote, caducidad, marca, deltaQty) => {
+        const lotDocId = inventoryLotDocId(lotWarehouse, item, lote);
+        const lotExisting = inventoryLots.find(l => l.id === lotDocId);
+        const nuevaDisponible = (lotExisting?.cantidadDisponible ?? 0) + deltaQty;
+        const res = await fetch(`${FIRESTORE_BASE_URL}/inventory_lots/${lotDocId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            warehouse: { stringValue: lotWarehouse }, item: { stringValue: item },
+            lote: { stringValue: lote }, caducidad: { stringValue: caducidad }, marca: { stringValue: marca || lotExisting?.marca || "" },
+            cantidadInicial: toFV((lotExisting?.cantidadInicial ?? 0) + Math.max(deltaQty, 0)),
+            cantidadDisponible: toFV(nuevaDisponible),
+            lastUpdated: { stringValue: new Date().toISOString() },
+          }}),
+        });
+        await checkOk(res, `Lote "${lote}" de "${item}" en ${warehouseLabel(lotWarehouse)}`);
+      };
+
+      if (type === "entrada" && warehouse === "QUAL_CITIO") {
+        for (const it of moveList.filter(it => needsLotEntry(it.item))) {
+          await upsertLot("QUAL_CITIO", it.item, it.lote, it.caducidad, it.marca, it.qty);
+        }
+      }
       if (type === "entrada" && warehouse === "CITIO") {
-        const lotItems = moveList.filter(it => needsLotCapture(it.item));
-        for (const it of lotItems) {
-          const lotDocId = inventoryLotDocId(warehouse, it.item, it.lote);
-          const lotExisting = inventoryLots.find(l => l.id === lotDocId);
-          const lotRes = await fetch(`${FIRESTORE_BASE_URL}/inventory_lots/${lotDocId}`, {
-            method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-            body: JSON.stringify({ fields: {
-              warehouse: { stringValue: warehouse }, item: { stringValue: it.item },
-              lote: { stringValue: it.lote }, caducidad: { stringValue: it.caducidad }, marca: { stringValue: it.marca },
-              cantidadInicial: toFV((lotExisting?.cantidadInicial ?? 0) + it.qty),
-              cantidadDisponible: toFV((lotExisting?.cantidadDisponible ?? 0) + it.qty),
-              lastUpdated: { stringValue: new Date().toISOString() },
-            }}),
-          });
-          await checkOk(lotRes, `Lote "${it.lote}" de "${it.item}"`);
+        for (const it of moveList.filter(it => needsLotPick(it.item))) {
+          for (const p of (it.lotPicks || []).filter(p => p.qty > 0)) {
+            await upsertLot("QUAL_CITIO", it.item, p.lote, p.caducidad, p.marca, -p.qty);
+            await upsertLot("CITIO", it.item, p.lote, p.caducidad, p.marca, p.qty);
+          }
         }
       }
 
@@ -1112,8 +1160,8 @@ export default function Inventario() {
                 const { min, suggestQty } = reorderInfo(i);
                 const low = i.currentStock < min;
                 const negative = i.currentStock < 0;
-                const itemLots = (warehouse === "CITIO" && needsLotCapture(i.item))
-                  ? inventoryLots.filter(l => l.warehouse === "CITIO" && l.item === i.item && (l.cantidadDisponible ?? 0) > 0).sort((a,b) => (a.caducidad||"").localeCompare(b.caducidad||""))
+                const itemLots = (warehouse === "CITIO" || warehouse === "QUAL_CITIO") && isMedForLot(i.item)
+                  ? inventoryLots.filter(l => l.warehouse === warehouse && l.item === i.item && (l.cantidadDisponible ?? 0) > 0).sort((a,b) => (a.caducidad||"").localeCompare(b.caducidad||""))
                   : [];
                 return (
                   <div key={i.id} style={{ display:"flex", flexDirection:"column", gap:6, padding:"10px 14px", borderRadius:10, background: negative ? "rgba(255,107,107,0.06)" : "rgba(255,255,255,0.03)", border:`1px solid ${negative ? "rgba(255,107,107,0.4)" : low ? "rgba(255,107,107,0.3)" : "rgba(255,255,255,0.07)"}` }}>
@@ -1571,14 +1619,18 @@ export default function Inventario() {
             {moveList.length > 0 && (
               <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:280, overflowY:"auto" }}>
                 {moveList.map((it, i) => {
-                  const showLot = showMoveModal === "entrada" && needsLotCapture(it.item);
+                  const showLotEntry = showMoveModal === "entrada" && needsLotEntry(it.item);
+                  const showLotPick = showMoveModal === "entrada" && needsLotPick(it.item);
+                  const qualLots = showLotPick ? availableQualLots(it.item) : [];
+                  const pickedTotal = (it.lotPicks || []).reduce((acc, p) => acc + p.qty, 0);
                   return (
                   <div key={i} style={{ display:"flex", flexDirection:"column", gap:5, padding:"6px 8px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                       <span style={{ flex:1, fontSize:12, color:"#f0f0f0" }}>{it.item}</span>
-                      <input type="number" min="0" value={it.qty} onChange={e => setMoveListQty(it.item, parseInt(e.target.value) || 0)}
-                        title="Cantidad"
-                        style={{ width:56, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:12, outline:"none", textAlign:"center" }} />
+                      <input type="number" min="0" value={it.qty} readOnly={showLotPick} disabled={showLotPick}
+                        onChange={e => setMoveListQty(it.item, parseInt(e.target.value) || 0)}
+                        title={showLotPick ? "Se calcula sola con lo elegido por lote" : "Cantidad"}
+                        style={{ width:56, background: showLotPick ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color: showLotPick ? "#888" : "#f0f0f0", fontSize:12, outline:"none", textAlign:"center" }} />
                       {showMoveModal === "entrada" && (
                         <input type="number" min="0" step="0.01" placeholder="$ costo c/u" value={it.cost ?? ""}
                           onChange={e => setMoveList(prev => prev.map(x => x.item===it.item ? { ...x, cost: e.target.value === "" ? undefined : parseFloat(e.target.value) } : x))}
@@ -1587,7 +1639,7 @@ export default function Inventario() {
                       )}
                       <button onClick={() => removeFromMoveList(it.item)} style={{ padding:"3px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
                     </div>
-                    {showLot && (
+                    {showLotEntry && (
                       <div style={{ display:"flex", gap:5, paddingLeft:2 }}>
                         <input placeholder="Lote *" value={it.lote || ""} onChange={e => setMoveListField(it.item, "lote", e.target.value)}
                           style={{ flex:1, minWidth:0, background: it.lote ? "rgba(255,255,255,0.05)" : "rgba(255,107,107,0.06)", border:`1px solid ${it.lote ? "rgba(255,255,255,0.09)" : "rgba(255,107,107,0.3)"}`, borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:11, outline:"none" }} />
@@ -1595,6 +1647,28 @@ export default function Inventario() {
                           style={{ flex:1, minWidth:0, background: it.caducidad ? "rgba(255,255,255,0.05)" : "rgba(255,107,107,0.06)", border:`1px solid ${it.caducidad ? "rgba(255,255,255,0.09)" : "rgba(255,107,107,0.3)"}`, borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:11, outline:"none" }} />
                         <input placeholder="Marca *" value={it.marca || ""} onChange={e => setMoveListField(it.item, "marca", e.target.value)}
                           style={{ flex:1, minWidth:0, background: it.marca ? "rgba(255,255,255,0.05)" : "rgba(255,107,107,0.06)", border:`1px solid ${it.marca ? "rgba(255,255,255,0.09)" : "rgba(255,107,107,0.3)"}`, borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:11, outline:"none" }} />
+                      </div>
+                    )}
+                    {showLotPick && (
+                      <div style={{ paddingLeft:2, display:"flex", flexDirection:"column", gap:4 }}>
+                        {qualLots.length === 0 ? (
+                          <div style={{ fontSize:11, color:"#ff6b6b" }}>⚠ No hay lotes disponibles en Qual·CITIO para este artículo -- regístralo ahí primero.</div>
+                        ) : (
+                          <>
+                            {qualLots.map(lot => {
+                              const pick = (it.lotPicks || []).find(p => p.lotId === lot.id);
+                              return (
+                                <div key={lot.id} style={{ display:"flex", alignItems:"center", gap:6, fontSize:11 }}>
+                                  <span style={{ flex:1, color:"#ccc" }}>🏷️ {lot.lote} · cad. {lot.caducidad} · {lot.marca} <span style={{ color:"#555" }}>(disp. {lot.cantidadDisponible})</span></span>
+                                  <input type="number" min="0" max={lot.cantidadDisponible} placeholder="0" value={pick?.qty || ""}
+                                    onChange={e => setLotPickQty(it.item, lot, parseInt(e.target.value) || 0)}
+                                    style={{ width:56, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"3px 6px", color:"#00d4aa", fontSize:11, outline:"none", textAlign:"center" }} />
+                                </div>
+                              );
+                            })}
+                            <div style={{ fontSize:10, color: pickedTotal > 0 ? "#00d4aa" : "#888" }}>Tomando {pickedTotal} en total</div>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
