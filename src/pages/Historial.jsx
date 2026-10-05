@@ -51,6 +51,13 @@ async function fetchSessions(token, filters) {
 
 const CAT_COLOR = { premedicacion:"#FAC775", inmunoterapia:"#5DCAA5", quimioterapia:"#F09595", adicional:"#AFA9EC", domicilio:"#82C4F8" };
 const CAT_LABEL = { premedicacion:"Pre", inmunoterapia:"Inmuno", quimioterapia:"Quimio", adicional:"Adic.", domicilio:"Dom." };
+// Mismo set de tipos que NuevaSession.jsx -- para corregir el tipo de un
+// medicamento (ej. se capturó como Inmuno pero era Premedicación) al
+// editar una sesión, sin tener que borrarlo y volver a capturarlo.
+const MED_TYPE_OPTIONS = [
+  ["premedicacion","Premedicación"], ["inmunoterapia","Inmunoterapia"], ["quimioterapia","Quimioterapia"],
+  ["adicional","Adicional"], ["especialidad","Especialidad"], ["hidratacion","Hidratación"], ["domicilio","Domicilio"],
+];
 
 // Fichas técnicas -- para que "Reimprimir consentimiento" salga con el
 // mismo detalle por fármaco que la primera generación (ver NurseView.jsx).
@@ -628,7 +635,14 @@ const saveEdit = async () => {
                       <div style={{ fontSize:12, color:"#f0f0f0", fontWeight:600 }}>{m.order}. {m.name} {m.dose}</div>
                       <button onClick={() => setEditDraft(d => ({...d, meds: d.meds.filter((_,i) => i!==idx).map((x,i) => ({...x, order:i+1}))}))} style={{ background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b", borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:11 }}>✕</button>
                     </div>
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8 }}>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr", gap:8 }}>
+                      <div>
+                        <label style={{ fontSize:9, color:"#555", textTransform:"uppercase", display:"block", marginBottom:3 }}>Tipo</label>
+                        <select value={m.category || "premedicacion"} onChange={e => setEditDraft(d => ({...d, meds: d.meds.map((x,i) => i===idx ? {...x, category:e.target.value} : x)}))}
+                          style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:6, padding:"5px 8px", color:"#f0f0f0", fontSize:11, outline:"none", cursor:"pointer" }}>
+                          {MED_TYPE_OPTIONS.map(([val,label]) => <option key={val} value={val}>{label}</option>)}
+                        </select>
+                      </div>
                       {[["Nombre","name"],["Dosis","dose"],["Dilución","diluent"],["Tiempo (min)","time"]].map(([label,field]) => (
                         <div key={field}>
                           <label style={{ fontSize:9, color:"#555", textTransform:"uppercase", display:"block", marginBottom:3 }}>{label}</label>
