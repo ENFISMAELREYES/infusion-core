@@ -265,18 +265,57 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     setSessions(prev => prev.map(x => x.id === s.id ? { ...x, confirmed: willConfirm, ...(lotAssignments !== undefined ? { lotAssignments } : {}) } : x));
   };
 
+  // Solo actualiza lotAssignments -- se usa para resolver un medicamento que
+  // había quedado "pendiente por ingresar" (ver buildLotDraft), sin tocar
+  // quién/cuándo confirmó la asistencia original.
+  const patchLotAssignmentsOnly = async (lotAssignments) => {
+    await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=lotAssignments`,
+      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+        body: JSON.stringify({ fields: { lotAssignments: toFV(lotAssignments) } }) });
+    setSessions(prev => prev.map(x => x.id === s.id ? { ...x, lotAssignments } : x));
+  };
+
+  // Medicamentos de esta sesión que llevan trazabilidad por lote (solo
+  // CITIO por ahora) -- se usa tanto para la asignación al confirmar como
+  // para saber si algo quedó pendiente por ingresar.
+  const citioMedItems = s.center === "CITIO" ? material.items.filter(t => categorizeItem(t.item) === "MEDICAMENTOS") : [];
+  // Pendiente por ingresar: no todo medicamento que CITIO usa viene de Qual
+  // -- algunos los compra directo a otro proveedor. Si al confirmar no
+  // había lote suficiente en CITIO (porque ese ingreso directo aún no se
+  // registraba), el renglón se guarda con lo que SÍ se pudo asignar (puede
+  // ser nada) y queda marcado aquí como pendiente hasta que se complete.
+  const pendingLotItems = citioMedItems.filter(t => {
+    const assigned = (s.lotAssignments || []).find(a => a.item === t.item)?.picks || [];
+    return assigned.reduce((acc, p) => acc + (p.qty || 0), 0) < t.qty;
+  });
+
+  // Construye el borrador de asignación: parte de lo YA asignado (si lo
+  // hay) y completa el faltante con sugerencia FEFO sobre lo que esté
+  // disponible en CITIO en este momento -- así, si un medicamento pendiente
+  // ya se registró (compra directa u otra transferencia), la próxima vez
+  // que se abra esto ya aparece listo para cubrirlo.
+  const buildLotDraft = () => citioMedItems.map(({ item, qty }) => {
+    const existingPicks = (s.lotAssignments || []).find(a => a.item === item)?.picks || [];
+    const already = existingPicks.reduce((acc, p) => acc + (p.qty || 0), 0);
+    const shortfall = qty - already;
+    const extra = shortfall > 0
+      ? suggestLotPicks(item, shortfall).filter(np => !existingPicks.some(ep => ep.lotId === np.lotId))
+      : [];
+    return { item, needed: qty, picks: [...existingPicks, ...extra] };
+  });
+
+  const [lotModalMode, setLotModalMode] = useState("confirm"); // "confirm" | "edit"
+
   const toggleConfirm = async () => {
     const willConfirm = !s.confirmed;
     try {
       // Solo CITIO lleva trazabilidad por lote por ahora -- CIPI confirma
       // igual que siempre, sin pedir lote.
-      if (willConfirm && s.center === "CITIO") {
-        const medItems = material.items.filter(t => categorizeItem(t.item) === "MEDICAMENTOS");
-        if (medItems.length > 0) {
-          setLotAssignDraft(medItems.map(({ item, qty }) => ({ item, needed: qty, picks: suggestLotPicks(item, qty) })));
-          setShowConfirmLotModal(true);
-          return; // se confirma desde el modal (confirmWithLots), no aquí
-        }
+      if (willConfirm && citioMedItems.length > 0) {
+        setLotAssignDraft(buildLotDraft());
+        setLotModalMode("confirm");
+        setShowConfirmLotModal(true);
+        return; // se confirma desde el modal (confirmWithLots), no aquí
       }
       // Sin medicamento con lote de por medio (CIPI, o sesión sin
       // medicamento) -- al desconfirmar también se limpia la asignación
@@ -286,10 +325,20 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     } catch (e) { alert("Error al confirmar: " + e.message); }
   };
 
+  // Reabre el modal de lote para completar lo que había quedado pendiente,
+  // SIN desconfirmar la asistencia (que ya pasó de verdad).
+  const openEditLotAssignModal = () => {
+    setLotAssignDraft(buildLotDraft());
+    setLotModalMode("edit");
+    setShowConfirmLotModal(true);
+  };
+
   const confirmWithLots = async () => {
     setSavingConfirmLots(true);
     try {
-      await patchConfirmFields(true, lotAssignDraft.map(({ item, picks }) => ({ item, picks: picks.filter(p => p.qty > 0) })));
+      const assignments = lotAssignDraft.map(({ item, picks }) => ({ item, picks: picks.filter(p => p.qty > 0) }));
+      if (lotModalMode === "confirm") await patchConfirmFields(true, assignments);
+      else await patchLotAssignmentsOnly(assignments);
       setShowConfirmLotModal(false);
     } catch (e) { alert("Error al confirmar: " + e.message); }
     finally { setSavingConfirmLots(false); }
@@ -533,6 +582,32 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   };
   const setInvQty = (idx, qty) => setInvItems(prev => prev.map((it,i) => i===idx ? { ...it, qty: Math.max(0, qty) } : it));
 
+  // Constancia de qué salió de inventario y de dónde (lote/caducidad/marca
+  // de cada medicamento) -- se genera al dar de baja y se puede volver a
+  // generar después con los mismos datos guardados en la sesión.
+  const [generatingComprobante, setGeneratingComprobante] = useState(false);
+  const generateComprobante = async (items) => {
+    const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
+    items.forEach(it => groups[categorizeItem(it.item)].push({ item: it.item, qty: it.qty, lotes: it.lotes }));
+    const res = await fetch("/api/generate-material-order", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        center: s.center, cipiVariant, patientName: s.patientName, cycle: s.cycle, date: s.date,
+        comprobante: true, groups,
+        signatures: [{ label: "DIO DE BAJA", name: profile?.name || "", signatureUrl: profile?.signatureUrl || null }],
+      }),
+    });
+    if (!res.ok) throw new Error(`Error ${res.status} al generar el comprobante`);
+    const blob = await res.blob();
+    openPdfBlob(blob, `COMPROBANTE_BAJA_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`);
+  };
+  const reprintComprobante = async () => {
+    setGeneratingComprobante(true);
+    try { await generateComprobante(s.inventorySalidaDetalle || []); }
+    catch (e) { alert("Error al generar el comprobante: " + e.message); }
+    finally { setGeneratingComprobante(false); }
+  };
+
   // Da de baja del inventario los artículos confirmados -- acción
   // independiente del retiro de la sesión (antes vivía dentro del flujo de
   // firmas de NurseView, pero si ese flujo se interrumpía a medias podía
@@ -547,6 +622,37 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         if (!res.ok) { let msg=`Error ${res.status}`; try{const b=await res.json(); msg=b?.error?.message||msg;}catch{} throw new Error(`${label}: ${msg}`); }
       };
       const itemsToDeduct = invItems.filter(x => x.qty > 0);
+      const medsToDeduct = s.center === "CITIO" ? itemsToDeduct.filter(it => categorizeItem(it.item) === "MEDICAMENTOS") : [];
+
+      // Ningún medicamento se da de baja sin lote: si falta la asignación, no
+      // coincide con lo que se va a descontar, o el lote ya no tiene lo
+      // suficiente (alguien más lo usó mientras tanto), se detiene TODO antes
+      // de escribir nada -- no solo ese medicamento, toda la baja de esta
+      // sesión -- para no dejarla a medias. El motivo casi siempre es que el
+      // medicamento no vino de Qual (lo compró CITIO directo a otro
+      // proveedor) y esa entrada directa aún no se ha registrado.
+      if (medsToDeduct.length > 0) {
+        const problems = [];
+        for (const it of medsToDeduct) {
+          const assignment = (s.lotAssignments || []).find(a => a.item === it.item);
+          const picks = (assignment?.picks || []).filter(p => p.qty > 0);
+          const assignedTotal = picks.reduce((acc, p) => acc + p.qty, 0);
+          if (picks.length === 0 || assignedTotal !== it.qty) {
+            problems.push(`"${it.item}": ${picks.length === 0 ? "sin lote asignado -- pendiente por ingresar a CITIO" : `lo asignado (${assignedTotal}) no coincide con lo que se va a dar de baja (${it.qty})`}.`);
+            continue;
+          }
+          for (const p of picks) {
+            const lotNow = citioLots.find(l => l.id === inventoryLotDocId("CITIO", it.item, p.lote));
+            if ((lotNow?.cantidadDisponible ?? 0) < p.qty) {
+              problems.push(`"${it.item}" lote ${p.lote}: ya no hay ${p.qty} disponibles en CITIO (quedan ${lotNow?.cantidadDisponible ?? 0}).`);
+            }
+          }
+        }
+        if (problems.length > 0) {
+          alert("No se puede dar de baja -- hay medicamento sin lote asignado (o la cantidad ya no coincide):\n\n" + problems.join("\n") + "\n\nUsa \"⚠️ pendiente por ingresar\" para asignar o corregir el lote antes de continuar.");
+          return;
+        }
+      }
 
       for (const it of itemsToDeduct) {
         const docId = inventoryDocId(warehouse, it.item);
@@ -572,31 +678,18 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         await checkOk(invRes, `Existencias de "${it.item}"`);
       }
 
-      // Descuento por lote (Fase 3, solo CITIO): además de la existencia
-      // agregada de arriba, se descuenta del lote específico asignado al
-      // confirmar asistencia -- es lo que de verdad se va a usar en el
-      // paciente, no solo "algo de este medicamento". Si lo que se va a dar
-      // de baja ya no coincide con lo asignado (se editó la cantidad aquí, o
-      // nunca se asignó porque la sesión no pasó por "Confirmar asistencia"),
-      // se recalcula al vuelo con el mismo criterio FEFO -- la baja nunca se
-      // bloquea por falta de asignación previa.
-      if (s.center === "CITIO") {
-        const medsToDeduct = itemsToDeduct.filter(it => categorizeItem(it.item) === "MEDICAMENTOS");
+      // Descuento por lote: además de la existencia agregada de arriba, se
+      // descuenta del lote exacto que quedó asignado (ya validado arriba --
+      // cubre el 100% de lo que se va a dar de baja). Se guarda también el
+      // detalle (lotesUsados) para el comprobante, con el total de dónde
+      // salió cada medicamento.
+      const lotesUsados = {}; // item -> [{lote,caducidad,marca,qty}]
+      if (medsToDeduct.length > 0) {
         let liveLots = citioLots;
         for (const it of medsToDeduct) {
-          const assignment = (s.lotAssignments || []).find(a => a.item === it.item);
-          const assignedTotal = (assignment?.picks || []).reduce((acc, p) => acc + (p.qty || 0), 0);
-          const picks = (assignment && assignedTotal === it.qty)
-            ? assignment.picks
-            : liveLots.filter(l => l.item === it.item && (l.cantidadDisponible || 0) > 0)
-                .sort((a, b) => (a.caducidad || "").localeCompare(b.caducidad || ""))
-                .reduce((acc, lot) => {
-                  const already = acc.reduce((s2, p) => s2 + p.qty, 0);
-                  const take = Math.min(it.qty - already, lot.cantidadDisponible || 0);
-                  if (take > 0) acc.push({ lotId: lot.id, lote: lot.lote, caducidad: lot.caducidad, marca: lot.marca, qty: take });
-                  return acc;
-                }, []);
-          for (const p of picks.filter(p => p.qty > 0)) {
+          const picks = (s.lotAssignments || []).find(a => a.item === it.item).picks.filter(p => p.qty > 0);
+          lotesUsados[it.item] = picks;
+          for (const p of picks) {
             const lotDocId = inventoryLotDocId("CITIO", it.item, p.lote);
             const lotExisting = liveLots.find(l => l.id === lotDocId);
             const nuevaDisponible = (lotExisting?.cantidadDisponible ?? 0) - p.qty;
@@ -616,12 +709,17 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         setCitioLots(liveLots);
       }
 
+      // De dónde salió cada medicamento -- se anexa al evento y se guarda en
+      // la sesión, para poder generar/reimprimir el comprobante después sin
+      // depender de que el lote siga existiendo igual más adelante.
+      const itemsWithLotes = itemsToDeduct.map(it => lotesUsados[it.item] ? { ...it, lotes: lotesUsados[it.item] } : it);
+
       if (itemsToDeduct.length > 0) {
         const evRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory_events`,
           { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
             body: JSON.stringify({ fields: {
               type: { stringValue: "salida" }, warehouse: { stringValue: warehouse },
-              items: toFV(itemsToDeduct),
+              items: toFV(itemsWithLotes),
               sessionId: { stringValue: s.id }, sessionPatientName: { stringValue: s.patientName || "" },
               reason: { stringValue: "Baja de inventario de la sesión" },
               userEmail: { stringValue: user?.email || "" },
@@ -630,16 +728,24 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         await checkOk(evRes, "Registro del evento de movimiento");
       }
 
-      const doneRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=inventorySalidaDone&updateMask.fieldPaths=inventorySalidaAt`,
+      const doneRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=inventorySalidaDone&updateMask.fieldPaths=inventorySalidaAt&updateMask.fieldPaths=inventorySalidaDetalle`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
           body: JSON.stringify({ fields: {
             inventorySalidaDone: { booleanValue: true },
             inventorySalidaAt: { stringValue: new Date().toISOString() },
+            inventorySalidaDetalle: toFV(itemsWithLotes),
           }}) });
       await checkOk(doneRes, "Marcar sesión como dada de baja");
 
-      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, inventorySalidaDone: true } : x));
+      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, inventorySalidaDone: true, inventorySalidaDetalle: itemsWithLotes } : x));
       setShowInvModal(false);
+
+      // El comprobante es la constancia de dónde salió cada medicamento --
+      // si falla solo la generación del PDF (la baja en sí ya quedó
+      // registrada), no se trata como error de la baja: se avisa aparte y
+      // se puede reimprimir después con el botón 🖨️ Comprobante.
+      try { await generateComprobante(itemsWithLotes); }
+      catch (pdfErr) { alert("La baja se registró, pero no se pudo generar el comprobante: " + pdfErr.message + "\n\nPuedes reimprimirlo después con el botón 🖨️ Comprobante."); }
     } catch (e) {
       alert("Error al dar de baja el inventario: " + e.message);
     } finally {
@@ -661,6 +767,13 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
             color: s.confirmed ? "#00d4aa" : "#ffb347" }}>
           {s.confirmed ? "✓ Confirmada" : "⏳ Sin confirmar"}
         </button>
+        {s.confirmed && pendingLotItems.length > 0 && (
+          <button onClick={e => { e.stopPropagation(); openEditLotAssignModal(); }}
+            title={`Pendiente por ingresar a CITIO: ${pendingLotItems.map(t => t.item).join(", ")}. Este medicamento no vino de Qual -- en cuanto se registre su entrada directa (📦 Compra directa en Inventario), da clic aquí para asignarle lote.`}
+            style={{ fontSize:10, fontWeight:600, padding:"2px 8px", borderRadius:99, cursor:"pointer", border:"1px solid rgba(255,107,107,0.3)", background:"rgba(255,107,107,0.1)", color:"#ff6b6b" }}>
+            ⚠️ {pendingLotItems.length} pendiente{pendingLotItems.length !== 1 ? "s" : ""} por ingresar
+          </button>
+        )}
         <span style={{ flex:1, fontSize:13, color: s.excludeFromOrder ? "#555" : "#f0f0f0", fontWeight:600, minWidth:120, textDecoration: s.excludeFromOrder ? "line-through" : "none" }}>{s.patientName}</span>
         <span style={{ fontSize:11, color:"#666" }}>{s.cycle}</span>
         {s.excludeFromOrder ? (
@@ -805,6 +918,14 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                     color: s.inventorySalidaDone ? "#00d4aa" : "#ff6b6b" }}>
                   {s.inventorySalidaDone ? "✓ Inventario dado de baja" : "📦 Dar de baja inventario"}
                 </button>
+
+                {s.inventorySalidaDone && (
+                  <button onClick={e => { e.stopPropagation(); reprintComprobante(); }} disabled={generatingComprobante}
+                    title="Volver a generar el comprobante de dónde salió cada medicamento"
+                    style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: generatingComprobante ? "wait" : "pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                    {generatingComprobante ? "…" : "🖨️ Comprobante"}
+                  </button>
+                )}
               </>
             )}
 
@@ -1025,7 +1146,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:480, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
             <div>
-              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>🏷️ Confirmar asistencia — asignar lote</div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>🏷️ {lotModalMode === "edit" ? "Asignar lote pendiente" : "Confirmar asistencia — asignar lote"}</div>
               <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{s.patientName} — se sugiere el lote más próximo a caducar; puedes cambiarlo.</div>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:14, maxHeight:"55vh", overflowY:"auto" }}>
@@ -1038,7 +1159,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                       <span>{row.item}</span>
                       <span style={{ color: short ? "#ff6b6b" : "#00d4aa" }}>{pickedTotal} / {row.needed}</span>
                     </div>
-                    {short && <div style={{ fontSize:10, color:"#ff6b6b", marginBottom:6 }}>⚠️ No hay suficiente lote disponible en CITIO para cubrir todo -- revisa existencias.</div>}
+                    {short && <div style={{ fontSize:10, color:"#ff6b6b", marginBottom:6 }}>⚠️ No hay suficiente lote disponible en CITIO -- probablemente no vino de Qual (compra directa a otro proveedor). Quedará marcado como pendiente hasta que se registre su entrada.</div>}
                     {row.picks.length === 0 && <div style={{ fontSize:11, color:"#555" }}>Sin lote disponible en CITIO.</div>}
                     {row.picks.map((p, pi) => (
                       <div key={pi} style={{ display:"flex", alignItems:"center", gap:6, marginTop:4 }}>
@@ -1068,7 +1189,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
               </button>
               <button onClick={confirmWithLots} disabled={savingConfirmLots}
                 style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingConfirmLots ? "wait" : "pointer", background:"linear-gradient(135deg,#00d4aa,#00a884)", border:"none", color:"#000", opacity: savingConfirmLots ? 0.6 : 1 }}>
-                {savingConfirmLots ? "Guardando…" : "✓ Confirmar asistencia"}
+                {savingConfirmLots ? "Guardando…" : lotModalMode === "edit" ? "✓ Guardar asignación" : "✓ Confirmar asistencia"}
               </button>
             </div>
           </div>
