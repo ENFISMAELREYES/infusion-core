@@ -69,6 +69,32 @@ async function fetchOverrides(token) {
   }
 }
 
+// Lotes de medicamento en CITIO (Fase 3: asignación de lote al confirmar
+// asistencia) -- mismo almacén y colección que ya usa Inventario.jsx para la
+// trazabilidad por lote; aquí solo se leen los de CITIO, nunca Qual·CITIO
+// (eso es "lo que Qual tiene disponible para vender", no lo que ya es de
+// CITIO).
+async function fetchCitioLots(token) {
+  const res = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`,
+    { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ structuredQuery: {
+        from: [{ collectionId: "inventory_lots" }],
+        where: { fieldFilter: { field: { fieldPath: "warehouse" }, op: "EQUAL", value: { stringValue: "CITIO" } } },
+        limit: 1000,
+      }})
+    }
+  );
+  const data = await res.json();
+  return (data.filter(d => d.document) || []).map(d => parseDoc(d.document));
+}
+
+// Mismo criterio que inventoryDocId (duplicado localmente en cada función de
+// este archivo), pero con el lote en el ID -- igual que en Inventario.jsx.
+function inventoryLotDocId(warehouse, item, lote) {
+  return `${warehouse}_${item}_${lote}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 300);
+}
+
 async function saveOverrides(token, data) {
   const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toFV(v)]));
   const mask = Object.keys(data).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
@@ -121,7 +147,7 @@ function CatalogSuggestions({ query, catalog, onSelect }) {
 // Pedido, y — cuando se está viendo "todas las cargadas" — el botón de Anexar
 // para agregar material extra si hubo cambios el día de la sesión o después
 // (hasta 3 anexos por sesión).
-function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user, onRefresh, setSessions, downloadPharmacyOrder, showAnexo, mode }) {
+function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user, onRefresh, setSessions, downloadPharmacyOrder, showAnexo, mode, citioLots, setCitioLots }) {
   const { profile } = useAuth();
   // Solo Paola (el filtro universal de todas las solicitudes) o el jefe
   // pueden hacer el checkup de material -- por el campo puedeValidarInsumos
@@ -200,19 +226,95 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   const isCipi = s.center === "CIPI";
   const [cipiVariant, setCipiVariant] = useState(s.cipiVariant || "PRO");
 
+  // Lotes disponibles de CITIO para un artículo, del más próximo a caducar al
+  // más lejano (FEFO -- primero en caducar, primero en salir).
+  const lotsForItem = (itemName) => citioLots
+    .filter(l => l.item === itemName && (l.cantidadDisponible || 0) > 0)
+    .sort((a, b) => (a.caducidad || "").localeCompare(b.caducidad || ""));
+
+  // Sugerencia automática: toma lo que se necesita del lote más próximo a
+  // caducar primero, y si no alcanza, sigue con el siguiente -- nunca deja
+  // de sugerir algo solo porque un lote no cubra toda la cantidad.
+  const suggestLotPicks = (itemName, neededQty) => {
+    const picks = [];
+    let remaining = neededQty;
+    for (const lot of lotsForItem(itemName)) {
+      if (remaining <= 0) break;
+      const take = Math.min(remaining, lot.cantidadDisponible || 0);
+      if (take <= 0) continue;
+      picks.push({ lotId: lot.id, lote: lot.lote, caducidad: lot.caducidad, marca: lot.marca, qty: take });
+      remaining -= take;
+    }
+    return picks;
+  };
+
+  const [showConfirmLotModal, setShowConfirmLotModal] = useState(false);
+  const [lotAssignDraft, setLotAssignDraft] = useState([]); // [{ item, needed, picks:[{lotId,lote,caducidad,marca,qty}] }]
+  const [savingConfirmLots, setSavingConfirmLots] = useState(false);
+
+  const patchConfirmFields = async (willConfirm, lotAssignments) => {
+    const extraMask = lotAssignments !== undefined ? "&updateMask.fieldPaths=lotAssignments" : "";
+    await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=confirmed&updateMask.fieldPaths=confirmedAt&updateMask.fieldPaths=confirmedBy${extraMask}`,
+      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+        body: JSON.stringify({ fields: {
+          confirmed: { booleanValue: willConfirm },
+          confirmedAt: willConfirm ? { stringValue: new Date().toISOString() } : { nullValue: null },
+          confirmedBy: willConfirm ? { stringValue: user?.email || "" } : { nullValue: null },
+          ...(lotAssignments !== undefined ? { lotAssignments: toFV(lotAssignments) } : {}),
+        }}) });
+    setSessions(prev => prev.map(x => x.id === s.id ? { ...x, confirmed: willConfirm, ...(lotAssignments !== undefined ? { lotAssignments } : {}) } : x));
+  };
+
   const toggleConfirm = async () => {
     const willConfirm = !s.confirmed;
     try {
-      await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=confirmed&updateMask.fieldPaths=confirmedAt&updateMask.fieldPaths=confirmedBy`,
-        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-          body: JSON.stringify({ fields: {
-            confirmed: { booleanValue: willConfirm },
-            confirmedAt: willConfirm ? { stringValue: new Date().toISOString() } : { nullValue: null },
-            confirmedBy: willConfirm ? { stringValue: user?.email || "" } : { nullValue: null },
-          }}) });
-      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, confirmed: willConfirm } : x));
+      // Solo CITIO lleva trazabilidad por lote por ahora -- CIPI confirma
+      // igual que siempre, sin pedir lote.
+      if (willConfirm && s.center === "CITIO") {
+        const medItems = material.items.filter(t => categorizeItem(t.item) === "MEDICAMENTOS");
+        if (medItems.length > 0) {
+          setLotAssignDraft(medItems.map(({ item, qty }) => ({ item, needed: qty, picks: suggestLotPicks(item, qty) })));
+          setShowConfirmLotModal(true);
+          return; // se confirma desde el modal (confirmWithLots), no aquí
+        }
+      }
+      // Sin medicamento con lote de por medio (CIPI, o sesión sin
+      // medicamento) -- al desconfirmar también se limpia la asignación
+      // previa, porque si se vuelve a confirmar después puede que ya no
+      // aplique (dosis/medicamento pudo haber cambiado mientras tanto).
+      await patchConfirmFields(willConfirm, willConfirm ? undefined : null);
     } catch (e) { alert("Error al confirmar: " + e.message); }
   };
+
+  const confirmWithLots = async () => {
+    setSavingConfirmLots(true);
+    try {
+      await patchConfirmFields(true, lotAssignDraft.map(({ item, picks }) => ({ item, picks: picks.filter(p => p.qty > 0) })));
+      setShowConfirmLotModal(false);
+    } catch (e) { alert("Error al confirmar: " + e.message); }
+    finally { setSavingConfirmLots(false); }
+  };
+
+  // Edición manual de la sugerencia de lote (anulación), antes de confirmar.
+  const setDraftPickQty = (itemIdx, pickIdx, qty) => setLotAssignDraft(prev => prev.map((row, ri) => ri !== itemIdx ? row
+    : { ...row, picks: row.picks.map((p, pi) => pi === pickIdx ? { ...p, qty: Math.max(0, qty) } : p) }));
+  const setDraftPickLot = (itemIdx, pickIdx, lotId) => setLotAssignDraft(prev => prev.map((row, ri) => {
+    if (ri !== itemIdx) return row;
+    const lot = citioLots.find(l => l.id === lotId);
+    if (!lot) return row;
+    return { ...row, picks: row.picks.map((p, pi) => pi === pickIdx ? { ...p, lotId: lot.id, lote: lot.lote, caducidad: lot.caducidad, marca: lot.marca } : p) };
+  }));
+  const addDraftPickRow = (itemIdx) => setLotAssignDraft(prev => prev.map((row, ri) => {
+    if (ri !== itemIdx) return row;
+    const used = new Set(row.picks.map(p => p.lotId));
+    const nextLot = lotsForItem(row.item).find(l => !used.has(l.id));
+    const newPick = nextLot
+      ? { lotId: nextLot.id, lote: nextLot.lote, caducidad: nextLot.caducidad, marca: nextLot.marca, qty: 0 }
+      : { lotId: null, lote: "", caducidad: "", marca: "", qty: 0 };
+    return { ...row, picks: [...row.picks, newPick] };
+  }));
+  const removeDraftPickRow = (itemIdx, pickIdx) => setLotAssignDraft(prev => prev.map((row, ri) => ri !== itemIdx ? row
+    : { ...row, picks: row.picks.filter((_, pi) => pi !== pickIdx) }));
   const [docsRevealed, setDocsRevealed] = useState(medsHecho || materialHecho || anexos.length > 0);
   const [showAnexoModal, setShowAnexoModal] = useState(false);
   const [anexoItems, setAnexoItems] = useState([]);
@@ -470,6 +572,50 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         await checkOk(invRes, `Existencias de "${it.item}"`);
       }
 
+      // Descuento por lote (Fase 3, solo CITIO): además de la existencia
+      // agregada de arriba, se descuenta del lote específico asignado al
+      // confirmar asistencia -- es lo que de verdad se va a usar en el
+      // paciente, no solo "algo de este medicamento". Si lo que se va a dar
+      // de baja ya no coincide con lo asignado (se editó la cantidad aquí, o
+      // nunca se asignó porque la sesión no pasó por "Confirmar asistencia"),
+      // se recalcula al vuelo con el mismo criterio FEFO -- la baja nunca se
+      // bloquea por falta de asignación previa.
+      if (s.center === "CITIO") {
+        const medsToDeduct = itemsToDeduct.filter(it => categorizeItem(it.item) === "MEDICAMENTOS");
+        let liveLots = citioLots;
+        for (const it of medsToDeduct) {
+          const assignment = (s.lotAssignments || []).find(a => a.item === it.item);
+          const assignedTotal = (assignment?.picks || []).reduce((acc, p) => acc + (p.qty || 0), 0);
+          const picks = (assignment && assignedTotal === it.qty)
+            ? assignment.picks
+            : liveLots.filter(l => l.item === it.item && (l.cantidadDisponible || 0) > 0)
+                .sort((a, b) => (a.caducidad || "").localeCompare(b.caducidad || ""))
+                .reduce((acc, lot) => {
+                  const already = acc.reduce((s2, p) => s2 + p.qty, 0);
+                  const take = Math.min(it.qty - already, lot.cantidadDisponible || 0);
+                  if (take > 0) acc.push({ lotId: lot.id, lote: lot.lote, caducidad: lot.caducidad, marca: lot.marca, qty: take });
+                  return acc;
+                }, []);
+          for (const p of picks.filter(p => p.qty > 0)) {
+            const lotDocId = inventoryLotDocId("CITIO", it.item, p.lote);
+            const lotExisting = liveLots.find(l => l.id === lotDocId);
+            const nuevaDisponible = (lotExisting?.cantidadDisponible ?? 0) - p.qty;
+            const lotRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory_lots/${lotDocId}`,
+              { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+                body: JSON.stringify({ fields: {
+                  warehouse: { stringValue: "CITIO" }, item: { stringValue: it.item },
+                  lote: { stringValue: p.lote }, caducidad: { stringValue: p.caducidad }, marca: { stringValue: p.marca || lotExisting?.marca || "" },
+                  cantidadInicial: toFV(lotExisting?.cantidadInicial ?? 0),
+                  cantidadDisponible: toFV(nuevaDisponible),
+                  lastUpdated: { stringValue: new Date().toISOString() },
+                }}) });
+            await checkOk(lotRes, `Lote "${p.lote}" de "${it.item}"`);
+            liveLots = liveLots.map(l => l.id === lotDocId ? { ...l, cantidadDisponible: nuevaDisponible } : l);
+          }
+        }
+        setCitioLots(liveLots);
+      }
+
       if (itemsToDeduct.length > 0) {
         const evRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory_events`,
           { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
@@ -720,11 +866,25 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           {note && (
             <div style={{ fontSize:11, color:"#4fc3f7", marginBottom:6, padding:"6px 8px", background:"rgba(79,195,247,0.06)", borderRadius:6 }}>📝 {note}</div>
           )}
-          {material.items.map((t,ti) => (
-            <div key={ti} style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#aaa", padding:"3px 0" }}>
-              <span>{t.item}</span><span style={{ color:"#00d4aa" }}>{t.qty}</span>
-            </div>
-          ))}
+          {material.items.map((t,ti) => {
+            const assignment = (s.lotAssignments || []).find(a => a.item === t.item);
+            return (
+              <div key={ti} style={{ padding:"3px 0" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#aaa" }}>
+                  <span>{t.item}</span><span style={{ color:"#00d4aa" }}>{t.qty}</span>
+                </div>
+                {assignment && assignment.picks?.length > 0 && (
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginTop:2 }}>
+                    {assignment.picks.map((p, pi) => (
+                      <span key={pi} style={{ fontSize:10, color:"#AFA9EC", background:"rgba(175,169,236,0.08)", padding:"1px 7px", borderRadius:99 }}>
+                        🏷️ {p.lote} · cad. {p.caducidad} · {p.marca} · {p.qty}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {anexos.map((an,ai) => {
             // Mismo criterio que la solicitud de la sesión: si el anexo lleva
             // medicamento, pasa por checkup de Paola + autorización del jefe;
@@ -859,6 +1019,61 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           </div>
         </div>
       )}
+
+      {showConfirmLotModal && (
+        <div onClick={() => !savingConfirmLots && setShowConfirmLotModal(false)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:480, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>🏷️ Confirmar asistencia — asignar lote</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{s.patientName} — se sugiere el lote más próximo a caducar; puedes cambiarlo.</div>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:14, maxHeight:"55vh", overflowY:"auto" }}>
+              {lotAssignDraft.map((row, ri) => {
+                const pickedTotal = row.picks.reduce((acc, p) => acc + (p.qty || 0), 0);
+                const short = pickedTotal < row.needed;
+                return (
+                  <div key={ri} style={{ padding:"8px 10px", borderRadius:9, background:"rgba(255,255,255,0.03)", border: short ? "1px solid rgba(255,107,107,0.3)" : "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"#ccc", fontWeight:600, marginBottom:6 }}>
+                      <span>{row.item}</span>
+                      <span style={{ color: short ? "#ff6b6b" : "#00d4aa" }}>{pickedTotal} / {row.needed}</span>
+                    </div>
+                    {short && <div style={{ fontSize:10, color:"#ff6b6b", marginBottom:6 }}>⚠️ No hay suficiente lote disponible en CITIO para cubrir todo -- revisa existencias.</div>}
+                    {row.picks.length === 0 && <div style={{ fontSize:11, color:"#555" }}>Sin lote disponible en CITIO.</div>}
+                    {row.picks.map((p, pi) => (
+                      <div key={pi} style={{ display:"flex", alignItems:"center", gap:6, marginTop:4 }}>
+                        <select value={p.lotId || ""} onChange={e => setDraftPickLot(ri, pi, e.target.value)}
+                          style={{ flex:1, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:11, outline:"none" }}>
+                          {!p.lotId && <option value="">(elige un lote)</option>}
+                          {lotsForItem(row.item).map(l => (
+                            <option key={l.id} value={l.id}>{l.lote} · {l.caducidad} · {l.marca} · disp. {l.cantidadDisponible}</option>
+                          ))}
+                        </select>
+                        <input type="number" min="0" value={p.qty} onChange={e => setDraftPickQty(ri, pi, parseInt(e.target.value) || 0)}
+                          style={{ width:54, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:11, outline:"none", textAlign:"center" }} />
+                        <button onClick={() => removeDraftPickRow(ri, pi)} style={{ padding:"3px 7px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
+                      </div>
+                    ))}
+                    <button onClick={() => addDraftPickRow(ri)} style={{ marginTop:6, padding:"3px 8px", borderRadius:6, fontSize:10, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.08)", border:"1px solid rgba(175,169,236,0.25)", color:"#AFA9EC" }}>
+                      + Otro lote de este artículo
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setShowConfirmLotModal(false)} disabled={savingConfirmLots}
+                style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingConfirmLots ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                Cancelar
+              </button>
+              <button onClick={confirmWithLots} disabled={savingConfirmLots}
+                style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingConfirmLots ? "wait" : "pointer", background:"linear-gradient(135deg,#00d4aa,#00a884)", border:"none", color:"#000", opacity: savingConfirmLots ? 0.6 : 1 }}>
+                {savingConfirmLots ? "Guardando…" : "✓ Confirmar asistencia"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -874,6 +1089,7 @@ export default function Insumos() {
   const [tab, setTab] = useState("consolidado");
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
+  const [citioLots, setCitioLots] = useState([]); // lotes de CITIO, para la asignación al confirmar asistencia (Fase 3)
   const allowedCenters = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI PRO","CIPI PED"] : [profile?.center || "CITIO"]);
   const [centerFilter, setCenterFilter] = useState(() => canSeeAllCenters ? "Todos" : (allowedCenters?.[0] || "CITIO"));
   useEffect(() => {
@@ -924,13 +1140,14 @@ export default function Insumos() {
     // 180 días atrás -- antes solo se pedía desde "hoy", por eso al navegar
     // a fechas pasadas no aparecía nada (nunca se habían traído del todo).
     const fromDate = (() => { const d = new Date(); d.setDate(d.getDate() - 180); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); })();
-    const [s, ov] = await Promise.all([fetchUpcomingSessions(token, fromDate), fetchOverrides(token)]);
+    const [s, ov, lots] = await Promise.all([fetchUpcomingSessions(token, fromDate), fetchOverrides(token), fetchCitioLots(token)]);
     // Antes se excluía cualquier sesión sin medicamentos -- los procedimientos
     // suelen no llevar medicamentos capturados de la misma forma, pero sí
     // pueden necesitar material (insumos del procedimiento), así que siempre
     // se incluyen sin importar si su lista de meds está vacía.
     setSessions(s.filter(x => (Array.isArray(x.meds) && x.meds.length > 0) || x.sessionType === "procedimiento"));
     setOverrides(ov);
+    setCitioLots(lots);
     setLoading(false);
     setHasLoadedOnce(true);
   };
@@ -1365,7 +1582,8 @@ export default function Insumos() {
                 expanded={expandedPatient===i} onToggle={() => setExpandedPatient(p => p===i ? null : i)}
                 token={token} user={user} onRefresh={load} setSessions={setSessions}
                 downloadPharmacyOrder={downloadPharmacyOrder} showAnexo={dateFilter==="todas"}
-                mode={dateFilter==="todas" ? "solicitud" : "captura"} />
+                mode={dateFilter==="todas" ? "solicitud" : "captura"}
+                citioLots={citioLots} setCitioLots={setCitioLots} />
             ))}
           </div>
         </div>
