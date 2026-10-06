@@ -289,10 +289,25 @@ export default function Inventario() {
   // Qual·CITIO es donde llega de verdad el medicamento (vía el PDF de
   // transferencia de QualMedical) -- ahí se captura lote/caducidad/marca.
   const needsLotEntry = (itemName) => warehouse === "QUAL_CITIO" && isMedForLot(itemName);
+  // No todos los medicamentos de CITIO pasan por Qual -- algunos se compran
+  // directo a otro proveedor. Por default se asume que SÍ viene de Qual
+  // (jalar un lote ya existente); "directSource" en el renglón del
+  // movimiento marca la excepción, elegida a mano por quien registra la
+  // entrada (ver botón de alternar en la lista de artículos).
+  const isDirectSource = (itemName) => !!moveList.find(x => x.item === itemName)?.directSource;
   // CITIO ya no vuelve a capturar nada: "jala" un lote que ya existe en
   // Qual·CITIO (la "venta oficial" que Qual regresa después) -- se elige
-  // de un listado en vez de escribirlo de nuevo.
-  const needsLotPick = (itemName) => warehouse === "CITIO" && isMedForLot(itemName);
+  // de un listado en vez de escribirlo de nuevo. Excepto cuando es compra
+  // directa: ahí SÍ se captura lote/caducidad/marca nuevos, igual que
+  // Qual·CITIO.
+  const needsLotPick = (itemName) => warehouse === "CITIO" && isMedForLot(itemName) && !isDirectSource(itemName);
+  const needsDirectEntry = (itemName) => warehouse === "CITIO" && isMedForLot(itemName) && isDirectSource(itemName);
+  const setDirectSource = (itemName, value) => setMoveList(prev => prev.map(x => x.item === itemName ? {
+    ...x, directSource: value,
+    lotPicks: value ? undefined : [],
+    lotEntries: value ? [{ lote:"", caducidad:"", marca:"", qty:0 }] : undefined,
+    qty: 0,
+  } : x));
   const availableQualLots = (itemName) => inventoryLots
     .filter(l => l.warehouse === "QUAL_CITIO" && l.item === itemName && (l.cantidadDisponible ?? 0) > 0)
     .sort((a, b) => (a.caducidad || "").localeCompare(b.caducidad || ""));
@@ -916,7 +931,7 @@ export default function Inventario() {
     if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
     const type = showMoveModal; // "entrada" | "salida"
     if (type === "entrada") {
-      const missingEntry = moveList.filter(it => needsLotEntry(it.item)
+      const missingEntry = moveList.filter(it => (needsLotEntry(it.item) || needsDirectEntry(it.item))
         && (it.lotEntries || []).some(e => !e.qty || !e.lote?.trim() || !e.caducidad || !e.marca?.trim()));
       if (missingEntry.length > 0) {
         alert(`Falta lote, caducidad, marca o cantidad en algún renglón de: ${missingEntry.map(m => m.item).join(", ")}. Es donde llega de verdad el medicamento -- se necesitan los cuatro en cada lote.`);
@@ -1099,6 +1114,15 @@ export default function Inventario() {
           for (const p of (it.lotPicks || []).filter(p => p.qty > 0)) {
             await upsertLot("QUAL_CITIO", it.item, p.lote, p.caducidad, p.marca, -p.qty);
             await upsertLot("CITIO", it.item, p.lote, p.caducidad, p.marca, p.qty);
+          }
+        }
+        // Compra directa a otro proveedor (no pasa por Qual): el lote se
+        // captura aquí mismo, igual que en Qual·CITIO, pero se acredita
+        // directo a CITIO -- no hay nada que descontar de Qual porque Qual
+        // nunca lo tuvo.
+        for (const it of moveList.filter(it => needsDirectEntry(it.item))) {
+          for (const e of (it.lotEntries || [])) {
+            if (e.qty > 0) await upsertLot("CITIO", it.item, e.lote, e.caducidad, e.marca, e.qty);
           }
         }
       }
@@ -1699,17 +1723,19 @@ export default function Inventario() {
               <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:280, overflowY:"auto" }}>
                 {moveList.map((it, i) => {
                   const showLotEntry = showMoveModal === "entrada" && needsLotEntry(it.item);
+                  const showDirectEntry = showMoveModal === "entrada" && needsDirectEntry(it.item);
                   const showLotPick = showMoveModal === "entrada" && needsLotPick(it.item);
+                  const showSourceToggle = showMoveModal === "entrada" && warehouse === "CITIO" && isMedForLot(it.item);
                   const qualLots = showLotPick ? availableQualLots(it.item) : [];
                   const pickedTotal = (it.lotPicks || []).reduce((acc, p) => acc + p.qty, 0);
                   return (
                   <div key={i} style={{ display:"flex", flexDirection:"column", gap:5, padding:"6px 8px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                       <span style={{ flex:1, fontSize:12, color:"#f0f0f0" }}>{it.item}</span>
-                      <input type="number" min="0" value={it.qty} readOnly={showLotPick || showLotEntry} disabled={showLotPick || showLotEntry}
+                      <input type="number" min="0" value={it.qty} readOnly={showLotPick || showLotEntry || showDirectEntry} disabled={showLotPick || showLotEntry || showDirectEntry}
                         onChange={e => setMoveListQty(it.item, parseInt(e.target.value) || 0)}
-                        title={showLotPick ? "Se calcula sola con lo elegido por lote" : showLotEntry ? "Se calcula sola con la suma de los lotes" : "Cantidad"}
-                        style={{ width:56, background: (showLotPick || showLotEntry) ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color: (showLotPick || showLotEntry) ? "#888" : "#f0f0f0", fontSize:12, outline:"none", textAlign:"center" }} />
+                        title={showLotPick ? "Se calcula sola con lo elegido por lote" : (showLotEntry || showDirectEntry) ? "Se calcula sola con la suma de los lotes" : "Cantidad"}
+                        style={{ width:56, background: (showLotPick || showLotEntry || showDirectEntry) ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color: (showLotPick || showLotEntry || showDirectEntry) ? "#888" : "#f0f0f0", fontSize:12, outline:"none", textAlign:"center" }} />
                       {showMoveModal === "entrada" && (
                         <input type="number" min="0" step="0.01" placeholder="$ costo c/u" value={it.cost ?? ""}
                           onChange={e => setMoveList(prev => prev.map(x => x.item===it.item ? { ...x, cost: e.target.value === "" ? undefined : parseFloat(e.target.value) } : x))}
@@ -1718,7 +1744,26 @@ export default function Inventario() {
                       )}
                       <button onClick={() => removeFromMoveList(it.item)} style={{ padding:"3px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
                     </div>
-                    {showLotEntry && (
+                    {showSourceToggle && (
+                      <div style={{ display:"flex", gap:6, paddingLeft:2 }}>
+                        <button onClick={() => setDirectSource(it.item, false)}
+                          style={{ padding:"3px 9px", borderRadius:6, fontSize:10, fontWeight:600, cursor:"pointer",
+                            background: !it.directSource ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
+                            border:`1px solid ${!it.directSource ? "rgba(0,212,170,0.3)" : "rgba(255,255,255,0.08)"}`,
+                            color: !it.directSource ? "#00d4aa" : "#666" }}>
+                          🔄 Jalar de Qual·CITIO
+                        </button>
+                        <button onClick={() => setDirectSource(it.item, true)}
+                          title="El medicamento no vino de Qual -- lo compró CITIO directo a otro proveedor"
+                          style={{ padding:"3px 9px", borderRadius:6, fontSize:10, fontWeight:600, cursor:"pointer",
+                            background: it.directSource ? "rgba(255,179,71,0.12)" : "rgba(255,255,255,0.04)",
+                            border:`1px solid ${it.directSource ? "rgba(255,179,71,0.3)" : "rgba(255,255,255,0.08)"}`,
+                            color: it.directSource ? "#ffb347" : "#666" }}>
+                          📦 Compra directa (otro proveedor)
+                        </button>
+                      </div>
+                    )}
+                    {(showLotEntry || showDirectEntry) && (
                       <div style={{ display:"flex", flexDirection:"column", gap:4, paddingLeft:2 }}>
                         {(it.lotEntries || []).map((e, ei) => (
                           <div key={ei} style={{ display:"flex", gap:5 }}>

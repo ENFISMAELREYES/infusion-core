@@ -31,7 +31,7 @@ export const config = { api: { responseLimit: "10mb" } };
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { center, cipiVariant, patientName, cycle, date, groups, note, anexoNumber, scope, concepto, signatures } = req.body;
+  const { center, cipiVariant, patientName, cycle, date, groups, note, anexoNumber, scope, concepto, signatures, comprobante } = req.body;
 
   try {
     // Firma a distancia: si viene un arreglo "signatures" (SOLICITA/VALIDA/
@@ -89,7 +89,8 @@ export default async function handler(req, res) {
       y += 24;
     }
 
-    const title = anexoNumber ? `ANEXO ${anexoNumber} A SOLICITUD DE MATERIAL`
+    const title = comprobante ? "COMPROBANTE DE SALIDA DE INVENTARIO"
+      : anexoNumber ? `ANEXO ${anexoNumber} A SOLICITUD DE MATERIAL`
       : concepto ? "SOLICITUD DE COMPRA"
       : scope === "medicamentos" ? "SOLICITUD DE MEDICAMENTOS"
       : scope === "material" ? "SOLICITUD DE MATERIAL"
@@ -124,10 +125,18 @@ export default async function handler(req, res) {
       doc.fontSize(11).fillColor(NAVY).font("Helvetica-Bold").text(label, 45, y);
       y += 16;
     };
-    const itemRow = (item, qty) => {
+    // "lotes" (solo en el comprobante de baja): de dónde salió cada
+    // medicamento -- lote/caducidad/marca, con su cantidad -- para que quede
+    // rastreable incluso si el reporte agregado de existencias cambia después.
+    const itemRow = (item, qty, lotes) => {
       doc.fontSize(9.5).fillColor("#000").font("Helvetica-Bold").text(item, 45, y, { width: W - 50 });
       doc.font("Helvetica-Bold").text(String(qty), 45 + W - 40, y, { width: 40, align: "right" });
       y += 14;
+      (lotes || []).forEach(l => {
+        doc.fontSize(8).fillColor(GRAY).font("Helvetica").text(`  Lote ${l.lote} · cad. ${l.caducidad} · ${l.marca} · cant. ${l.qty}`, 45, y, { width: W });
+        y += 11;
+        if (y > doc.page.height - 90) { doc.addPage(); drawWatermark(); y = 45; }
+      });
       if (y > doc.page.height - 90) { doc.addPage(); drawWatermark(); y = 45; }
     };
 
@@ -135,7 +144,7 @@ export default async function handler(req, res) {
       const items = (groups && groups[cat]) || [];
       if (items.length === 0) return;
       sectionTitle(cat);
-      items.forEach(t => itemRow(t.item, t.qty));
+      items.forEach(t => itemRow(t.item, t.qty, t.lotes));
       y += 10;
     });
 
@@ -172,7 +181,7 @@ export default async function handler(req, res) {
 
     const pdfBuffer = Buffer.concat(chunks);
     res.setHeader("Content-Type", "application/pdf");
-    const fnamePrefix = anexoNumber ? `ANEXO${anexoNumber}` : concepto ? "SOLICITUD_COMPRA" : "SOLICITUD";
+    const fnamePrefix = comprobante ? "COMPROBANTE_BAJA" : anexoNumber ? `ANEXO${anexoNumber}` : concepto ? "SOLICITUD_COMPRA" : "SOLICITUD";
     res.setHeader("Content-Disposition", `inline; filename="${fnamePrefix}_${centerKey}_${(patientName || concepto || "solicitud").toString().replace(/\s+/g, "_").slice(0, 40)}.pdf"`);
     res.send(pdfBuffer);
 
