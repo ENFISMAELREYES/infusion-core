@@ -229,28 +229,24 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   const isCipi = s.center === "CIPI";
   const [cipiVariant, setCipiVariant] = useState(s.cipiVariant || "PRO");
 
-  // Lotes "conocidos" de un artículo -- unión de lo que ya es de CITIO
-  // (formalmente recibido) y lo que está en Qual·CITIO (llegó por
-  // transferencia, pero la entrada oficial a CITIO depende de la cotización
-  // que Qual regresa después, a veces días después del tratamiento). Entre
-  // los dos, se prefiere la cantidad de Qual·CITIO -- es la que refleja lo
-  // que de verdad queda físicamente por usar; la de CITIO ya es solo un
-  // saldo contable que puede andar en negativo mientras no llega la
-  // cotización (ver confirmInvSalida).
-  const lotsForItem = (itemName) => {
-    const byLote = new Map();
-    qualCitioLots.filter(l => l.item === itemName).forEach(l => byLote.set(l.lote, l));
-    citioLots.filter(l => l.item === itemName && !byLote.has(l.lote)).forEach(l => byLote.set(l.lote, l));
-    return Array.from(byLote.values())
-      .filter(l => (l.cantidadDisponible || 0) > 0)
-      .sort((a, b) => (a.caducidad || "").localeCompare(b.caducidad || ""));
-  };
+  // Lotes "conocidos" de un artículo -- primero los de Qual·CITIO (de ahí
+  // sale casi todo: llega por transferencia y se usa directo, sin esperar a
+  // que CITIO lo reciba formalmente) y luego los de CITIO mismo (el caso
+  // raro: medicamento que CITIO compró directo a otro proveedor, nunca pasó
+  // por Qual). Cada lote ya trae su propio campo "warehouse" (viene así de
+  // Firestore), así que se sabe de cuál almacén descontar en confirmInvSalida.
+  const lotsForItem = (itemName) => [
+    ...qualCitioLots.filter(l => l.item === itemName && (l.cantidadDisponible || 0) > 0)
+      .sort((a, b) => (a.caducidad || "").localeCompare(b.caducidad || "")),
+    ...citioLots.filter(l => l.item === itemName && (l.cantidadDisponible || 0) > 0)
+      .sort((a, b) => (a.caducidad || "").localeCompare(b.caducidad || "")),
+  ];
 
   // Sugerencia automática: toma lo que se necesita del lote más próximo a
-  // caducar primero, y si no alcanza, sigue con el siguiente. Si ni así se
-  // cubre todo, se deja un renglón en blanco para que se complete a mano
-  // (con un lote que todavía no esté en el sistema) -- nunca bloquea, solo
-  // sugiere lo que puede.
+  // caducar primero (Qual·CITIO antes que CITIO), y si no alcanza, sigue con
+  // el siguiente. Si ni así se cubre todo, se deja un renglón en blanco
+  // (por default Qual·CITIO, que es lo más común) para que se complete a
+  // mano -- nunca bloquea, solo sugiere lo que puede.
   const suggestLotPicks = (itemName, neededQty) => {
     const picks = [];
     let remaining = neededQty;
@@ -258,10 +254,10 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       if (remaining <= 0) break;
       const take = Math.min(remaining, lot.cantidadDisponible || 0);
       if (take <= 0) continue;
-      picks.push({ lotId: lot.id, lote: lot.lote, caducidad: lot.caducidad, marca: lot.marca, qty: take });
+      picks.push({ warehouse: lot.warehouse, lotId: lot.id, lote: lot.lote, caducidad: lot.caducidad, marca: lot.marca, qty: take });
       remaining -= take;
     }
-    if (remaining > 0) picks.push({ lotId: null, lote: "", caducidad: "", marca: "", qty: remaining });
+    if (remaining > 0) picks.push({ warehouse: "QUAL_CITIO", lotId: null, lote: "", caducidad: "", marca: "", qty: remaining });
     return picks;
   };
 
@@ -292,22 +288,19 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     setSessions(prev => prev.map(x => x.id === s.id ? { ...x, lotAssignments } : x));
   };
 
-  // Ajusta (suma o resta) el saldo del lote del lado de CITIO -- puede
-  // quedar en negativo mientras no llega la cotización y se registra la
-  // entrada oficial (ver registerMovement en Inventario.jsx, que es la que
-  // sí descuenta Qual·CITIO y por fin deja el saldo de CITIO en 0, o en
-  // positivo si sobró). liveLots es la copia local que se va mutando
-  // mientras se recorren varios renglones en la misma llamada, para que
-  // cada ajuste vea el saldo que dejó el anterior.
-  const adjustCitioLotQty = async (item, lote, caducidad, marca, deltaQty, liveLots) => {
+  // Ajusta (suma o resta) el saldo de un lote en el almacén indicado.
+  // liveLots es la copia local que se va mutando mientras se recorren
+  // varios renglones en la misma llamada, para que cada ajuste vea el
+  // saldo que dejó el anterior.
+  const adjustLotQty = async (warehouse, item, lote, caducidad, marca, deltaQty, liveLots) => {
     if (!lote) return liveLots; // sin lote nombrado, nada que ajustar todavía
-    const lotDocId = inventoryLotDocId("CITIO", item, lote);
+    const lotDocId = inventoryLotDocId(warehouse, item, lote);
     const existing = liveLots.find(l => l.id === lotDocId);
     const nuevaDisponible = (existing?.cantidadDisponible ?? 0) + deltaQty;
     const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory_lots/${lotDocId}`,
       { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
         body: JSON.stringify({ fields: {
-          warehouse: { stringValue: "CITIO" }, item: { stringValue: item },
+          warehouse: { stringValue: warehouse }, item: { stringValue: item },
           lote: { stringValue: lote }, caducidad: { stringValue: caducidad || "" }, marca: { stringValue: marca || existing?.marca || "" },
           cantidadInicial: toFV(existing?.cantidadInicial ?? 0),
           cantidadDisponible: toFV(nuevaDisponible),
@@ -316,7 +309,23 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     if (!res.ok) { let msg = `Error ${res.status}`; try { const b = await res.json(); msg = b?.error?.message || msg; } catch {} throw new Error(`Lote "${lote}" de "${item}": ${msg}`); }
     return existing
       ? liveLots.map(l => l.id === lotDocId ? { ...l, cantidadDisponible: nuevaDisponible } : l)
-      : [...liveLots, { id: lotDocId, warehouse: "CITIO", item, lote, caducidad, marca, cantidadInicial: 0, cantidadDisponible: nuevaDisponible }];
+      : [...liveLots, { id: lotDocId, warehouse, item, lote, caducidad, marca, cantidadInicial: 0, cantidadDisponible: nuevaDisponible }];
+  };
+
+  // Descuenta un pick elegido (ya sea de Qual·CITIO o de CITIO directo) --
+  // sign=-1 para aplicarlo (usarlo), sign=+1 para revertirlo. Si el pick es
+  // de Qual·CITIO, el mismo lote/cantidad TAMBIÉN se refleja en CITIO (en
+  // rojo si falta la cotización) -- es "pendiente de compra" hasta que
+  // llegue la factura y se regularice en Inventario. Si el pick ya es de
+  // CITIO directo (compra a otro proveedor, nunca pasó por Qual), solo se
+  // toca CITIO -- no hay nada que reflejar en Qual·CITIO.
+  const applyLotPick = async (item, pick, sign, liveLots) => {
+    const warehouse = pick.warehouse || "QUAL_CITIO";
+    let lots = await adjustLotQty(warehouse, item, pick.lote, pick.caducidad, pick.marca, sign * pick.qty, liveLots);
+    if (warehouse === "QUAL_CITIO") {
+      lots = await adjustLotQty("CITIO", item, pick.lote, pick.caducidad, pick.marca, sign * pick.qty, lots);
+    }
+    return lots;
   };
 
   // Medicamentos de esta sesión que llevan trazabilidad por lote (solo
@@ -385,11 +394,11 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       // fuera incompleta). Aquí se revierte exactamente eso y se aplica la
       // nueva, para que el lote quede al día sin duplicar ni perder nada.
       if (s.inventorySalidaDone) {
-        let liveLots = citioLots;
+        let liveLots = [...citioLots, ...qualCitioLots];
         for (const a of (s.lotAssignments || [])) for (const p of (a.picks || []).filter(p => p.qty > 0))
-          liveLots = await adjustCitioLotQty(a.item, p.lote, p.caducidad, p.marca, p.qty, liveLots);
+          liveLots = await applyLotPick(a.item, p, +1, liveLots); // revertir lo ya descontado
         for (const a of assignments) for (const p of a.picks)
-          liveLots = await adjustCitioLotQty(a.item, p.lote, p.caducidad, p.marca, -p.qty, liveLots);
+          liveLots = await applyLotPick(a.item, p, -1, liveLots); // aplicar la asignación nueva
         setAllLots(prev => prev.map(l => liveLots.find(x => x.id === l.id) || l).concat(liveLots.filter(l => !prev.some(p => p.id === l.id))));
         // El comprobante ya emitido debe reflejar la corrección -- se
         // actualiza el detalle guardado para que un reimpreso después ya
@@ -423,15 +432,20 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     if (!lotId) return { ...row, picks: row.picks.map((p, pi) => pi === pickIdx ? { ...p, lotId: null } : p) };
     const lot = lotsForItem(row.item).find(l => l.id === lotId);
     if (!lot) return row;
-    return { ...row, picks: row.picks.map((p, pi) => pi === pickIdx ? { ...p, lotId: lot.id, lote: lot.lote, caducidad: lot.caducidad, marca: lot.marca } : p) };
+    return { ...row, picks: row.picks.map((p, pi) => pi === pickIdx ? { ...p, lotId: lot.id, lote: lot.lote, caducidad: lot.caducidad, marca: lot.marca, warehouse: lot.warehouse } : p) };
   }));
+  // Para un renglón escrito a mano (sin elegir de la lista), de qué almacén
+  // se está tomando -- por default Qual·CITIO, que es lo más común; CITIO
+  // directo solo para el caso raro de compra a otro proveedor.
+  const setDraftPickWarehouse = (itemIdx, pickIdx, warehouse) => setLotAssignDraft(prev => prev.map((row, ri) => ri !== itemIdx ? row
+    : { ...row, picks: row.picks.map((p, pi) => pi === pickIdx ? { ...p, warehouse } : p) }));
   const addDraftPickRow = (itemIdx) => setLotAssignDraft(prev => prev.map((row, ri) => {
     if (ri !== itemIdx) return row;
     const used = new Set(row.picks.map(p => p.lotId));
     const nextLot = lotsForItem(row.item).find(l => !used.has(l.id));
     const newPick = nextLot
-      ? { lotId: nextLot.id, lote: nextLot.lote, caducidad: nextLot.caducidad, marca: nextLot.marca, qty: 0 }
-      : { lotId: null, lote: "", caducidad: "", marca: "", qty: 0 };
+      ? { warehouse: nextLot.warehouse, lotId: nextLot.id, lote: nextLot.lote, caducidad: nextLot.caducidad, marca: nextLot.marca, qty: 0 }
+      : { warehouse: "QUAL_CITIO", lotId: null, lote: "", caducidad: "", marca: "", qty: 0 };
     return { ...row, picks: [...row.picks, newPick] };
   }));
   const removeDraftPickRow = (itemIdx, pickIdx) => setLotAssignDraft(prev => prev.map((row, ri) => ri !== itemIdx ? row
@@ -723,19 +737,22 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       // Descuento por lote: además de la existencia agregada de arriba, se
       // descuenta del lote que ya se tenga asignado en este momento (puede
       // ser parcial, o incluso ninguno si todavía no se ha capturado) -- NO
-      // bloquea la baja por eso. El saldo de CITIO puede quedar en rojo
-      // (negativo) mientras no llega la cotización de Qual y se registra la
-      // entrada oficial (eso es lo que lo regresa a 0, o a verde si sobró).
-      // Si después se completa o corrige el lote (ver "🏷️ Asignar/corregir
-      // lote"), confirmWithLots concilia el saldo sin duplicar.
-      const lotesUsados = {}; // item -> [{lote,caducidad,marca,qty}]
+      // bloquea la baja por eso. Si el pick es de Qual·CITIO (lo normal), se
+      // descuenta ahí mismo el día de la sesión -- es donde físicamente
+      // estaba -- y el mismo lote/cantidad queda también en rojo del lado
+      // de CITIO ("pendiente de compra"), hasta que llegue la cotización y
+      // se regularice en Inventario (sin volver a tocar Qual·CITIO). Si el
+      // pick es de CITIO directo (compra a otro proveedor), solo se
+      // descuenta ahí. Si después se completa o corrige el lote (ver
+      // "🏷️ Asignar/corregir lote"), confirmWithLots concilia sin duplicar.
+      const lotesUsados = {}; // item -> [{lote,caducidad,marca,qty,warehouse}]
       if (medsToDeduct.length > 0) {
-        let liveLots = citioLots;
+        let liveLots = [...citioLots, ...qualCitioLots];
         for (const it of medsToDeduct) {
           const picks = (s.lotAssignments || []).find(a => a.item === it.item)?.picks?.filter(p => p.qty > 0 && p.lote) || [];
           if (picks.length === 0) continue; // sin lote capturado todavía -- se descuenta la existencia agregada igual, el lote queda pendiente
           lotesUsados[it.item] = picks;
-          for (const p of picks) liveLots = await adjustCitioLotQty(it.item, p.lote, p.caducidad, p.marca, -p.qty, liveLots);
+          for (const p of picks) liveLots = await applyLotPick(it.item, p, -1, liveLots);
         }
         setAllLots(prev => prev.map(l => liveLots.find(x => x.id === l.id) || l).concat(liveLots.filter(l => !prev.some(p => p.id === l.id))));
       }
@@ -1203,9 +1220,28 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                             style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:11, outline:"none" }}>
                             <option value="">(escribir lote a mano)</option>
                             {known.map(l => (
-                              <option key={l.id} value={l.id}>{l.lote} · cad. {l.caducidad} · {l.marca} · disp. {l.cantidadDisponible}</option>
+                              <option key={l.id} value={l.id}>{l.warehouse === "CITIO" ? "CITIO" : "Qual·CITIO"} · {l.lote} · cad. {l.caducidad} · {l.marca} · disp. {l.cantidadDisponible}</option>
                             ))}
                           </select>
+                        )}
+                        {!p.lotId && (
+                          <div style={{ display:"flex", gap:5 }}>
+                            <button type="button" onClick={() => setDraftPickWarehouse(ri, pi, "QUAL_CITIO")}
+                              style={{ flex:1, padding:"3px 6px", borderRadius:6, fontSize:10, fontWeight:600, cursor:"pointer",
+                                background: (p.warehouse || "QUAL_CITIO") === "QUAL_CITIO" ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.04)",
+                                border:`1px solid ${(p.warehouse || "QUAL_CITIO") === "QUAL_CITIO" ? "rgba(0,212,170,0.3)" : "rgba(255,255,255,0.08)"}`,
+                                color: (p.warehouse || "QUAL_CITIO") === "QUAL_CITIO" ? "#00d4aa" : "#666" }}>
+                              Se toma de Qual·CITIO
+                            </button>
+                            <button type="button" onClick={() => setDraftPickWarehouse(ri, pi, "CITIO")}
+                              title="El medicamento no vino de Qual -- lo compró CITIO directo a otro proveedor"
+                              style={{ flex:1, padding:"3px 6px", borderRadius:6, fontSize:10, fontWeight:600, cursor:"pointer",
+                                background: p.warehouse === "CITIO" ? "rgba(255,179,71,0.12)" : "rgba(255,255,255,0.04)",
+                                border:`1px solid ${p.warehouse === "CITIO" ? "rgba(255,179,71,0.3)" : "rgba(255,255,255,0.08)"}`,
+                                color: p.warehouse === "CITIO" ? "#ffb347" : "#666" }}>
+                              Compra directa de CITIO
+                            </button>
+                          </div>
                         )}
                         <div style={{ display:"flex", gap:5 }}>
                           <input placeholder="Lote" value={p.lote || ""} onChange={e => setDraftPickField(ri, pi, "lote", e.target.value)}

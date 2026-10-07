@@ -147,6 +147,40 @@ export default function Inventario() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [extraCatalog, setExtraCatalog] = useState([]); // artículos dados de alta desde Insumos o desde aquí mismo (settings/materialCatalog)
   const [inventoryLots, setInventoryLots] = useState([]); // lotes de medicamento (Fase 2 de trazabilidad, solo CITIO por ahora)
+  // Regularizar cotización (Fase 3): un lote de CITIO en rojo significa que
+  // ya se usó en una sesión antes de que CITIO lo comprara formalmente
+  // (ver Insumos.jsx, dar de baja). Cuando llega la cotización, esto solo
+  // abona a CITIO -- NO vuelve a descontar Qual·CITIO (ya se descontó el
+  // día de la sesión, descontarlo otra vez lo dejaría mal contado).
+  const [regularizeLot, setRegularizeLot] = useState(null);
+  const [regularizeQty, setRegularizeQty] = useState("");
+  const [savingRegularize, setSavingRegularize] = useState(false);
+  const openRegularizeCotizacion = (lot) => { setRegularizeLot(lot); setRegularizeQty(String(Math.abs(lot.cantidadDisponible ?? 0) || "")); };
+  const saveRegularizeCotizacion = async () => {
+    const qty = parseFloat(regularizeQty) || 0;
+    if (qty <= 0) { alert("Captura una cantidad mayor a 0."); return; }
+    setSavingRegularize(true);
+    try {
+      const lot = regularizeLot;
+      const nuevaDisponible = (lot.cantidadDisponible ?? 0) + qty;
+      const res = await fetch(`${FIRESTORE_BASE_URL}/inventory_lots/${lot.id}`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            warehouse: { stringValue: "CITIO" }, item: { stringValue: lot.item },
+            lote: { stringValue: lot.lote }, caducidad: { stringValue: lot.caducidad || "" }, marca: { stringValue: lot.marca || "" },
+            cantidadInicial: toFV(Math.max(lot.cantidadInicial ?? 0, nuevaDisponible)),
+            cantidadDisponible: toFV(nuevaDisponible),
+            lastUpdated: { stringValue: new Date().toISOString() },
+          }}) });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${res.status}`); }
+      setInventoryLots(prev => prev.map(l => l.id === lot.id ? { ...l, cantidadDisponible: nuevaDisponible } : l));
+      setRegularizeLot(null); setRegularizeQty("");
+    } catch (e) {
+      alert("Error al registrar la cotización: " + e.message);
+    } finally {
+      setSavingRegularize(false);
+    }
+  };
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [search, setSearch] = useState("");
@@ -1263,8 +1297,12 @@ export default function Inventario() {
                 const { min, suggestQty } = reorderInfo(i);
                 const low = i.currentStock < min;
                 const negative = i.currentStock < 0;
+                // CITIO sí muestra lotes en negativo -- es justo lo "pendiente
+                // de compra" (ya se usó en una sesión antes de que CITIO lo
+                // comprara formalmente). Qual·CITIO no, ahí un lote en 0 ya
+                // no tiene nada que mostrar.
                 const itemLots = (warehouse === "CITIO" || warehouse === "QUAL_CITIO") && isMedForLot(i.item)
-                  ? inventoryLots.filter(l => l.warehouse === warehouse && l.item === i.item && (l.cantidadDisponible ?? 0) > 0).sort((a,b) => (a.caducidad||"").localeCompare(b.caducidad||""))
+                  ? inventoryLots.filter(l => l.warehouse === warehouse && l.item === i.item && (warehouse === "CITIO" ? (l.cantidadDisponible ?? 0) !== 0 : (l.cantidadDisponible ?? 0) > 0)).sort((a,b) => (a.caducidad||"").localeCompare(b.caducidad||""))
                   : [];
                 return (
                   <div key={i.id} style={{ display:"flex", flexDirection:"column", gap:6, padding:"10px 14px", borderRadius:10, background: negative ? "rgba(255,107,107,0.06)" : "rgba(255,255,255,0.03)", border:`1px solid ${negative ? "rgba(255,107,107,0.4)" : low ? "rgba(255,107,107,0.3)" : "rgba(255,255,255,0.07)"}` }}>
@@ -1305,11 +1343,24 @@ export default function Inventario() {
                   </div>
                   {itemLots.length > 0 && (
                     <div style={{ display:"flex", gap:6, flexWrap:"wrap", paddingLeft:2 }}>
-                      {itemLots.map(l => (
-                        <span key={l.id} title={`Marca: ${l.marca || "—"}`} style={{ fontSize:10, padding:"2px 8px", borderRadius:99, background:"rgba(0,212,170,0.08)", border:"1px solid rgba(0,212,170,0.2)", color:"#00d4aa" }}>
-                          🏷️ {l.lote} · cad. {l.caducidad} · {l.cantidadDisponible} {i.unit}
-                        </span>
-                      ))}
+                      {itemLots.map(l => {
+                        const isNeg = (l.cantidadDisponible ?? 0) < 0;
+                        return (
+                          <span key={l.id} title={`Marca: ${l.marca || "—"}${isNeg ? " -- pendiente de compra (ya se usó en una sesión, falta la cotización)" : ""}`}
+                            style={{ fontSize:10, padding:"2px 8px", borderRadius:99, display:"inline-flex", alignItems:"center", gap:5,
+                              background: isNeg ? "rgba(255,107,107,0.08)" : "rgba(0,212,170,0.08)",
+                              border: `1px solid ${isNeg ? "rgba(255,107,107,0.25)" : "rgba(0,212,170,0.2)"}`,
+                              color: isNeg ? "#ff6b6b" : "#00d4aa" }}>
+                            🏷️ {l.lote} · cad. {l.caducidad} · {l.cantidadDisponible} {i.unit}
+                            {isNeg && warehouse === "CITIO" && (
+                              <button onClick={() => openRegularizeCotizacion(l)} title="Registrar la cotización oficial de este lote -- abona a CITIO sin volver a tocar Qual·CITIO"
+                                style={{ padding:"1px 6px", borderRadius:99, fontSize:9, fontWeight:700, cursor:"pointer", background:"rgba(255,179,71,0.15)", border:"1px solid rgba(255,179,71,0.3)", color:"#ffb347" }}>
+                                💰 cotización
+                              </button>
+                            )}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                   </div>
@@ -1831,6 +1882,37 @@ export default function Inventario() {
                 style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (saving || moveList.length===0) ? "not-allowed" : "pointer",
                 background: showMoveModal === "entrada" ? "linear-gradient(135deg,#00d4aa,#0F6E56)" : showMoveModal === "transferencia" ? "linear-gradient(135deg,#AFA9EC,#8B7FD8)" : showMoveModal === "compra" ? "linear-gradient(135deg,#ffb347,#e08e2a)" : "linear-gradient(135deg,#ff6b6b,#c94848)", border:"none", color: showMoveModal === "compra" ? "#000" : "#fff", opacity: (saving || moveList.length===0) ? 0.5 : 1 }}>
                 {saving ? (showMoveModal === "compra" ? "Generando…" : "Guardando…") : `✓ ${showMoveModal === "transferencia" ? "Transferir" : showMoveModal === "compra" ? (editingPO ? "Guardar cambios" : "Generar PDF") : "Guardar"} (${moveList.length} artículo${moveList.length!==1?"s":""})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {regularizeLot && (
+        <div onClick={() => !savingRegularize && setRegularizeLot(null)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:400, display:"flex", flexDirection:"column", gap:12 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>💰 Registrar cotización</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{regularizeLot.item} — lote {regularizeLot.lote} · cad. {regularizeLot.caducidad}</div>
+              <div style={{ fontSize:11, color:"#666", marginTop:6 }}>
+                Esto solo le abona a CITIO -- no vuelve a descontar Qual·CITIO (ya se descontó el día de la sesión en que se usó). Captura la cantidad que viene en la factura/cotización oficial.
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Cantidad comprada (según la cotización)</label>
+              <input type="number" min="0" step="0.01" value={regularizeQty} onChange={e => setRegularizeQty(e.target.value)} autoFocus
+                style={{ ...inputStyle, fontFamily:"'IBM Plex Mono', monospace" }} />
+              <div style={{ fontSize:10, color:"#555", marginTop:4 }}>Saldo actual: {regularizeLot.cantidadDisponible} -- con esta cantidad quedaría en {(regularizeLot.cantidadDisponible ?? 0) + (parseFloat(regularizeQty) || 0)}.</div>
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setRegularizeLot(null)} disabled={savingRegularize}
+                style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, cursor: savingRegularize ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                Cancelar
+              </button>
+              <button onClick={saveRegularizeCotizacion} disabled={savingRegularize}
+                style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingRegularize ? "wait" : "pointer", background:"linear-gradient(135deg,#ffb347,#e08e2a)", border:"none", color:"#000", opacity: savingRegularize ? 0.6 : 1 }}>
+                {savingRegularize ? "Guardando…" : "✓ Registrar"}
               </button>
             </div>
           </div>
