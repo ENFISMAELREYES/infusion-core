@@ -3,7 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { uploadSignature, uploadUserSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { computeSessionMaterial } from "../data/materialCatalog";
-import { normalizeMedName, findFichaMatch, isSessionC1D1, valorTexto } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch, findFichaMatches, isSessionC1D1, valorTexto } from "./FichasTecnicas";
 import { openPdfBlob } from "../pdfOpen";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
@@ -812,8 +812,12 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
       const TREATMENT_CATS = new Set(["quimioterapia", "inmunoterapia", "especialidad"]);
       const treatmentInfo = (session.meds || [])
         .filter(m => TREATMENT_CATS.has(m.category))
-        .map(m => findFicha(m.name))
-        .filter(Boolean)
+        // Un renglón puede traer dos fármacos juntos (ej.
+        // "Pertuzumab/Trastuzumab" cuando ambos se dan en la misma sesión y
+        // se capturaron en un solo texto) -- findFichaMatches separa y
+        // resuelve cada uno, para que el consentimiento no se quede sin el
+        // mecanismo/beneficios/riesgos de ninguno de los dos.
+        .flatMap(m => findFichaMatches(m.name, fichasByName))
         .map(f => ({
           name: f.nombre_generico,
           es_oncologico: f.es_oncologico,

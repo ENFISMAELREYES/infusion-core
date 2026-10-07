@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { normalizeMedName, findFichaMatch, isAlertaCritica, valorTexto } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatches, isAlertaCritica, valorTexto } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -61,14 +61,21 @@ async function fetchFichasTecnicas(token) {
 // Resumen de referencia de un medicamento -- mismo criterio que el ícono
 // "?" de Sesión de hoy: información capturada + datos de la ficha técnica,
 // SIN ningún veredicto ✓/⚠️ (eso es exclusivo de Autorizar/jefe).
-function MedFichaModal({ med, ficha, onClose }) {
+// fichas: arreglo -- normalmente trae una sola, pero un renglón puede
+// combinar dos fármacos en un solo texto (ej. "Pertuzumab/Trastuzumab" dados
+// por separado en la misma sesión, ver findFichaMatches en FichasTecnicas.jsx)
+// y entonces trae dos. La dosis/volumen/tiempo de arriba son los capturados
+// para TODO el renglón (un solo campo, no se puede separar por fármaco) --
+// el resto (alertas, monitoreo, signos de alarma, etc.) sí se muestra por
+// cada ficha, con su nombre, para no mezclar la información de una con otra.
+function MedFichaModal({ med, fichas, onClose }) {
   const doseMatch = med.dose?.match(/(\d+\.?\d*)/);
   const dose      = doseMatch ? parseFloat(doseMatch[1]) : null;
   const volMatch  = med.diluent?.match(/(\d+\.?\d*)\s*ML/i);
   const vol       = volMatch ? parseFloat(volMatch[1]) : null;
   const ct        = (dose && vol) ? dose / vol : null;
-  const mentionsPVC = /PVC/i.test(ficha.dilucion_solucion_tecnica || "");
-  const hasCriticalAlert = isAlertaCritica(ficha.alerta_critica_seguridad);
+  const isCombo   = fichas.length > 1;
+  const mentionsPVC = fichas.some(f => /PVC/i.test(f.dilucion_solucion_tecnica || ""));
 
   return (
     <div onClick={e => { e.stopPropagation(); onClose(); }} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
@@ -78,9 +85,9 @@ function MedFichaModal({ med, ficha, onClose }) {
           {med.diluent && <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{med.diluent}</div>}
         </div>
 
-        {hasCriticalAlert && (
-          <div style={{ fontSize:12, color:"#ff6b6b", padding:"9px 12px", background:"rgba(255,107,107,0.08)", border:"1px solid rgba(255,107,107,0.25)", borderRadius:9 }}>
-            🔴 <strong>Alerta crítica:</strong> {ficha.detalle_alerta_critica}
+        {isCombo && (
+          <div style={{ fontSize:11, color:"#ffb347", padding:"8px 10px", background:"rgba(255,179,71,0.08)", border:"1px solid rgba(255,179,71,0.25)", borderRadius:8 }}>
+            ⚠️ Este renglón combina {fichas.length} fármacos ({fichas.map(f => f.nombre_generico).join(" + ")}) -- la dosis/volumen de arriba son los capturados para todo el renglón; revisa la dosis individual de cada fármaco en su ficha completa.
           </div>
         )}
 
@@ -99,16 +106,28 @@ function MedFichaModal({ med, ficha, onClose }) {
           </div>
         </div>
 
-        {[
-          ["monitoreo_durante_infusion", "Monitoreo durante la infusión", "#666"],
-          ["signos_alarma_hipersensibilidad", "Signos de alarma — hipersensibilidad", "#ff6b6b"],
-          ["signos_alarma_extravasacion", "Signos de alarma — extravasación", "#ff6b6b"],
-          ["conducta_inmediata_reaccion", "Conducta inmediata ante reacción", "#ff6b6b"],
-          ["antidoto_kit_especifico", "Antídoto / kit específico", "#ff6b6b"],
-        ].map(([field, label, color]) => ficha[field] && (
-          <div key={field}>
-            <div style={{ fontSize:11, color, textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>{label}</div>
-            <div style={{ fontSize:13, color:"#ccc", lineHeight:1.5, whiteSpace:"pre-line" }}>{valorTexto(ficha[field])}</div>
+        {fichas.map((ficha, fi) => (
+          <div key={ficha.id || ficha.nombre_generico || fi} style={{ display:"flex", flexDirection:"column", gap:10, ...(isCombo ? { paddingTop:10, borderTop:"1px solid rgba(255,255,255,0.08)" } : {}) }}>
+            {isCombo && <div style={{ fontSize:12, fontWeight:700, color:"#4fc3f7" }}>{ficha.nombre_generico}</div>}
+
+            {isAlertaCritica(ficha.alerta_critica_seguridad) && (
+              <div style={{ fontSize:12, color:"#ff6b6b", padding:"9px 12px", background:"rgba(255,107,107,0.08)", border:"1px solid rgba(255,107,107,0.25)", borderRadius:9 }}>
+                🔴 <strong>Alerta crítica{isCombo ? ` (${ficha.nombre_generico})` : ""}:</strong> {ficha.detalle_alerta_critica}
+              </div>
+            )}
+
+            {[
+              ["monitoreo_durante_infusion", "Monitoreo durante la infusión", "#666"],
+              ["signos_alarma_hipersensibilidad", "Signos de alarma — hipersensibilidad", "#ff6b6b"],
+              ["signos_alarma_extravasacion", "Signos de alarma — extravasación", "#ff6b6b"],
+              ["conducta_inmediata_reaccion", "Conducta inmediata ante reacción", "#ff6b6b"],
+              ["antidoto_kit_especifico", "Antídoto / kit específico", "#ff6b6b"],
+            ].map(([field, label, color]) => ficha[field] && (
+              <div key={field}>
+                <div style={{ fontSize:11, color, textTransform:"uppercase", letterSpacing:0.5, marginBottom:2 }}>{label}</div>
+                <div style={{ fontSize:13, color:"#ccc", lineHeight:1.5, whiteSpace:"pre-line" }}>{valorTexto(ficha[field])}</div>
+              </div>
+            ))}
           </div>
         ))}
 
@@ -275,7 +294,11 @@ function PatientRow({ s, onNoShow, isJefe, fichasByName }) {
   const canMarkNoShow = isJefe && !s.events?.ingreso; // solo jefe, y solo si aún no ha iniciado
   const [fichaModalMed, setFichaModalMed] = useState(null); // medicamento cuya ficha se está consultando, o null
 
-  const findFicha = (medName) => findFichaMatch(medName, fichasByName);
+  // Un renglón puede traer dos fármacos juntos en un solo texto (ej.
+  // "Pertuzumab/Trastuzumab") -- findFichaMatches los separa y resuelve cada
+  // uno, para que el botón ⓘ y su modal sigan apareciendo con la info de
+  // ambos (ver FichasTecnicas.jsx).
+  const findFichasRow = (medName) => findFichaMatches(medName, fichasByName);
 
   return (
     <div style={{
@@ -314,7 +337,7 @@ function PatientRow({ s, onNoShow, isJefe, fichasByName }) {
     const me = s.medEvents || {};
     const ev = me[`med_${m.id}`] || {};
     const done = !!ev.fin, active = !!ev.inicio && !ev.fin;
-    const ficha = findFicha(m.name);
+    const fichasRow = findFichasRow(m.name);
     return (
       <div key={m.id} style={{ display:"flex", alignItems:"center", gap:8, fontSize:11 }}>
         <span style={{ color: done ? "#1D9E75" : active ? "#00d4aa" : "#444" }}>
@@ -323,7 +346,7 @@ function PatientRow({ s, onNoShow, isJefe, fichasByName }) {
         <span style={{ color: done ? "#777" : active ? "#f0f0f0" : "#555", fontWeight: active ? 600 : 400 }}>
           {m.name} {m.dose}
         </span>
-        {ficha && (
+        {fichasRow.length > 0 && (
           <button onClick={e => { e.stopPropagation(); setFichaModalMed(m); }} title="Consultar ficha técnica de este medicamento"
             style={{ width:16, height:16, borderRadius:"50%", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:700, cursor:"pointer", background:"rgba(79,195,247,0.12)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7", padding:0 }}>
             ⓘ
@@ -493,7 +516,7 @@ function PatientRow({ s, onNoShow, isJefe, fichasByName }) {
         </div>
       )}
       {fichaModalMed && (
-        <MedFichaModal med={fichaModalMed} ficha={findFicha(fichaModalMed.name)} onClose={() => setFichaModalMed(null)} />
+        <MedFichaModal med={fichaModalMed} fichas={findFichasRow(fichaModalMed.name)} onClose={() => setFichaModalMed(null)} />
       )}
     </div>
   );
