@@ -69,19 +69,22 @@ async function fetchOverrides(token) {
   }
 }
 
-// Lotes de medicamento en CITIO (Fase 3: asignación de lote al confirmar
-// asistencia) -- mismo almacén y colección que ya usa Inventario.jsx para la
-// trazabilidad por lote; aquí solo se leen los de CITIO, nunca Qual·CITIO
-// (eso es "lo que Qual tiene disponible para vender", no lo que ya es de
-// CITIO).
-async function fetchCitioLots(token) {
+// Lotes de medicamento, para la asignación al confirmar asistencia (Fase 3)
+// -- misma colección que ya usa Inventario.jsx para la trazabilidad por
+// lote. Se traen CITIO (lo que ya es de CITIO, lo único que se puede
+// asignar/descontar) y Qual·CITIO (lo que Qual tiene disponible para
+// vender, todavía no es de CITIO) -- el segundo solo se usa para distinguir,
+// cuando falta lote en CITIO, entre "ya llegó a Qual pero falta jalarlo" y
+// "no se ha registrado en ningún lado" (ver pendingLotItems más abajo).
+async function fetchLots(token) {
   const res = await fetch(
     `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`,
     { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
       body: JSON.stringify({ structuredQuery: {
         from: [{ collectionId: "inventory_lots" }],
-        where: { fieldFilter: { field: { fieldPath: "warehouse" }, op: "EQUAL", value: { stringValue: "CITIO" } } },
-        limit: 1000,
+        where: { fieldFilter: { field: { fieldPath: "warehouse" }, op: "IN",
+          value: { arrayValue: { values: [{ stringValue: "CITIO" }, { stringValue: "QUAL_CITIO" }] } } } },
+        limit: 2000,
       }})
     }
   );
@@ -147,7 +150,7 @@ function CatalogSuggestions({ query, catalog, onSelect }) {
 // Pedido, y — cuando se está viendo "todas las cargadas" — el botón de Anexar
 // para agregar material extra si hubo cambios el día de la sesión o después
 // (hasta 3 anexos por sesión).
-function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user, onRefresh, setSessions, downloadPharmacyOrder, showAnexo, mode, citioLots, setCitioLots }) {
+function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user, onRefresh, setSessions, downloadPharmacyOrder, showAnexo, mode, citioLots, qualCitioLots, setAllLots }) {
   const { profile } = useAuth();
   // Solo Paola (el filtro universal de todas las solicitudes) o el jefe
   // pueden hacer el checkup de material -- por el campo puedeValidarInsumos
@@ -231,6 +234,12 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   const lotsForItem = (itemName) => citioLots
     .filter(l => l.item === itemName && (l.cantidadDisponible || 0) > 0)
     .sort((a, b) => (a.caducidad || "").localeCompare(b.caducidad || ""));
+  // Si no hay lote en CITIO, distingue la causa: ¿ya llegó a Qual·CITIO
+  // (por transferencia) y solo falta "jalarlo" a CITIO? o ¿de verdad no se
+  // ha registrado en ningún lado (compra directa pendiente)? Mensajes
+  // distintos evitan que alguien intente dar de alta una compra directa
+  // cuando lo que falta es simplemente completar la entrada normal a CITIO.
+  const qualHasStock = (itemName) => qualCitioLots.some(l => l.item === itemName && (l.cantidadDisponible || 0) > 0);
 
   // Sugerencia automática: toma lo que se necesita del lote más próximo a
   // caducar primero, y si no alcanza, sigue con el siguiente -- nunca deja
@@ -706,7 +715,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
             liveLots = liveLots.map(l => l.id === lotDocId ? { ...l, cantidadDisponible: nuevaDisponible } : l);
           }
         }
-        setCitioLots(liveLots);
+        setAllLots(prev => prev.map(l => liveLots.find(x => x.id === l.id) || l));
       }
 
       // De dónde salió cada medicamento -- se anexa al evento y se guarda en
@@ -769,7 +778,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         </button>
         {s.confirmed && pendingLotItems.length > 0 && (
           <button onClick={e => { e.stopPropagation(); openEditLotAssignModal(); }}
-            title={`Pendiente por ingresar a CITIO: ${pendingLotItems.map(t => t.item).join(", ")}. Este medicamento no vino de Qual -- en cuanto se registre su entrada directa (📦 Compra directa en Inventario), da clic aquí para asignarle lote.`}
+            title={`Pendiente por ingresar a CITIO: ${pendingLotItems.map(t => t.item).join(", ")}. Puede estar esperando en Qual·CITIO (falta jalarlo con la entrada normal) o ser compra directa a otro proveedor que aún no se registra. En cuanto se reciba en Inventario, da clic aquí para asignarle lote.`}
             style={{ fontSize:10, fontWeight:600, padding:"2px 8px", borderRadius:99, cursor:"pointer", border:"1px solid rgba(255,107,107,0.3)", background:"rgba(255,107,107,0.1)", color:"#ff6b6b" }}>
             ⚠️ {pendingLotItems.length} pendiente{pendingLotItems.length !== 1 ? "s" : ""} por ingresar
           </button>
@@ -1159,7 +1168,13 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                       <span>{row.item}</span>
                       <span style={{ color: short ? "#ff6b6b" : "#00d4aa" }}>{pickedTotal} / {row.needed}</span>
                     </div>
-                    {short && <div style={{ fontSize:10, color:"#ff6b6b", marginBottom:6 }}>⚠️ No hay suficiente lote disponible en CITIO -- probablemente no vino de Qual (compra directa a otro proveedor). Quedará marcado como pendiente hasta que se registre su entrada.</div>}
+                    {short && (
+                      <div style={{ fontSize:10, color:"#ff6b6b", marginBottom:6 }}>
+                        {qualHasStock(row.item)
+                          ? "⚠️ Ya está disponible en Qual·CITIO, pero todavía no se ha recibido en CITIO -- en Inventario, registra la entrada normal (🔄 Jalar de Qual·CITIO) de este artículo. Quedará marcado como pendiente hasta entonces."
+                          : "⚠️ No hay lote registrado en ningún lado para este artículo -- probablemente es compra directa a otro proveedor (📦 en Inventario) que todavía no se ha registrado. Quedará marcado como pendiente hasta entonces."}
+                      </div>
+                    )}
                     {row.picks.length === 0 && <div style={{ fontSize:11, color:"#555" }}>Sin lote disponible en CITIO.</div>}
                     {row.picks.map((p, pi) => (
                       <div key={pi} style={{ display:"flex", alignItems:"center", gap:6, marginTop:4 }}>
@@ -1210,7 +1225,7 @@ export default function Insumos() {
   const [tab, setTab] = useState("consolidado");
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
-  const [citioLots, setCitioLots] = useState([]); // lotes de CITIO, para la asignación al confirmar asistencia (Fase 3)
+  const [allLots, setAllLots] = useState([]); // lotes de CITIO + Qual·CITIO (Fase 3) -- ver fetchLots
   const allowedCenters = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI PRO","CIPI PED"] : [profile?.center || "CITIO"]);
   const [centerFilter, setCenterFilter] = useState(() => canSeeAllCenters ? "Todos" : (allowedCenters?.[0] || "CITIO"));
   useEffect(() => {
@@ -1261,14 +1276,14 @@ export default function Insumos() {
     // 180 días atrás -- antes solo se pedía desde "hoy", por eso al navegar
     // a fechas pasadas no aparecía nada (nunca se habían traído del todo).
     const fromDate = (() => { const d = new Date(); d.setDate(d.getDate() - 180); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); })();
-    const [s, ov, lots] = await Promise.all([fetchUpcomingSessions(token, fromDate), fetchOverrides(token), fetchCitioLots(token)]);
+    const [s, ov, lots] = await Promise.all([fetchUpcomingSessions(token, fromDate), fetchOverrides(token), fetchLots(token)]);
     // Antes se excluía cualquier sesión sin medicamentos -- los procedimientos
     // suelen no llevar medicamentos capturados de la misma forma, pero sí
     // pueden necesitar material (insumos del procedimiento), así que siempre
     // se incluyen sin importar si su lista de meds está vacía.
     setSessions(s.filter(x => (Array.isArray(x.meds) && x.meds.length > 0) || x.sessionType === "procedimiento"));
     setOverrides(ov);
-    setCitioLots(lots);
+    setAllLots(lots);
     setLoading(false);
     setHasLoadedOnce(true);
   };
@@ -1704,7 +1719,9 @@ export default function Insumos() {
                 token={token} user={user} onRefresh={load} setSessions={setSessions}
                 downloadPharmacyOrder={downloadPharmacyOrder} showAnexo={dateFilter==="todas"}
                 mode={dateFilter==="todas" ? "solicitud" : "captura"}
-                citioLots={citioLots} setCitioLots={setCitioLots} />
+                citioLots={allLots.filter(l => l.warehouse === "CITIO")}
+                qualCitioLots={allLots.filter(l => l.warehouse === "QUAL_CITIO")}
+                setAllLots={setAllLots} />
             ))}
           </div>
         </div>
