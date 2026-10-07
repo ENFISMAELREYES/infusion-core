@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
-import { normalizeMedName, findFichaMatch, isAlertaCritica } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatches, isAlertaCritica } from "./FichasTecnicas";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -231,9 +231,17 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
   // capturado, con todo el contexto real (ver por qué en el commit de
   // Fase 1 -- casos como dilución condicional por dosis no se reducen a un
   // simple rango).
-  const ficha = !isNew ? findFichaMatch(med.name, fichasByName) : null;
-  const fichaHasCriticalAlert = ficha && isAlertaCritica(ficha.alerta_critica_seguridad);
-  const ctCheck = ficha ? computeCtCheck(med, ficha) : null;
+  // Un renglón puede traer dos fármacos juntos en un solo texto (ej.
+  // "Pertuzumab/Trastuzumab" dados por separado en la misma sesión) --
+  // findFichaMatches los separa y resuelve cada uno (ver FichasTecnicas.jsx).
+  const fichas = !isNew ? findFichaMatches(med.name, fichasByName) : [];
+  const isCombo = fichas.length > 1;
+  const criticalFichas = fichas.filter(f => isAlertaCritica(f.alerta_critica_seguridad));
+  // El check de Ct compara UNA dosis capturada contra el rango de UNA ficha
+  // -- en un renglón combinado no hay forma de saber cuál parte de la dosis
+  // es de cada fármaco, así que correrlo daría un número que no corresponde
+  // a ninguno de los dos. Mejor no mostrarlo que mostrar uno equivocado.
+  const ctCheck = (fichas.length === 1) ? computeCtCheck(med, fichas[0]) : null;
 
   const save = () => {
     const wash = calcWash(med, draft);
@@ -294,13 +302,18 @@ function MedRow({ med, onApprove, onCorrect, onDelete, onUpdate, isNew, suggesti
               </>
             )}
 
-            {ficha && (fichaHasCriticalAlert || ctCheck) && (
+            {fichas.length > 0 && (criticalFichas.length > 0 || ctCheck || isCombo) && (
               <div style={{ padding:"12px 14px", borderRadius:10, background:"#0d0d0d", border:"1px solid rgba(255,255,255,0.08)", display:"flex", flexDirection:"column", gap:10 }}>
-                {fichaHasCriticalAlert && (
-                  <div style={{ fontSize:12, color:"#ff6b6b", padding:"7px 10px", background:"rgba(255,107,107,0.08)", border:"1px solid rgba(255,107,107,0.25)", borderRadius:8 }}>
-                    🔴 <strong>Alerta crítica ({ficha.nombre_generico}):</strong> {ficha.detalle_alerta_critica}
+                {isCombo && (
+                  <div style={{ fontSize:11, color:"#ffb347", padding:"7px 10px", background:"rgba(255,179,71,0.08)", border:"1px solid rgba(255,179,71,0.25)", borderRadius:8 }}>
+                    ⚠️ Este renglón combina {fichas.length} fármacos ({fichas.map(f => f.nombre_generico).join(" + ")}) -- la dosis capturada es para todo el renglón, no se puede separar por fármaco. Revisa la dosis individual de cada uno en su ficha.
                   </div>
                 )}
+                {criticalFichas.map(f => (
+                  <div key={f.nombre_generico} style={{ fontSize:12, color:"#ff6b6b", padding:"7px 10px", background:"rgba(255,107,107,0.08)", border:"1px solid rgba(255,107,107,0.25)", borderRadius:8 }}>
+                    🔴 <strong>Alerta crítica ({f.nombre_generico}):</strong> {f.detalle_alerta_critica}
+                  </div>
+                ))}
                 {ctCheck && (
                   <>
                     <div>

@@ -93,6 +93,36 @@ export function findFichaMatch(medName, fichasByName) {
   return fuzzy.length === 1 ? fuzzy[0] : null;
 }
 
+// Un renglón de medicamento a veces trae dos fármacos juntos en un solo
+// texto -- ej. "Pertuzumab/Trastuzumab" cuando ambos se administran por
+// separado en la misma sesión y quien capturó los escribió en un solo
+// renglón en vez de dos. findFichaMatch (arriba) no los encuentra porque no
+// existe NINGUNA ficha con ese nombre exacto -- y antes esto significaba que
+// el consentimiento informado se generaba sin el mecanismo/beneficios/
+// riesgos de NINGUNO de los dos fármacos, sin aviso.
+// findFichaMatches intenta primero el emparejamiento normal (devuelve ese
+// único resultado tal cual); si no hay nada, separa el texto por "/", "+",
+// "," o " y " y busca cada parte por separado con las MISMAS reglas de
+// findFichaMatch. Si alguna parte no calza con una ficha exacta, se descarta
+// el intento completo (arreglo vacío) -- nunca se inventa una combinación a
+// medias, mismo criterio conservador que el resto de este archivo.
+const COMBO_SPLIT_RE = /\s*(?:\/|\+|,|\by\b)\s*/i;
+export function findFichaMatches(medName, fichasByName) {
+  const single = findFichaMatch(medName, fichasByName);
+  if (single) return [single];
+  if (!medName || !fichasByName) return [];
+  const parts = medName.split(COMBO_SPLIT_RE).map(p => p.trim()).filter(Boolean);
+  if (parts.length < 2) return [];
+  const matches = parts.map(p => findFichaMatch(p, fichasByName));
+  if (matches.some(m => !m)) return [];
+  const seen = new Set();
+  return matches.filter(f => {
+    if (seen.has(f.nombre_generico)) return false;
+    seen.add(f.nombre_generico);
+    return true;
+  });
+}
+
 // Una sesión cuenta como C1D1 (inicio de línea de tratamiento, requiere
 // consentimiento nuevo) si la casilla explícita de Nueva sesión quedó
 // marcada, O si el texto libre de "Ciclo" dice literalmente "C1D1" -- la

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
-import { normalizeMedName, findFichaMatch, isSessionC1D1 } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch, findFichaMatches, isSessionC1D1 } from "./FichasTecnicas";
 import { openPdfBlob } from "../pdfOpen";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
@@ -112,12 +112,13 @@ const [editDraft, setEditDraft] = useState(null);
     setReprintingConsent(true);
     try {
       const freshToken = await user.getIdToken(true);
-      const findFicha = (medName) => findFichaMatch(medName, fichasByName);
       const TREATMENT_CATS = new Set(["quimioterapia", "inmunoterapia", "especialidad"]);
       const treatmentInfo = (s.meds || [])
         .filter(m => TREATMENT_CATS.has(m.category))
-        .map(m => findFicha(m.name))
-        .filter(Boolean)
+        // Un renglón puede traer dos fármacos juntos (ej.
+        // "Pertuzumab/Trastuzumab") -- findFichaMatches separa y resuelve
+        // cada uno (ver NurseView.jsx, mismo criterio).
+        .flatMap(m => findFichaMatches(m.name, fichasByName))
         .map(f => ({
           name: f.nombre_generico, es_oncologico: f.es_oncologico, mecanismo_accion_paciente: f.mecanismo_accion_paciente,
           beneficios_esperados: f.beneficios_esperados, alternativas_tratamiento: f.alternativas_tratamiento,
