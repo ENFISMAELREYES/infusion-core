@@ -312,18 +312,50 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       : [...liveLots, { id: lotDocId, warehouse, item, lote, caducidad, marca, cantidadInicial: 0, cantidadDisponible: nuevaDisponible }];
   };
 
+  // Ajusta la existencia AGREGADA (el número grande de Inventario, no el
+  // chip de lote) de un almacén/artículo. CITIO ya se descuenta aparte, sin
+  // importar el lote (ver el ciclo al inicio de confirmInvSalida) -- pero
+  // Qual·CITIO nunca se tocaba ahí, porque antes no había ninguna razón
+  // para hacerlo. Ahora sí: si lo que se usó salió de Qual·CITIO, su
+  // existencia agregada tiene que bajar el mismo día, igual que el lote.
+  const adjustAggregateStock = async (warehouse, item, deltaQty) => {
+    const docId = `${warehouse}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
+    let currentStock = 0, minStock = 0, category = "", unit = "PIEZA";
+    try {
+      const getRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`, { headers:{ "Authorization":`Bearer ${token}` } });
+      if (getRes.ok) {
+        const doc = await getRes.json();
+        currentStock = parseInt(doc.fields?.currentStock?.integerValue || doc.fields?.currentStock?.doubleValue || 0);
+        minStock = parseInt(doc.fields?.minStock?.integerValue || 0);
+        category = doc.fields?.category?.stringValue || "";
+        unit = doc.fields?.unit?.stringValue || "PIEZA";
+      }
+    } catch {}
+    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`,
+      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+        body: JSON.stringify({ fields: {
+          item: { stringValue: item }, warehouse: { stringValue: warehouse },
+          category: { stringValue: category }, unit: { stringValue: unit },
+          currentStock: toFV(currentStock + deltaQty), minStock: toFV(minStock),
+          lastUpdated: { stringValue: new Date().toISOString() },
+        }}) });
+    if (!res.ok) { let msg = `Error ${res.status}`; try { const b = await res.json(); msg = b?.error?.message || msg; } catch {} throw new Error(`Existencias de "${item}" en ${warehouse}: ${msg}`); }
+  };
+
   // Descuenta un pick elegido (ya sea de Qual·CITIO o de CITIO directo) --
   // sign=-1 para aplicarlo (usarlo), sign=+1 para revertirlo. Si el pick es
   // de Qual·CITIO, el mismo lote/cantidad TAMBIÉN se refleja en CITIO (en
-  // rojo si falta la cotización) -- es "pendiente de compra" hasta que
-  // llegue la factura y se regularice en Inventario. Si el pick ya es de
-  // CITIO directo (compra a otro proveedor, nunca pasó por Qual), solo se
-  // toca CITIO -- no hay nada que reflejar en Qual·CITIO.
+  // rojo si falta la cotización, "pendiente de compra") Y se descuenta de
+  // la existencia agregada de Qual·CITIO (el número grande, no solo el
+  // chip de lote). Si el pick ya es de CITIO directo (compra a otro
+  // proveedor, nunca pasó por Qual), solo se toca el lote de CITIO -- su
+  // existencia agregada ya se descuenta aparte, sin importar el lote.
   const applyLotPick = async (item, pick, sign, liveLots) => {
     const warehouse = pick.warehouse || "QUAL_CITIO";
     let lots = await adjustLotQty(warehouse, item, pick.lote, pick.caducidad, pick.marca, sign * pick.qty, liveLots);
     if (warehouse === "QUAL_CITIO") {
       lots = await adjustLotQty("CITIO", item, pick.lote, pick.caducidad, pick.marca, sign * pick.qty, lots);
+      await adjustAggregateStock("QUAL_CITIO", item, sign * pick.qty);
     }
     return lots;
   };
