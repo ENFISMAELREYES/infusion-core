@@ -421,11 +421,12 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     setSavingConfirmLots(true);
     try {
       const assignments = lotAssignDraft.map(({ item, picks }) => ({ item, picks: picks.filter(p => p.qty > 0 && p.lote) }));
-      // Si la baja de inventario YA pasó, el saldo de CITIO ya se descontó
-      // con la asignación anterior (la que tuviera en ese momento, aunque
-      // fuera incompleta). Aquí se revierte exactamente eso y se aplica la
-      // nueva, para que el lote quede al día sin duplicar ni perder nada.
-      if (s.inventorySalidaDone) {
+      // Si la baja de MEDICAMENTOS ya pasó (es un paso aparte de la de
+      // material), el saldo de CITIO ya se descontó con la asignación
+      // anterior (la que tuviera en ese momento, aunque fuera incompleta).
+      // Aquí se revierte exactamente eso y se aplica la nueva, para que el
+      // lote quede al día sin duplicar ni perder nada.
+      if (s.inventorySalidaMedsDone) {
         let liveLots = [...citioLots, ...qualCitioLots];
         for (const a of (s.lotAssignments || [])) for (const p of (a.picks || []).filter(p => p.qty > 0))
           liveLots = await applyLotPick(a.item, p, +1, liveLots); // revertir lo ya descontado
@@ -435,13 +436,13 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         // El comprobante ya emitido debe reflejar la corrección -- se
         // actualiza el detalle guardado para que un reimpreso después ya
         // salga con el lote correcto.
-        const detalle = (s.inventorySalidaDetalle || []).map(it => {
+        const detalle = (s.inventorySalidaMedsDetalle || []).map(it => {
           const a = assignments.find(x => x.item === it.item);
           return a && a.picks.length > 0 ? { ...it, lotes: a.picks } : it;
         });
-        await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=inventorySalidaDetalle`,
-          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields: { inventorySalidaDetalle: toFV(detalle) } }) });
-        setSessions(prev => prev.map(x => x.id === s.id ? { ...x, inventorySalidaDetalle: detalle } : x));
+        await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=inventorySalidaMedsDetalle`,
+          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` }, body: JSON.stringify({ fields: { inventorySalidaMedsDetalle: toFV(detalle) } }) });
+        setSessions(prev => prev.map(x => x.id === s.id ? { ...x, inventorySalidaMedsDetalle: detalle } : x));
       }
       if (lotModalMode === "confirm") await patchConfirmFields(true, assignments);
       else await patchLotAssignmentsOnly(assignments);
@@ -492,6 +493,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   const [showInvModal, setShowInvModal] = useState(false);
   const [invItems, setInvItems] = useState([]);
   const [savingInv, setSavingInv] = useState(false);
+  const [invScope, setInvScope] = useState(null); // "medicamentos" | "material" -- se dan de baja por separado
 
   // toFV se usa aquí tal cual la del módulo (arriba en el archivo) -- antes
   // había una copia local que no manejaba boolean ni null (los serializaba
@@ -595,13 +597,16 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           body: JSON.stringify({ fields: { anexos: toFV(newAnexos) } }) });
       setSessions(prev => prev.map(x => x.id === s.id ? { ...x, anexos: newAnexos } : x));
 
-      // Si el inventario de esta sesión ya se dio de baja (retiro ya
-      // completado), este anexo se captura DESPUÉS del cierre -- se descuenta
-      // del inventario aparte, automáticamente, ligado a la misma sesión.
-      if (s.inventorySalidaDone) {
+      // Si medicamentos y/o material de esta sesión YA se dieron de baja
+      // por separado (retiro ya completado), este anexo se captura DESPUÉS
+      // del cierre -- cada parte del anexo se descuenta sola, automático,
+      // ligada a la misma sesión, solo si su mitad (medicamentos o
+      // material) ya se había cerrado.
+      const anexoToAutoDeduct = anexoItems.filter(it => categorizeItem(it.item) === "MEDICAMENTOS" ? s.inventorySalidaMedsDone : s.inventorySalidaMaterialDone);
+      if (anexoToAutoDeduct.length > 0) {
         const warehouse = s.center === "CIPI" ? `CIPI_${(cipiVariant || "PRO").toUpperCase()}` : (s.center || "");
         const inventoryDocId = (w, item) => `${w}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
-        for (const it of anexoItems) {
+        for (const it of anexoToAutoDeduct) {
           const docId = inventoryDocId(warehouse, it.item);
           let currentStock = 0, minStock = 0, category = "", unit = "PIEZA";
           try {
@@ -627,7 +632,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
             body: JSON.stringify({ fields: {
               type: { stringValue: "salida" }, warehouse: { stringValue: warehouse },
-              items: toFV(anexoItems),
+              items: toFV(anexoToAutoDeduct),
               sessionId: { stringValue: s.id }, sessionPatientName: { stringValue: s.patientName || "" },
               reason: { stringValue: `Anexo ${anexoNumber} (posterior al retiro)` },
               userEmail: { stringValue: user?.email || "" },
@@ -684,18 +689,21 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
     await downloadPharmacyOrder(s, combinedMaterial, note, cipiVariant, "todo");
   };
 
-  // Este botón solo está habilitado mientras !s.inventorySalidaDone -- por
-  // eso es seguro incluir aquí los anexos ya generados: ningún anexo pudo
-  // haberse descontado todavía por separado (eso solo pasa en generateAnexo
-  // cuando inventorySalidaDone YA es true). Antes solo se tomaba
+  // Medicamentos y material se dan de baja por separado -- cada botón solo
+  // está habilitado mientras su mitad no se haya cerrado, así que es seguro
+  // incluir aquí los anexos ya generados: un anexo de la categoría que
+  // todavía está abierta nunca pudo haberse descontado antes (eso solo pasa
+  // en generateAnexo cuando esa mitad YA se cerró). Antes solo se tomaba
   // material.items, así que un anexo capturado con el retiro aún abierto se
-  // quedaba sin descontar para siempre -- no se restaba aquí, y tampoco se
-  // restaba solo (esa rama requiere inventorySalidaDone=true).
-  const openInvModal = () => {
+  // quedaba sin descontar para siempre.
+  const openInvModal = (scope) => {
     const anexoItemsFlat = anexos.flatMap(a => a.items || []);
     const combined = {};
     [...material.items, ...anexoItemsFlat].forEach(({ item, qty }) => { combined[item] = (combined[item] || 0) + qty; });
-    setInvItems(Object.entries(combined).map(([item, qty]) => ({ item, qty })));
+    const list = Object.entries(combined).map(([item, qty]) => ({ item, qty }))
+      .filter(it => (categorizeItem(it.item) === "MEDICAMENTOS") === (scope === "medicamentos"));
+    setInvItems(list);
+    setInvScope(scope);
     setShowInvModal(true);
   };
   const setInvQty = (idx, qty) => setInvItems(prev => prev.map((it,i) => i===idx ? { ...it, qty: Math.max(0, qty) } : it));
@@ -721,7 +729,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   };
   const reprintComprobante = async () => {
     setGeneratingComprobante(true);
-    try { await generateComprobante(s.inventorySalidaDetalle || []); }
+    try { await generateComprobante(s.inventorySalidaMedsDetalle || []); }
     catch (e) { alert("Error al generar el comprobante: " + e.message); }
     finally { setGeneratingComprobante(false); }
   };
@@ -730,7 +738,9 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   // independiente del retiro de la sesión (antes vivía dentro del flujo de
   // firmas de NurseView, pero si ese flujo se interrumpía a medias podía
   // duplicar el cargo; ahora es un paso aparte, deliberado, que se puede
-  // hacer en cualquier momento).
+  // hacer en cualquier momento). Medicamentos y material se dan de baja
+  // por separado (invScope) -- cada uno con su propia marca de "ya se dio
+  // de baja" en la sesión, para que uno pueda cerrarse sin esperar al otro.
   const confirmInvSalida = async () => {
     setSavingInv(true);
     try {
@@ -740,7 +750,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         if (!res.ok) { let msg=`Error ${res.status}`; try{const b=await res.json(); msg=b?.error?.message||msg;}catch{} throw new Error(`${label}: ${msg}`); }
       };
       const itemsToDeduct = invItems.filter(x => x.qty > 0);
-      const medsToDeduct = s.center === "CITIO" ? itemsToDeduct.filter(it => categorizeItem(it.item) === "MEDICAMENTOS") : [];
+      const medsToDeduct = (invScope === "medicamentos" && s.center === "CITIO") ? itemsToDeduct : [];
 
       for (const it of itemsToDeduct) {
         const docId = inventoryDocId(warehouse, it.item);
@@ -801,31 +811,39 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
               type: { stringValue: "salida" }, warehouse: { stringValue: warehouse },
               items: toFV(itemsWithLotes),
               sessionId: { stringValue: s.id }, sessionPatientName: { stringValue: s.patientName || "" },
-              reason: { stringValue: "Baja de inventario de la sesión" },
+              reason: { stringValue: `Baja de inventario (${invScope === "medicamentos" ? "medicamentos" : "material"}) de la sesión` },
               userEmail: { stringValue: user?.email || "" },
               createdAt: { stringValue: new Date().toISOString() },
             }}) });
         await checkOk(evRes, "Registro del evento de movimiento");
       }
 
-      const doneRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?updateMask.fieldPaths=inventorySalidaDone&updateMask.fieldPaths=inventorySalidaAt&updateMask.fieldPaths=inventorySalidaDetalle`,
+      // Medicamentos y material quedan como dos marcas independientes en
+      // la sesión -- uno se puede cerrar sin esperar al otro.
+      const doneFields = invScope === "medicamentos"
+        ? { inventorySalidaMedsDone: { booleanValue: true }, inventorySalidaMedsAt: { stringValue: new Date().toISOString() }, inventorySalidaMedsDetalle: toFV(itemsWithLotes) }
+        : { inventorySalidaMaterialDone: { booleanValue: true }, inventorySalidaMaterialAt: { stringValue: new Date().toISOString() } };
+      const doneMask = Object.keys(doneFields).map(k => `updateMask.fieldPaths=${k}`).join("&");
+      const doneRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/sessions/${s.id}?${doneMask}`,
         { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-          body: JSON.stringify({ fields: {
-            inventorySalidaDone: { booleanValue: true },
-            inventorySalidaAt: { stringValue: new Date().toISOString() },
-            inventorySalidaDetalle: toFV(itemsWithLotes),
-          }}) });
+          body: JSON.stringify({ fields: doneFields }) });
       await checkOk(doneRes, "Marcar sesión como dada de baja");
 
-      setSessions(prev => prev.map(x => x.id === s.id ? { ...x, inventorySalidaDone: true, inventorySalidaDetalle: itemsWithLotes } : x));
+      setSessions(prev => prev.map(x => x.id === s.id ? {
+        ...x,
+        ...(invScope === "medicamentos" ? { inventorySalidaMedsDone: true, inventorySalidaMedsDetalle: itemsWithLotes } : { inventorySalidaMaterialDone: true }),
+      } : x));
       setShowInvModal(false);
 
       // El comprobante es la constancia de dónde salió cada medicamento --
-      // si falla solo la generación del PDF (la baja en sí ya quedó
+      // solo aplica al paso de medicamentos (material/insumos no llevan
+      // lote). Si falla solo la generación del PDF (la baja en sí ya quedó
       // registrada), no se trata como error de la baja: se avisa aparte y
       // se puede reimprimir después con el botón 🖨️ Comprobante.
-      try { await generateComprobante(itemsWithLotes); }
-      catch (pdfErr) { alert("La baja se registró, pero no se pudo generar el comprobante: " + pdfErr.message + "\n\nPuedes reimprimirlo después con el botón 🖨️ Comprobante."); }
+      if (invScope === "medicamentos") {
+        try { await generateComprobante(itemsWithLotes); }
+        catch (pdfErr) { alert("La baja se registró, pero no se pudo generar el comprobante: " + pdfErr.message + "\n\nPuedes reimprimirlo después con el botón 🖨️ Comprobante."); }
+      }
     } catch (e) {
       alert("Error al dar de baja el inventario: " + e.message);
     } finally {
@@ -989,23 +1007,33 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                   📎 Todo junto
                 </button>
 
-                <button onClick={e => { e.stopPropagation(); if (!s.inventorySalidaDone) openInvModal(); }}
-                  disabled={s.inventorySalidaDone}
-                  title={s.inventorySalidaDone ? `Inventario ya dado de baja ${s.inventorySalidaAt ? new Date(s.inventorySalidaAt).toLocaleString("es-MX") : ""}` : "Descontar del inventario el material de esta sesión"}
-                  style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: s.inventorySalidaDone ? "default" : "pointer",
-                    background: s.inventorySalidaDone ? "rgba(0,212,170,0.08)" : "rgba(255,107,107,0.1)",
-                    border: `1px solid ${s.inventorySalidaDone ? "rgba(0,212,170,0.2)" : "rgba(255,107,107,0.25)"}`,
-                    color: s.inventorySalidaDone ? "#00d4aa" : "#ff6b6b" }}>
-                  {s.inventorySalidaDone ? "✓ Inventario dado de baja" : "📦 Dar de baja inventario"}
+                <button onClick={e => { e.stopPropagation(); if (!s.inventorySalidaMedsDone) openInvModal("medicamentos"); }}
+                  disabled={s.inventorySalidaMedsDone}
+                  title={s.inventorySalidaMedsDone ? `Medicamentos ya dados de baja ${s.inventorySalidaMedsAt ? new Date(s.inventorySalidaMedsAt).toLocaleString("es-MX") : ""}` : "Descontar del inventario los medicamentos de esta sesión"}
+                  style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: s.inventorySalidaMedsDone ? "default" : "pointer",
+                    background: s.inventorySalidaMedsDone ? "rgba(0,212,170,0.08)" : "rgba(255,107,107,0.1)",
+                    border: `1px solid ${s.inventorySalidaMedsDone ? "rgba(0,212,170,0.2)" : "rgba(255,107,107,0.25)"}`,
+                    color: s.inventorySalidaMedsDone ? "#00d4aa" : "#ff6b6b" }}>
+                  {s.inventorySalidaMedsDone ? "✓ Medicamentos dados de baja" : "💊 Dar de baja medicamentos"}
                 </button>
 
-                {s.inventorySalidaDone && (
+                {s.inventorySalidaMedsDone && (
                   <button onClick={e => { e.stopPropagation(); reprintComprobante(); }} disabled={generatingComprobante}
                     title="Volver a generar el comprobante de dónde salió cada medicamento"
                     style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: generatingComprobante ? "wait" : "pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                     {generatingComprobante ? "…" : "🖨️ Comprobante"}
                   </button>
                 )}
+
+                <button onClick={e => { e.stopPropagation(); if (!s.inventorySalidaMaterialDone) openInvModal("material"); }}
+                  disabled={s.inventorySalidaMaterialDone}
+                  title={s.inventorySalidaMaterialDone ? `Material ya dado de baja ${s.inventorySalidaMaterialAt ? new Date(s.inventorySalidaMaterialAt).toLocaleString("es-MX") : ""}` : "Descontar del inventario el material (soluciones e insumos) de esta sesión"}
+                  style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: s.inventorySalidaMaterialDone ? "default" : "pointer",
+                    background: s.inventorySalidaMaterialDone ? "rgba(0,212,170,0.08)" : "rgba(255,107,107,0.1)",
+                    border: `1px solid ${s.inventorySalidaMaterialDone ? "rgba(0,212,170,0.2)" : "rgba(255,107,107,0.25)"}`,
+                    color: s.inventorySalidaMaterialDone ? "#00d4aa" : "#ff6b6b" }}>
+                  {s.inventorySalidaMaterialDone ? "✓ Material dado de baja" : "🧰 Dar de baja material"}
+                </button>
               </>
             )}
 
@@ -1194,7 +1222,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
           style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:440, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
             <div>
-              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>📦 Dar de baja inventario</div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>{invScope === "medicamentos" ? "💊 Dar de baja medicamentos" : "🧰 Dar de baja material"}</div>
               <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{s.patientName} — revisa y ajusta antes de descontar del almacén de {isCipi ? `CIPI (${cipiVariant})` : s.center}</div>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:"50vh", overflowY:"auto" }}>
@@ -1205,7 +1233,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
                     style={{ width:56, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:12, outline:"none", textAlign:"center" }} />
                 </div>
               ))}
-              {invItems.length === 0 && <div style={{ fontSize:12, color:"#555", textAlign:"center", padding:12 }}>Sin material calculado para esta sesión.</div>}
+              {invItems.length === 0 && <div style={{ fontSize:12, color:"#555", textAlign:"center", padding:12 }}>Sin {invScope === "medicamentos" ? "medicamentos" : "material"} calculado para esta sesión.</div>}
             </div>
             <div style={{ display:"flex", gap:8 }}>
               <button onClick={() => setShowInvModal(false)} disabled={savingInv}
@@ -1214,7 +1242,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
               </button>
               <button onClick={confirmInvSalida} disabled={savingInv}
                 style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingInv ? "wait" : "pointer", background:"linear-gradient(135deg,#ff6b6b,#c94848)", border:"none", color:"#fff", opacity: savingInv ? 0.6 : 1 }}>
-                {savingInv ? "Dando de baja…" : "✓ Confirmar baja de inventario"}
+                {savingInv ? "Dando de baja…" : `✓ Confirmar baja de ${invScope === "medicamentos" ? "medicamentos" : "material"}`}
               </button>
             </div>
           </div>

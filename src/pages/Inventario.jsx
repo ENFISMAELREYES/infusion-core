@@ -658,16 +658,23 @@ export default function Inventario() {
       });
       await checkOk(evRes, "Registro de la anulación");
 
-      // Si este movimiento venía de "Dar de baja inventario" de una sesión
-      // (tiene sessionId), esa sesión debe volver a quedar disponible para
-      // dar de baja -- si no, se queda marcada como "ya dada de baja" sin
-      // que el inventario realmente la refleje.
-      if (ev.sessionId && ev.type === "salida") {
-        const sessRes = await fetch(`${FIRESTORE_BASE_URL}/sessions/${ev.sessionId}?updateMask.fieldPaths=inventorySalidaDone&updateMask.fieldPaths=inventorySalidaAt`, {
+      // Si este movimiento venía de "Dar de baja medicamentos/material" de
+      // una sesión (tiene sessionId), esa mitad de la sesión debe volver a
+      // quedar disponible para dar de baja -- si no, se queda marcada como
+      // "ya dada de baja" sin que el inventario realmente la refleje. Cada
+      // mitad se identifica por el texto del motivo (ver confirmInvSalida
+      // en Insumos.jsx); los anexos posteriores al retiro tienen su propio
+      // motivo ("Anexo N...") y no deben reabrir nada.
+      const bajaMatch = /^Baja de inventario \((medicamentos|material)\)/.exec(ev.reason || "");
+      if (ev.sessionId && ev.type === "salida" && bajaMatch) {
+        const isMeds = bajaMatch[1] === "medicamentos";
+        const field = isMeds ? "inventorySalidaMedsDone" : "inventorySalidaMaterialDone";
+        const atField = isMeds ? "inventorySalidaMedsAt" : "inventorySalidaMaterialAt";
+        const sessRes = await fetch(`${FIRESTORE_BASE_URL}/sessions/${ev.sessionId}?updateMask.fieldPaths=${field}&updateMask.fieldPaths=${atField}`, {
           method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
           body: JSON.stringify({ fields: {
-            inventorySalidaDone: { booleanValue: false },
-            inventorySalidaAt: { nullValue: null },
+            [field]: { booleanValue: false },
+            [atField]: { nullValue: null },
           }}),
         });
         // No detenemos todo el flujo si esto falla (la anulación del
