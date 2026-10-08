@@ -1223,7 +1223,7 @@ export default function Inventario() {
         <p style={{ fontSize:13, color:"#555" }}>Existencias y movimientos de entrada/salida de material</p>
         {warehouse === "QUAL_CITIO" ? (
           <p style={{ fontSize:12, color:"#ffb347", marginTop:6 }}>
-            📦 Aquí llega el medicamento de CITIO por transferencia (o carga manual), antes de pasar al centro. A diferencia de CIPI, el lote se descuenta directo de aquí el mismo día que se usa en una sesión (💊 al dar de baja medicamentos en Insumos) -- no espera a que se registre la entrada formal a CITIO. Esa entrada formal ("🔄 Jalar de Qual·CITIO" o "💰 Registrar cotización") solo abona a CITIO cuando llega la factura/cotización oficial, sin volver a descontar de aquí.
+            📦 Aquí llega el medicamento a almacén QUAL/CITIO por transferencia (o carga manual), antes de pasar al centro. El lote se descuenta directo de aquí el mismo día que se usa en una sesión (💊 al dar de baja medicamentos en Insumos) — no espera a que se registre la entrada formal a CITIO. Esa entrada formal solo abona a CITIO cuando llega la factura/cotización oficial, sin volver a descontar de aquí.
           </p>
         ) : warehouse === "QUAL_CIPI" && (
           <p style={{ fontSize:12, color:"#ffb347", marginTop:6 }}>
