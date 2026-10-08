@@ -1221,9 +1221,13 @@ export default function Inventario() {
       <div style={{ marginBottom:24 }}>
         <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Inventario</h1>
         <p style={{ fontSize:13, color:"#555" }}>Existencias y movimientos de entrada/salida de material</p>
-        {warehouse.startsWith("QUAL") && (
+        {warehouse === "QUAL_CITIO" ? (
           <p style={{ fontSize:12, color:"#ffb347", marginTop:6 }}>
-            📦 Stock general recibido de la farmacia QualMedical para {warehouse === "QUAL_CITIO" ? "CITIO" : "CIPI (PRO y PED juntos)"}, antes de asignarse al centro. Se descuenta solo cuando enfermería registra la entrada del medicamento en el centro correspondiente — no requiere ninguna acción aparte de ellas.
+            📦 Aquí llega el medicamento de CITIO por transferencia (o carga manual), antes de pasar al centro. A diferencia de CIPI, el lote se descuenta directo de aquí el mismo día que se usa en una sesión (💊 al dar de baja medicamentos en Insumos) -- no espera a que se registre la entrada formal a CITIO. Esa entrada formal ("🔄 Jalar de Qual·CITIO" o "💰 Registrar cotización") solo abona a CITIO cuando llega la factura/cotización oficial, sin volver a descontar de aquí.
+          </p>
+        ) : warehouse === "QUAL_CIPI" && (
+          <p style={{ fontSize:12, color:"#ffb347", marginTop:6 }}>
+            📦 Stock general recibido de la farmacia QualMedical para CIPI (PRO y PED juntos), antes de asignarse al centro. Se descuenta solo cuando enfermería registra la entrada del medicamento en el centro correspondiente — no requiere ninguna acción aparte de ellas.
           </p>
         )}
       </div>
