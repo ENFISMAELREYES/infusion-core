@@ -461,15 +461,15 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
               </div>
 
               <div style={{ display:"flex", gap:8 }}>
-                <button onClick={async () => await saveMedsRequest(pieceOverrides)} disabled={savingMeds || session.inventorySalidaDone}
-                  title={session.inventorySalidaDone ? "Ya se dio de baja el inventario de esta sesión -- si necesitas agregar algo, usa Anexar en Insumos" : "Guarda solo las piezas de medicamento -- activa el filtro de Paola y, si aplica, tu autorización"}
-                  style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (savingMeds || session.inventorySalidaDone) ? "not-allowed" : "pointer", background: session.inventorySalidaDone ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#5DCAA5,#2f8f74)", border:"none", color: session.inventorySalidaDone ? "#666" : "#fff", opacity: savingMeds ? 0.6 : 1 }}>
-                  {savingMeds ? "Guardando…" : session.medsSolicitudGuardada ? "✓ Medicamentos guardados" : "✓ Guardar medicamentos"}
+                <button onClick={async () => await saveMedsRequest(pieceOverrides)} disabled={savingMeds || session.inventorySalidaMedsDone}
+                  title={session.inventorySalidaMedsDone ? "Ya se dieron de baja los medicamentos de esta sesión -- si necesitas agregar algo, usa Anexar en Insumos" : "Guarda solo las piezas de medicamento -- activa el filtro de Paola y, si aplica, tu autorización"}
+                  style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (savingMeds || session.inventorySalidaMedsDone) ? "not-allowed" : "pointer", background: session.inventorySalidaMedsDone ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#5DCAA5,#2f8f74)", border:"none", color: session.inventorySalidaMedsDone ? "#666" : "#fff", opacity: savingMeds ? 0.6 : 1 }}>
+                  {savingMeds ? "Guardando…" : session.inventorySalidaMedsDone ? "🔒 Medicamentos ya dados de baja" : session.medsSolicitudGuardada ? "✓ Medicamentos guardados" : "✓ Guardar medicamentos"}
                 </button>
-                <button onClick={async () => await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault, qtyOverrides, materialNote, equipoChoice)} disabled={savingMaterial || session.inventorySalidaDone}
-                  title={session.inventorySalidaDone ? "Ya se dio de baja el inventario de esta sesión -- si necesitas agregar algo, usa Anexar en Insumos" : "Guarda catéter/equipo/insumos/soluciones -- activa el checkup de Paola"}
-                  style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (savingMaterial || session.inventorySalidaDone) ? "not-allowed" : "pointer", background: session.inventorySalidaDone ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color: session.inventorySalidaDone ? "#666" : "#fff", opacity: savingMaterial ? 0.6 : 1 }}>
-                  {savingMaterial ? "Guardando…" : session.inventorySalidaDone ? "🔒 Inventario ya dado de baja" : session.materialSolicitudGuardada ? "✓ Material guardado" : "✓ Guardar material"}
+                <button onClick={async () => await saveMaterialRequest(catheterType, catheterGauge, extraItems, excludedItems, excludePatientDefault, qtyOverrides, materialNote, equipoChoice)} disabled={savingMaterial || session.inventorySalidaMaterialDone}
+                  title={session.inventorySalidaMaterialDone ? "Ya se dio de baja el material de esta sesión -- si necesitas agregar algo, usa Anexar en Insumos" : "Guarda catéter/equipo/insumos/soluciones -- activa el checkup de Paola"}
+                  style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (savingMaterial || session.inventorySalidaMaterialDone) ? "not-allowed" : "pointer", background: session.inventorySalidaMaterialDone ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#AFA9EC,#8B7FD8)", border:"none", color: session.inventorySalidaMaterialDone ? "#666" : "#fff", opacity: savingMaterial ? 0.6 : 1 }}>
+                  {savingMaterial ? "Guardando…" : session.inventorySalidaMaterialDone ? "🔒 Material ya dado de baja" : session.materialSolicitudGuardada ? "✓ Material guardado" : "✓ Guardar material"}
                 </button>
               </div>
               <button onClick={() => setShowMaterialModal(false)} disabled={savingMaterial || savingMeds}

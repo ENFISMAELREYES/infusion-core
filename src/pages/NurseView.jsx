@@ -1316,9 +1316,13 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                   : !events.ingreso || completedMeds < totalTimed || !allWashDone
               } />
           </div>
-          {!session.inventorySalidaDone && (
+          {(!session.inventorySalidaMedsDone || !session.inventorySalidaMaterialDone) && (
             <div style={{ marginBottom:16, padding:"8px 12px", borderRadius:9, background:"rgba(255,179,71,0.06)", border:"1px solid rgba(255,179,71,0.2)", fontSize:11, color:"#ffb347" }}>
-              📦 Recordatorio: el material de esta sesión aún no se ha dado de baja del inventario (se hace desde Insumos).
+              📦 Recordatorio: {!session.inventorySalidaMedsDone && !session.inventorySalidaMaterialDone
+                ? "los medicamentos y el material de esta sesión aún no se han dado de baja del inventario"
+                : !session.inventorySalidaMedsDone
+                ? "los medicamentos de esta sesión aún no se han dado de baja del inventario"
+                : "el material de esta sesión aún no se ha dado de baja del inventario"} (se hace desde Insumos).
             </div>
           )}
 {session.sessionType === "procedimiento" ? (
