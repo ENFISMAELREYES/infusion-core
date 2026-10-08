@@ -1458,7 +1458,19 @@ export default function Insumos() {
 
   const downloadPharmacyOrder = async (s, material, note, cipiVariant, scope = "todo") => {
     const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
-    material.items.forEach(t => groups[categorizeItem(t.item)].push(t));
+    material.items.forEach(t => {
+      const cat = categorizeItem(t.item);
+      // Si ya se le asignó lote a este medicamento (al confirmar asistencia),
+      // se anexa aquí mismo -- así el PDF de solicitud también sirve como
+      // comprobante para Compras de qué lote exacto se va a usar, sin
+      // esperar a que se dé de baja la sesión.
+      if (cat === "MEDICAMENTOS") {
+        const picks = (s.lotAssignments || []).find(a => a.item === t.item)?.picks?.filter(p => p.qty > 0 && p.lote) || [];
+        groups.MEDICAMENTOS.push(picks.length > 0 ? { ...t, lotes: picks } : t);
+      } else {
+        groups[cat].push(t);
+      }
+    });
 
     // Paso 1 (medicamentos, con anticipación) vs paso 2 (material: soluciones +
     // insumos, días antes o el mismo día) vs "todo" (compatibilidad / anexos)
@@ -1681,6 +1693,18 @@ export default function Insumos() {
                         {m.name}{m.dose && <span style={{ color:"#888" }}> · {m.dose}</span>}
                       </span>
                     ))}
+                  </div>
+                )}
+                {/* Lote ya asignado por medicamento (se elige al confirmar
+                    asistencia) -- visible aquí para que todo el equipo lo
+                    pueda consultar sin entrar a Insumos a editar la sesión. */}
+                {(s.lotAssignments || []).some(a => (a.picks || []).some(p => p.qty > 0)) && (
+                  <div style={{ marginTop:4, display:"flex", flexWrap:"wrap", gap:5 }}>
+                    {(s.lotAssignments || []).flatMap(a => (a.picks || []).filter(p => p.qty > 0).map((p, pi) => (
+                      <span key={`${a.item}-${pi}`} title={a.item} style={{ fontSize:10, color:"#00d4aa", background:"rgba(0,212,170,0.08)", border:"1px solid rgba(0,212,170,0.2)", padding:"2px 8px", borderRadius:99 }}>
+                        🏷️ {a.item} · {p.lote} · cad. {p.caducidad} · {p.marca} · {p.qty}
+                      </span>
+                    )))}
                   </div>
                 )}
               </div>
