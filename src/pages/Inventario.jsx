@@ -133,7 +133,13 @@ export default function Inventario() {
   // solo dispensar lo que ya hay.
   const canValidate = isJefe || profile?.puedeValidarInsumos;
   const canAuthorize = isJefe;
-  const allowedWarehouses = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI_PRO","CIPI_PED"] : ["CITIO"]);
+  // Qual·CITIO/Qual·CIPI ya no son un privilegio aparte de "ver ambos
+  // centros" -- son parte del propio flujo de medicamentos de cada centro
+  // (ahí es donde de verdad se registra la transferencia y se usa el lote
+  // el día de la sesión, ver Insumos.jsx), así que cualquier enfermera de
+  // CITIO entra a Qual·CITIO igual que a su propio almacén, y lo mismo
+  // CIPI con Qual·CIPI.
+  const allowedWarehouses = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI_PRO","CIPI_PED","QUAL_CIPI"] : ["CITIO","QUAL_CITIO"]);
   const [tab, setTab] = useState("existencias"); // "existencias" | "movimientos"
   const [warehouse, setWarehouse] = useState(() => canSeeAllCenters ? "CITIO" : (allowedWarehouses?.[0] || "CITIO"));
   useEffect(() => {
@@ -232,7 +238,6 @@ export default function Inventario() {
   };
 
   useEffect(() => { load(); }, [user]);
-  useEffect(() => { if (!canSeeAllCenters && warehouse.startsWith("QUAL")) setWarehouse("CITIO"); }, [canSeeAllCenters, warehouse]);
   // El token se obtiene una sola vez al cargar (arriba, en load()) -- todas
   // las escrituras de esta página lo reusan tal cual, sin pedir uno fresco
   // antes de cada una (a diferencia de MaterialModal.jsx, que sí lo hace).
@@ -1224,7 +1229,7 @@ export default function Inventario() {
       </div>
 
       <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
-        {[...WAREHOUSES.filter(w => !allowedWarehouses || allowedWarehouses.includes(w.key)), ...(canSeeAllCenters ? QUAL_WAREHOUSES : [])].map(w => (
+        {[...WAREHOUSES, ...QUAL_WAREHOUSES].filter(w => !allowedWarehouses || allowedWarehouses.includes(w.key)).map(w => (
           <button key={w.key} onClick={() => setWarehouse(w.key)} style={{
             padding:"6px 14px", borderRadius:99, fontSize:12, fontWeight:600, cursor:"pointer",
             background: warehouse===w.key ? (w.key.startsWith("QUAL") ? "rgba(255,179,71,0.12)" : "rgba(79,195,247,0.12)") : "rgba(255,255,255,0.04)",
