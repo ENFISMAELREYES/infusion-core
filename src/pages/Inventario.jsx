@@ -187,6 +187,62 @@ export default function Inventario() {
       setSavingRegularize(false);
     }
   };
+
+  // Ajuste directo de cantidad (jefe) -- para corregir un lote que quedó
+  // mal (ej. en rojo porque se dio de baja en sesiones desde antes de que
+  // existiera el registro de lote, o porque la cuenta física real no
+  // coincide). A diferencia de "Registrar entrada" (que SUMA sobre lo que
+  // ya hay) y de "Registrar cotización" (que también suma), esto REEMPLAZA
+  // la cantidad por la que se capture -- para poner el número real, no para
+  // sumarle algo. Al guardar, también se recalcula la existencia agregada
+  // (el número grande) de ese artículo en ese almacén como la suma de
+  // todos sus lotes, para que quede sincronizada sin corregirla aparte.
+  const [adjustLot, setAdjustLot] = useState(null);
+  const [adjustQty, setAdjustQty] = useState("");
+  const [savingAdjust, setSavingAdjust] = useState(false);
+  const openAdjustLot = (lot) => { setAdjustLot(lot); setAdjustQty(String(lot.cantidadDisponible ?? 0)); };
+  const saveAdjustLot = async () => {
+    const qty = parseFloat(adjustQty);
+    if (isNaN(qty)) { alert("Captura un número válido (puede ser 0)."); return; }
+    setSavingAdjust(true);
+    try {
+      const lot = adjustLot;
+      const lotRes = await fetch(`${FIRESTORE_BASE_URL}/inventory_lots/${lot.id}`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            warehouse: { stringValue: lot.warehouse }, item: { stringValue: lot.item },
+            lote: { stringValue: lot.lote }, caducidad: { stringValue: lot.caducidad || "" }, marca: { stringValue: lot.marca || "" },
+            cantidadInicial: toFV(Math.max(lot.cantidadInicial ?? 0, qty)),
+            cantidadDisponible: toFV(qty),
+            lastUpdated: { stringValue: new Date().toISOString() },
+          }}) });
+      if (!lotRes.ok) { const err = await lotRes.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${lotRes.status}`); }
+
+      const updatedLots = inventoryLots.map(l => l.id === lot.id ? { ...l, cantidadDisponible: qty } : l);
+      const sumForItem = updatedLots.filter(l => l.warehouse === lot.warehouse && l.item === lot.item).reduce((acc, l) => acc + (l.cantidadDisponible || 0), 0);
+      const docId = inventoryDocId(lot.warehouse, lot.item);
+      const existingInv = inventory.find(i => i.id === docId);
+      const invRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            item: { stringValue: lot.item }, warehouse: { stringValue: lot.warehouse },
+            category: { stringValue: existingInv?.category || "" }, unit: { stringValue: existingInv?.unit || "PIEZA" },
+            currentStock: toFV(sumForItem), minStock: toFV(existingInv?.minStock ?? 0),
+            lastCost: toFV(existingInv?.lastCost ?? 0), avgCost: toFV(existingInv?.avgCost ?? 0), totalReceived: toFV(existingInv?.totalReceived ?? 0),
+            lastUpdated: { stringValue: new Date().toISOString() },
+          }}) });
+      if (!invRes.ok) { const err = await invRes.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${invRes.status}`); }
+
+      setInventoryLots(updatedLots);
+      setInventory(prev => prev.map(i => i.id === docId ? { ...i, currentStock: sumForItem } : i));
+      setAdjustLot(null); setAdjustQty("");
+    } catch (e) {
+      alert("Error al ajustar la cantidad: " + e.message);
+    } finally {
+      setSavingAdjust(false);
+    }
+  };
+
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [search, setSearch] = useState("");
@@ -1374,6 +1430,12 @@ export default function Inventario() {
                                 💰 cotización
                               </button>
                             )}
+                            {isJefe && (
+                              <button onClick={() => openAdjustLot(l)} title="Corregir a mano la cantidad real de este lote (reemplaza el número, no lo suma) -- también recalcula la existencia agregada"
+                                style={{ padding:"1px 6px", borderRadius:99, fontSize:9, fontWeight:700, cursor:"pointer", background:"rgba(79,195,247,0.12)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7" }}>
+                                ✏️ ajustar
+                              </button>
+                            )}
                           </span>
                         );
                       })}
@@ -1929,6 +1991,37 @@ export default function Inventario() {
               <button onClick={saveRegularizeCotizacion} disabled={savingRegularize}
                 style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingRegularize ? "wait" : "pointer", background:"linear-gradient(135deg,#ffb347,#e08e2a)", border:"none", color:"#000", opacity: savingRegularize ? 0.6 : 1 }}>
                 {savingRegularize ? "Guardando…" : "✓ Registrar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {adjustLot && (
+        <div onClick={() => !savingAdjust && setAdjustLot(null)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:400, display:"flex", flexDirection:"column", gap:12 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>✏️ Ajustar cantidad real</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{adjustLot.item} — lote {adjustLot.lote} · cad. {adjustLot.caducidad} · {warehouseLabel(adjustLot.warehouse)}</div>
+              <div style={{ fontSize:11, color:"#666", marginTop:6 }}>
+                Esto reemplaza la cantidad de este lote por la que captures aquí (no se suma) -- úsalo para poner el número real cuando quedó mal, por ejemplo por sesiones dadas de baja antes de que existiera el registro de lote. También se recalcula la existencia agregada de este artículo en {warehouseLabel(adjustLot.warehouse)} como la suma de todos sus lotes.
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Cantidad real (puede ser 0)</label>
+              <input type="number" step="0.01" value={adjustQty} onChange={e => setAdjustQty(e.target.value)} autoFocus
+                style={{ ...inputStyle, fontFamily:"'IBM Plex Mono', monospace" }} />
+              <div style={{ fontSize:10, color:"#555", marginTop:4 }}>Saldo actual: {adjustLot.cantidadDisponible}.</div>
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setAdjustLot(null)} disabled={savingAdjust}
+                style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, cursor: savingAdjust ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                Cancelar
+              </button>
+              <button onClick={saveAdjustLot} disabled={savingAdjust}
+                style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingAdjust ? "wait" : "pointer", background:"linear-gradient(135deg,#4fc3f7,#2f8fb3)", border:"none", color:"#000", opacity: savingAdjust ? 0.6 : 1 }}>
+                {savingAdjust ? "Guardando…" : "✓ Ajustar"}
               </button>
             </div>
           </div>
