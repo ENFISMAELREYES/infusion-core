@@ -61,7 +61,13 @@ async function fetchAllSessions(token) {
          { fieldPath: "status" },
         ]},
         orderBy: [{ field: { fieldPath: "date" }, direction: "DESCENDING" }],
-        limit: 500,
+        // Antes 500 -- al ser un límite GLOBAL (de toda la colección, no por
+        // paciente), en cuanto la clínica acumulara más de 500 sesiones en
+        // total, las más antiguas de cada paciente empezaban a desaparecer
+        // silenciosamente de Catálogo (agrupación, edición de datos, etc.)
+        // aunque sí seguían existiendo y apareciendo en Historial (que usa
+        // un límite más alto).
+        limit: 3000,
       }
     })
   });
