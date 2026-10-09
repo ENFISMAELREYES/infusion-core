@@ -31,7 +31,12 @@ function parseDoc(doc) {
 function normalize(str) {
   return str?.toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9 ]/g, "").trim() || "";
+    // Espacios dobles/no separables tambi\u00e9n se colapsan a uno solo --
+    // antes se preservaban, as\u00ed que dos sesiones de la misma persona con un
+    // espacio de m\u00e1s (invisible en pantalla) no se detectaban como
+    // "posible duplicado" ni se consideraban la misma persona al corregir
+    // datos (dob/diagn\u00f3stico/etc.) desde el cat\u00e1logo.
+    .replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim() || "";
 }
 
 function similarity(a, b) {
@@ -445,7 +450,12 @@ const [fixPicks, setFixPicks] = useState({}); // sessionId -> schemeId
 
 const handleDataEdit = async (patientName, draft) => {
   try {
-    const targets = sessions.filter(s => s.patientName === patientName);
+    // Comparación normalizada (no igualdad exacta) -- si no, una diferencia
+    // invisible de espacios/acentos entre sesiones de la misma persona deja
+    // alguna sin el dato corregido (mismo síntoma que afectaba a la
+    // bitácora: ver normalizeName en api/generate-pdf.js).
+    const targetNorm = normalize(patientName);
+    const targets = sessions.filter(s => normalize(s.patientName) === targetNorm);
     for (const s of targets) {
       if (draft.dob && draft.dob !== s.dob) await updateSessionField(token, s.id, "dob", draft.dob);
       if (draft.diagnosis && draft.diagnosis !== s.diagnosis) await updateSessionField(token, s.id, "diagnosis", draft.diagnosis);
@@ -732,7 +742,7 @@ const handleDataEdit = async (patientName, draft) => {
         </div>
       </div>
       <div style={{ display:"flex", gap:8 }}>
-        <button onClick={() => handleDataEdit(g.canonical, draft)} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.15)", border:"1px solid rgba(29,158,117,0.4)", color:"#1D9E75" }}>✓ Guardar cambios</button>
+        <button onClick={() => handleDataEdit(g.canonical, draft, patientSessions)} style={{ flex:1, padding:"8px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(29,158,117,0.15)", border:"1px solid rgba(29,158,117,0.4)", color:"#1D9E75" }}>✓ Guardar cambios</button>
         <button onClick={() => setEditingData(null)} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#666" }}>Cancelar</button>
       </div>
     </div>

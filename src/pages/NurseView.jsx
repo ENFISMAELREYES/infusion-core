@@ -173,6 +173,18 @@ async function patchSession(token, sessionId, updates) {
   logAudit(token, "sessions", sessionId, updates); // no se espera (await) para no retrasar el guardado
 }
 
+// Comparación tolerante del nombre del paciente -- mismo criterio que
+// normalize() en Catalogo.jsx y normalizeName() en api/generate-pdf.js. Un
+// EQUAL de Firestore es literal: un espacio doble o un acento guardado con
+// otra normalización Unicode entre dos sesiones de la misma persona hacía
+// que no se encontrara su expediente ya existente, y se le abriera uno
+// nuevo por error (el síntoma: un paciente con dos números de expediente).
+function normalizePatientName(str) {
+  return str?.toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, " ").trim() || "";
+}
+
 // Incrementa un contador de forma atómica (transform de Firestore, no
 // lee-y-luego-escribe) -- evita números duplicados cuando varias personas
 // guardan al mismo tiempo, y es mucho más resistente a la saturación del
@@ -964,23 +976,24 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
           updates.infusionNumber = newNumber;
         }
 
-        // Asignar número de expediente si es paciente nuevo
+        // Asignar número de expediente si es paciente nuevo -- se busca por
+        // nombre normalizado (no EQUAL exacto) para no abrirle un segundo
+        // expediente a quien ya tiene uno solo por una diferencia invisible
+        // de espacios/acentos entre sesiones (ver normalizePatientName).
         try {
           const patientQuery = await fetch(
             `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`,
             { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${freshToken}` },
               body: JSON.stringify({ structuredQuery: {
                 from:[{ collectionId:"sessions" }],
-                where:{ compositeFilter:{ op:"AND", filters:[
-                  { fieldFilter:{ field:{ fieldPath:"patientName" }, op:"EQUAL", value:{ stringValue:session.patientName } } },
-                  { fieldFilter:{ field:{ fieldPath:"expedienteNumber" }, op:"GREATER_THAN", value:{ integerValue:"0" } } },
-                ]}},
-                limit: 1,
+                where:{ fieldFilter:{ field:{ fieldPath:"expedienteNumber" }, op:"GREATER_THAN", value:{ integerValue:"0" } } },
+                limit: 3000,
               }})
             }
           );
           const patientData = await patientQuery.json();
-          const existingExpediente = patientData.find(d => d.document);
+          const targetNorm = normalizePatientName(session.patientName);
+          const existingExpediente = patientData.find(d => d.document && normalizePatientName(d.document.fields?.patientName?.stringValue) === targetNorm);
           if (!existingExpediente) {
             const expCounterId = `counter_${session.center}_expediente`;
             updates.expedienteNumber = await atomicIncrementCounter(freshToken, expCounterId);
