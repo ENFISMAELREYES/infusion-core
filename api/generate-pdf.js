@@ -60,19 +60,29 @@ export default async function handler(req, res) {
     });
     const accessToken = await auth.getAccessToken();
 
-    // Fetch sesiones del paciente
+    // Comparación tolerante del nombre -- igual que normalize() en
+    // Catalogo.jsx. Un filtro EQUAL de Firestore es literal: un espacio
+    // doble, un espacio no separable, o un acento guardado con otra
+    // normalización Unicode hacen que una sesión "se pierda" de la bitácora
+    // aunque en Catálogo/Historial se vea idéntica a simple vista (el
+    // navegador colapsa esos espacios al mostrar texto, pero Firestore no).
+    const normalizeName = (str) => str?.toLowerCase()
+      .normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, " ").trim() || "";
+    const targetName = normalizeName(patientName);
+
+    // Fetch sesiones del paciente -- se filtra por estatus en la consulta
+    // (barato, reduce el volumen) y por nombre normalizado en memoria (ver
+    // comentario arriba), en vez de depender de una igualdad exacta de texto.
     const queryRes = await fetch(
       `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/default/documents:runQuery`,
       { method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${accessToken}` },
         body: JSON.stringify({ structuredQuery: {
           from: [{ collectionId: "sessions" }],
-          where: { compositeFilter: { op: "AND", filters: [
-            { fieldFilter: { field: { fieldPath: "patientName" }, op: "EQUAL", value: { stringValue: patientName } } },
-            { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "completado" } } },
-          ]}},
+          where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "completado" } } },
           orderBy: [{ field: { fieldPath: "date" }, direction: "ASCENDING" }],
-          limit: 200,
+          limit: 3000,
         }})
       }
     );
@@ -91,7 +101,7 @@ export default async function handler(req, res) {
     let sessions = queryData.filter(d => d.document).map(d => {
       const id = d.document.name.split("/").pop();
       return { id, ...Object.fromEntries(Object.entries(d.document.fields || {}).map(([k, v]) => [k, parse(v)])) };
-    });
+    }).filter(s => normalizeName(s.patientName) === targetName);
 
     // Set de IDs seleccionados. Si es un subconjunto (no todas), entramos en
     // modo "sobreimpresión": se recorren TODAS las sesiones para calcular la
