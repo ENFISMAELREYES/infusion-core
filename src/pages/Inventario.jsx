@@ -243,6 +243,41 @@ export default function Inventario() {
     }
   };
 
+  // Ajuste directo de la existencia agregada (jefe) -- para artículos sin
+  // ningún lote registrado todavía, donde el ajuste por lote no aplica
+  // (ver adjustLot arriba). Mismo criterio: reemplaza el número, no lo
+  // suma. Si el artículo sí tiene lotes, es mejor corregirlos ahí (eso ya
+  // recalcula este número solo) -- este botón es para cuando no hay nada
+  // que corregir a nivel de lote.
+  const [adjustStock, setAdjustStock] = useState(null);
+  const [adjustStockQty, setAdjustStockQty] = useState("");
+  const [savingAdjustStock, setSavingAdjustStock] = useState(false);
+  const openAdjustStock = (invDoc) => { setAdjustStock(invDoc); setAdjustStockQty(String(invDoc.currentStock ?? 0)); };
+  const saveAdjustStock = async () => {
+    const qty = parseFloat(adjustStockQty);
+    if (isNaN(qty)) { alert("Captura un número válido (puede ser 0)."); return; }
+    setSavingAdjustStock(true);
+    try {
+      const doc = adjustStock;
+      const res = await fetch(`${FIRESTORE_BASE_URL}/inventory/${doc.id}`,
+        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            item: { stringValue: doc.item }, warehouse: { stringValue: doc.warehouse },
+            category: { stringValue: doc.category || "" }, unit: { stringValue: doc.unit || "PIEZA" },
+            currentStock: toFV(qty), minStock: toFV(doc.minStock ?? 0),
+            lastCost: toFV(doc.lastCost ?? 0), avgCost: toFV(doc.avgCost ?? 0), totalReceived: toFV(doc.totalReceived ?? 0),
+            lastUpdated: { stringValue: new Date().toISOString() },
+          }}) });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${res.status}`); }
+      setInventory(prev => prev.map(x => x.id === doc.id ? { ...x, currentStock: qty } : x));
+      setAdjustStock(null); setAdjustStockQty("");
+    } catch (e) {
+      alert("Error al ajustar la existencia: " + e.message);
+    } finally {
+      setSavingAdjustStock(false);
+    }
+  };
+
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [search, setSearch] = useState("");
@@ -1396,6 +1431,12 @@ export default function Inventario() {
                     <span style={{ fontSize:14, fontWeight:700, color: negative ? "#ff6b6b" : low ? "#ffb347" : "#00d4aa", fontFamily:"'IBM Plex Mono', monospace", minWidth:60, textAlign:"right", whiteSpace:"nowrap" }}>
                       {i.currentStock} {i.unit}{min > 0 && <span style={{ color:"#666", fontWeight:400 }}> (mín. {min})</span>}
                     </span>
+                    {isJefe && (
+                      <button onClick={() => openAdjustStock(i)} title="Corregir a mano la existencia real de este artículo (reemplaza el número, no lo suma) -- para cuando no hay ningún lote que corregir"
+                        style={{ padding:"2px 7px", borderRadius:6, fontSize:10, fontWeight:700, cursor:"pointer", background:"rgba(79,195,247,0.1)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7" }}>
+                        ✏️
+                      </button>
+                    )}
                     {(i.lastCost > 0 || i.avgCost > 0) && (
                       <span style={{ fontSize:10, color:"#888", fontFamily:"'IBM Plex Mono', monospace", whiteSpace:"nowrap" }} title="Último costo / Costo promedio">
                         últ. ${(i.lastCost||0).toFixed(2)} · prom. ${(i.avgCost||0).toFixed(2)}
@@ -2022,6 +2063,37 @@ export default function Inventario() {
               <button onClick={saveAdjustLot} disabled={savingAdjust}
                 style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingAdjust ? "wait" : "pointer", background:"linear-gradient(135deg,#4fc3f7,#2f8fb3)", border:"none", color:"#000", opacity: savingAdjust ? 0.6 : 1 }}>
                 {savingAdjust ? "Guardando…" : "✓ Ajustar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {adjustStock && (
+        <div onClick={() => !savingAdjustStock && setAdjustStock(null)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:400, display:"flex", flexDirection:"column", gap:12 }}>
+            <div>
+              <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>✏️ Ajustar existencia real</div>
+              <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{adjustStock.item} — {warehouseLabel(adjustStock.warehouse)}</div>
+              <div style={{ fontSize:11, color:"#666", marginTop:6 }}>
+                Esto reemplaza la existencia de este artículo por la que captures aquí (no se suma) -- úsalo cuando no haya ningún lote que corregir. Si este artículo sí tiene lotes, es mejor ajustarlos a ellos (🏷️ ✏️ ajustar) en vez de este número, porque ese ajuste ya recalcula esto solo.
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", display:"block", marginBottom:4 }}>Cantidad real (puede ser 0)</label>
+              <input type="number" step="0.01" value={adjustStockQty} onChange={e => setAdjustStockQty(e.target.value)} autoFocus
+                style={{ ...inputStyle, fontFamily:"'IBM Plex Mono', monospace" }} />
+              <div style={{ fontSize:10, color:"#555", marginTop:4 }}>Saldo actual: {adjustStock.currentStock}.</div>
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setAdjustStock(null)} disabled={savingAdjustStock}
+                style={{ flex:1, padding:"9px", borderRadius:9, fontSize:13, cursor: savingAdjustStock ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                Cancelar
+              </button>
+              <button onClick={saveAdjustStock} disabled={savingAdjustStock}
+                style={{ flex:2, padding:"9px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingAdjustStock ? "wait" : "pointer", background:"linear-gradient(135deg,#4fc3f7,#2f8fb3)", border:"none", color:"#000", opacity: savingAdjustStock ? 0.6 : 1 }}>
+                {savingAdjustStock ? "Guardando…" : "✓ Ajustar"}
               </button>
             </div>
           </div>
