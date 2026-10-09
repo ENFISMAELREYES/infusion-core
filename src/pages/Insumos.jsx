@@ -1348,7 +1348,11 @@ export default function Insumos() {
   // material/inventario de su propio centro asignado. Visualizador ve todos
   // los centros, igual que el jefe (pero en modo de solo lectura).
   const canSeeAllCenters = isJefe || isVisualizador || profile?.puedeValidarInsumos;
+  // Mismo criterio que canValidate dentro de PatientMaterialRow -- aquí se
+  // necesita a nivel de la pestaña completa para el contador de pendientes.
+  const canValidate = isJefe || profile?.puedeValidarInsumos;
   const [tab, setTab] = useState("consolidado");
+  const [onlyPendingValidation, setOnlyPendingValidation] = useState(false);
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [allLots, setAllLots] = useState([]); // lotes de CITIO + Qual·CITIO (Fase 3) -- ver fetchLots
@@ -1444,6 +1448,15 @@ export default function Insumos() {
     // PDF a farmacia) sin ese material y sin ninguna señal de que faltaba.
     return { session: s, material: { items: preview.items, unmatched: preview.unmatched, unmatchedSolutions: preview.unmatchedSolutions, pendingAlternatives: preview.pendingAlternatives, pendingEquipo: preview.pendingEquipo }, note: s.materialNote || "" };
   });
+
+  // Sesiones donde falta el checkup de Paola (material o medicamentos) --
+  // solo cuenta lo que ya tiene solicitud guardada, igual que los botones
+  // "✓ Validar" por fila (antes había que revisar sesión por sesión para
+  // encontrar esto).
+  const pendingValidationList = perPatient.filter(({ session: s }) =>
+    (s.medsSolicitudGuardada && !s.medsValidatedBy) || (s.materialSolicitudGuardada && !s.materialValidatedBy)
+  );
+  const perPatientDisplay = onlyPendingValidation ? pendingValidationList : perPatient;
 
   const grandTotal = {};
   perPatient.forEach(({ material }) => {
@@ -1823,6 +1836,23 @@ export default function Insumos() {
             );
           })()}
 
+          {canValidate && (
+            <div onClick={() => setOnlyPendingValidation(v => !v)}
+              title={pendingValidationList.length > 0 ? "Clic para ver solo las sesiones que aún te faltan validar" : ""}
+              style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16, padding:"8px 14px", borderRadius:10, cursor: pendingValidationList.length > 0 ? "pointer" : "default",
+                background: pendingValidationList.length === 0 ? "rgba(0,212,170,0.08)" : onlyPendingValidation ? "rgba(255,107,107,0.12)" : "rgba(255,179,71,0.08)",
+                border: `1px solid ${pendingValidationList.length === 0 ? "rgba(0,212,170,0.25)" : onlyPendingValidation ? "rgba(255,107,107,0.3)" : "rgba(255,179,71,0.25)"}` }}>
+              <span style={{ fontSize:13, fontWeight:600, color: pendingValidationList.length === 0 ? "#00d4aa" : onlyPendingValidation ? "#ff6b6b" : "#ffb347" }}>
+                {pendingValidationList.length === 0 ? "✓ Nada pendiente de validar" : `⏳ ${pendingValidationList.length} pendiente${pendingValidationList.length !== 1 ? "s" : ""} de validar`}
+              </span>
+              {pendingValidationList.length > 0 && (
+                <span style={{ fontSize:11, color:"#888" }}>
+                  {onlyPendingValidation ? "— mostrando solo pendientes (clic para ver todas)" : "— clic para filtrar"}
+                </span>
+              )}
+            </div>
+          )}
+
           <div style={{ background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.2)", borderRadius:14, padding:16, marginBottom:20 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:8 }}>
               <div style={{ fontSize:13, color:"#00d4aa", fontWeight:600 }}>Total consolidado ({grandTotalList.length} artículos)</div>
@@ -1861,9 +1891,14 @@ export default function Insumos() {
             </div>
           </div>
 
-          <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>Por paciente</div>
+          <div style={{ fontSize:13, color:"#888", fontWeight:600, marginBottom:10 }}>
+            Por paciente{onlyPendingValidation && ` (solo pendientes de validar · ${perPatientDisplay.length})`}
+          </div>
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {perPatient.map(({ session: s, material, note }, i) => (
+            {perPatientDisplay.length === 0 && onlyPendingValidation && (
+              <div style={{ fontSize:12, color:"#444", textAlign:"center", padding:16 }}>Nada pendiente de validar.</div>
+            )}
+            {perPatientDisplay.map(({ session: s, material, note }, i) => (
               <PatientMaterialRow key={s.id} s={s} material={material} note={note}
                 expanded={expandedPatient===i} onToggle={() => setExpandedPatient(p => p===i ? null : i)}
                 token={token} user={user} onRefresh={load} setSessions={setSessions}
