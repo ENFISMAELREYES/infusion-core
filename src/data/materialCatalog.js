@@ -928,6 +928,27 @@ export const MATERIAL_DEFAULTS = {
     ],
     "soluciones": []
   },
+  "TREMELIMUMAB": {
+    "insumos": [
+      {
+        "item": "GASA ESTERIL 10x10 CM",
+        "qty": 2
+      },
+      {
+        "item": "JERINGA DESECHABLE 20 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA 18G ROSA",
+        "qty": 2
+      },
+      {
+        "item": "EQUIPO SECUNDARIO C/ FILTRO 15 MICRAS",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
   "DENOSUMAB": {
     "insumos": [
       {
@@ -1282,6 +1303,7 @@ export const MEDICATION_ROUTES = {
   "PERTUZUMAB/ TRASTUZUMAB 600/600 MG": "INYECTABLE",
   "RITUXIMAB 100 MG": "INYECTABLE",
   "RITUXIMAB 500 MG": "INYECTABLE",
+  "TREMELIMUMAB 300 MG": "INYECTABLE",
   "TRASTUZUMAB 440 MG": "INYECTABLE",
   "TRASTUZUMAB DERUXTECAN 100 MG": "INYECTABLE"
 };
@@ -2055,6 +2077,11 @@ export const MASTER_CATALOG = [
   {
     "category": "Inmunoterapia",
     "item": "RITUXIMAB 500 MG",
+    "unit": "FRASCO"
+  },
+  {
+    "category": "Inmunoterapia",
+    "item": "TREMELIMUMAB 300 MG",
     "unit": "FRASCO"
   },
   {
