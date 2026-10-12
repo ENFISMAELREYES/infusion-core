@@ -169,7 +169,7 @@ service cloud.firestore {
     // la cuenta puntual marcada con puedeEditarTratamientos pueden
     // leer/escribir -- nadie más necesita ver estas correcciones.
     function puedeEditarTratamientos() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.puedeEditarTratamientos == true;
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.puedeEditarTratamientos == true; 
     }
     match /historial_anexo/{id} {
       allow read, write: if isAuth() && (userRole() == "jefe" || puedeEditarTratamientos());
