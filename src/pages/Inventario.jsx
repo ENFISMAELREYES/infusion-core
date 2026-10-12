@@ -708,16 +708,39 @@ export default function Inventario() {
     reader.readAsDataURL(file);
   });
 
-  // Foto o escaneo SIN capa de texto (el impreso que da el farmacéutico
-  // mientras llega el archivo digital con costos) -- usa visión por IA en
-  // vez del parser de texto, pero entrega exactamente el mismo formato de
-  // "review" que handleXmlFile/handlePdfFile, así que reutiliza toda la
-  // pantalla de revisión y el guardado ya existentes.
+  // Un escaneo desde el celular casi siempre se guarda como PDF (Adobe
+  // Scan, el escáner nativo de Android/iOS, etc.), no como foto suelta --
+  // y muchas veces ese PDF trae una capa de texto de OCR tan mala que el
+  // parser de texto (handlePdfFile) no la puede usar. En vez de leer esa
+  // capa de texto, se renderiza la primera página a una imagen (con el
+  // mismo pdf.js que ya se usa para handlePdfFile) y se manda a leer por
+  // visión, igual que una foto.
+  const pdfPageToBase64 = async (file) => {
+    const pdfjsLib = await loadPdfJs();
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const page = await pdf.getPage(1);
+    const baseViewport = page.getViewport({ scale: 1 });
+    const scale = Math.min(3, 1600 / baseViewport.width);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    return canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+  };
+
+  // Foto o escaneo SIN capa de texto utilizable (el impreso que da el
+  // farmacéutico mientras llega el archivo digital con costos) -- usa
+  // visión por IA en vez del parser de texto, pero entrega exactamente el
+  // mismo formato de "review" que handleXmlFile/handlePdfFile, así que
+  // reutiliza toda la pantalla de revisión y el guardado ya existentes.
   const handleImageFile = async (file) => {
     if (!file) return;
     setExtractingImage(true);
     try {
-      const base64 = await resizeImageToBase64(file);
+      const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name || "");
+      const base64 = isPdf ? await pdfPageToBase64(file) : await resizeImageToBase64(file);
       const res = await fetch("/api/extract-lot-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1891,8 +1914,8 @@ export default function Inventario() {
                   </label>
                 </div>
                 <label style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor: extractingImage ? "wait" : "pointer", background:"rgba(0,212,170,0.1)", border:"1px dashed rgba(0,212,170,0.35)", color:"#00d4aa", opacity: extractingImage ? 0.6 : 1 }}>
-                  {extractingImage ? "Leyendo imagen…" : "📷 Foto / escaneo del impreso (sin archivo digital todavía)"}
-                  <input type="file" accept="image/*" capture="environment" disabled={extractingImage} style={{ display:"none" }} onChange={e => handleImageFile(e.target.files?.[0])} />
+                  {extractingImage ? "Leyendo…" : "📷 Foto o PDF escaneado del impreso (sin archivo digital todavía)"}
+                  <input type="file" accept="image/*,.pdf,application/pdf" disabled={extractingImage} style={{ display:"none" }} onChange={e => handleImageFile(e.target.files?.[0])} />
                 </label>
               </div>
             )}
