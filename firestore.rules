@@ -180,7 +180,7 @@ service cloud.firestore {
     // solo el jefe las sube/edita/borra. Mismo criterio que fichas_tecnicas.
     match /manuales_guias/{id} {
       allow read: if isAuth();
-      allow write: if isAuth() && userRole() == "jefe";
+      allow write: if isAuth() && userRole() == "jefe"; 
     }
   }
 }
