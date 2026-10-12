@@ -655,6 +655,89 @@ export default function Inventario() {
     }
   };
 
+  // El modelo de visión regresa la caducidad tal como la leyó impresa
+  // (DD/MM/AAAA o MES-AA/AAAA) -- se normaliza a YYYY-MM-DD aquí mismo en
+  // vez de confiarle el cálculo al modelo, para que el <input type="date">
+  // de revisión la muestre precargada (si no, se queda en blanco aunque el
+  // dato exista). Mismo criterio de "último día del mes" que ya usa
+  // handlePdfFile para las cotizaciones que solo traen mes-año. Si no
+  // reconoce el formato, se deja tal cual para corregir a mano.
+  const MESES_ABR = { ene:1,feb:2,mar:3,abr:4,may:5,jun:6,jul:7,ago:8,sep:9,oct:10,nov:11,dic:12 };
+  const normalizeCaducidadText = (raw) => {
+    const s = (raw || "").trim();
+    if (!s) return "";
+    const full = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (full) return `${full[3]}-${full[2]}-${full[1]}`;
+    const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (ymd) return s;
+    const mesAnio = s.match(/^([a-záéíóú]{3})[a-záéíóú]*[\s.-]+(\d{2,4})$/i);
+    if (mesAnio) {
+      const mesNum = MESES_ABR[mesAnio[1].toLowerCase()];
+      if (mesNum) {
+        const anioStr = mesAnio[2];
+        const anio = anioStr.length === 2 ? 2000 + parseInt(anioStr) : parseInt(anioStr);
+        const lastDay = new Date(anio, mesNum, 0).getDate();
+        return `${anio}-${String(mesNum).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`;
+      }
+    }
+    return s;
+  };
+
+  const [extractingImage, setExtractingImage] = useState(false);
+  // Redimensiona/comprime antes de mandarla -- una foto de celular puede
+  // pesar varios MB y no hace falta esa resolución para leer texto impreso;
+  // además así el modelo de visión la procesa más rápido y barato.
+  const resizeImageToBase64 = (file) => new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo."));
+    reader.onload = () => {
+      img.onerror = () => reject(new Error("No se pudo abrir la imagen."));
+      img.onload = () => {
+        const MAX = 1600;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        resolve(dataUrl.split(",")[1]); // solo el base64, sin el prefijo data:...;base64,
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // Foto o escaneo SIN capa de texto (el impreso que da el farmacéutico
+  // mientras llega el archivo digital con costos) -- usa visión por IA en
+  // vez del parser de texto, pero entrega exactamente el mismo formato de
+  // "review" que handleXmlFile/handlePdfFile, así que reutiliza toda la
+  // pantalla de revisión y el guardado ya existentes.
+  const handleImageFile = async (file) => {
+    if (!file) return;
+    setExtractingImage(true);
+    try {
+      const base64 = await resizeImageToBase64(file);
+      const res = await fetch("/api/extract-lot-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: base64, mimeType: "image/jpeg", token }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "No se pudo leer la imagen.");
+
+      const review = (data.items || []).map(it => ({
+        descripcion: it.descripcion, cantidad: it.cantidad, valorUnitario: undefined,
+        matchedItem: suggestCatalogMatch(it.descripcion), lote: it.lote, caducidad: normalizeCaducidadText(it.caducidad), marca: it.marca,
+      }));
+      setXmlReview(review);
+    } catch (e) {
+      alert("Error al leer la imagen: " + e.message);
+    } finally {
+      setExtractingImage(false);
+    }
+  };
+
   const confirmXmlReview = () => {
     const unmatched = xmlReview.filter(r => !r.matchedItem);
     if (unmatched.length > 0) {
@@ -1796,14 +1879,20 @@ export default function Inventario() {
             })()}
 
             {showMoveModal === "entrada" && !xmlReview && (
-              <div style={{ display:"flex", gap:8 }}>
-                <label style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px dashed rgba(175,169,236,0.35)", color:"#AFA9EC" }}>
-                  📄 Factura (XML)
-                  <input type="file" accept=".xml" style={{ display:"none" }} onChange={e => handleXmlFile(e.target.files?.[0])} />
-                </label>
-                <label style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px dashed rgba(255,179,71,0.35)", color:"#ffb347" }}>
-                  📑 Transferencia/Cotización (PDF)
-                  <input type="file" accept=".pdf" style={{ display:"none" }} onChange={e => handlePdfFile(e.target.files?.[0])} />
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                <div style={{ display:"flex", gap:8 }}>
+                  <label style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px dashed rgba(175,169,236,0.35)", color:"#AFA9EC" }}>
+                    📄 Factura (XML)
+                    <input type="file" accept=".xml" style={{ display:"none" }} onChange={e => handleXmlFile(e.target.files?.[0])} />
+                  </label>
+                  <label style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px dashed rgba(255,179,71,0.35)", color:"#ffb347" }}>
+                    📑 Transferencia/Cotización (PDF)
+                    <input type="file" accept=".pdf" style={{ display:"none" }} onChange={e => handlePdfFile(e.target.files?.[0])} />
+                  </label>
+                </div>
+                <label style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor: extractingImage ? "wait" : "pointer", background:"rgba(0,212,170,0.1)", border:"1px dashed rgba(0,212,170,0.35)", color:"#00d4aa", opacity: extractingImage ? 0.6 : 1 }}>
+                  {extractingImage ? "Leyendo imagen…" : "📷 Foto / escaneo del impreso (sin archivo digital todavía)"}
+                  <input type="file" accept="image/*" capture="environment" disabled={extractingImage} style={{ display:"none" }} onChange={e => handleImageFile(e.target.files?.[0])} />
                 </label>
               </div>
             )}
