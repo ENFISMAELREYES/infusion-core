@@ -416,9 +416,11 @@ export default function Inventario() {
     return { ...x, lotPicks: picks, qty: picks.reduce((acc, p) => acc + p.qty, 0) };
   }));
   const isMedForLot = (itemName) => MED_CATEGORIES.includes(effectiveCatalog.find(c => c.item === itemName)?.category);
-  // Qual·CITIO es donde llega de verdad el medicamento (vía el PDF de
-  // transferencia de QualMedical) -- ahí se captura lote/caducidad/marca.
-  const needsLotEntry = (itemName) => warehouse === "QUAL_CITIO" && isMedForLot(itemName);
+  // Qual·CITIO y Qual·CIPI son donde llega de verdad el medicamento (vía el
+  // PDF de transferencia de QualMedical, o -- en CIPI -- vía la precarga por
+  // foto/escaneo del impreso del farmacéutico mientras llega el archivo
+  // digital) -- ahí se captura lote/caducidad/marca.
+  const needsLotEntry = (itemName) => (warehouse === "QUAL_CITIO" || warehouse === "QUAL_CIPI") && isMedForLot(itemName);
   // No todos los medicamentos de CITIO pasan por Qual -- algunos se compran
   // directo a otro proveedor. Por default se asume que SÍ viene de Qual
   // (jalar un lote ya existente); "directSource" en el renglón del
@@ -1239,10 +1241,10 @@ export default function Inventario() {
         await checkOk(res, `Lote "${lote}" de "${item}" en ${warehouseLabel(lotWarehouse)}`);
       };
 
-      if (type === "entrada" && warehouse === "QUAL_CITIO") {
+      if (type === "entrada" && (warehouse === "QUAL_CITIO" || warehouse === "QUAL_CIPI")) {
         for (const it of moveList.filter(it => needsLotEntry(it.item))) {
           for (const e of (it.lotEntries || [])) {
-            if (e.qty > 0) await upsertLot("QUAL_CITIO", it.item, e.lote, e.caducidad, e.marca, e.qty);
+            if (e.qty > 0) await upsertLot(warehouse, it.item, e.lote, e.caducidad, e.marca, e.qty);
           }
         }
       }
@@ -1318,7 +1320,7 @@ export default function Inventario() {
           </p>
         ) : warehouse === "QUAL_CIPI" && (
           <p style={{ fontSize:12, color:"#ffb347", marginTop:6 }}>
-            📦 Stock general recibido de la farmacia QualMedical para CIPI (PRO y PED juntos), antes de asignarse al centro. Se descuenta solo cuando enfermería registra la entrada del medicamento en el centro correspondiente — no requiere ninguna acción aparte de ellas.
+            📦 Stock general recibido de la farmacia QualMedical para CIPI (PRO y PED juntos), antes de asignarse al centro. Se descuenta solo cuando enfermería registra la entrada del medicamento en el centro correspondiente — no requiere ninguna acción aparte de ellas. Si llega primero el impreso del farmacéutico (antes que el archivo digital con costos), ya puedes registrar aquí el lote/caducidad/marca como entrada de todos modos — es una precarga normal, con costo en 0 hasta que se complete después.
           </p>
         )}
       </div>
@@ -1406,9 +1408,9 @@ export default function Inventario() {
                 const negative = i.currentStock < 0;
                 // CITIO sí muestra lotes en negativo -- es justo lo "pendiente
                 // de compra" (ya se usó en una sesión antes de que CITIO lo
-                // comprara formalmente). Qual·CITIO no, ahí un lote en 0 ya
-                // no tiene nada que mostrar.
-                const itemLots = (warehouse === "CITIO" || warehouse === "QUAL_CITIO") && isMedForLot(i.item)
+                // comprara formalmente). Qual·CITIO/Qual·CIPI no, ahí un lote
+                // en 0 ya no tiene nada que mostrar.
+                const itemLots = (warehouse === "CITIO" || warehouse === "QUAL_CITIO" || warehouse === "QUAL_CIPI") && isMedForLot(i.item)
                   ? inventoryLots.filter(l => l.warehouse === warehouse && l.item === i.item && (warehouse === "CITIO" ? (l.cantidadDisponible ?? 0) !== 0 : (l.cantidadDisponible ?? 0) > 0)).sort((a,b) => (a.caducidad||"").localeCompare(b.caducidad||""))
                   : [];
                 return (
