@@ -9,6 +9,13 @@
 // generate-consent.js / generate-material-order.js / el fix reciente en
 // generate-bitacora-anexo.js) -- solo valida que quien llama esté
 // autenticado, vía el mismo chequeo liviano contra Identity Toolkit.
+//
+// El modelo de visión se llama vía Vercel AI Gateway (endpoint compatible
+// con el formato de OpenAI chat completions) en vez de pegarle directo a
+// la API de Anthropic -- así el gasto queda facturado junto con Vercel, sin
+// necesidad de una cuenta/tarjeta aparte en console.anthropic.com. Requiere
+// la variable de entorno AI_GATEWAY_API_KEY (Vercel → Settings → AI Gateway
+// → API Keys).
 
 export const config = { api: { bodyParser: { sizeLimit: "10mb" } } };
 
@@ -40,8 +47,8 @@ export default async function handler(req, res) {
   if (!image || !mimeType) {
     return res.status(400).json({ error: "Falta la imagen." });
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error: "Falta configurar ANTHROPIC_API_KEY en el servidor." });
+  if (!process.env.AI_GATEWAY_API_KEY) {
+    return res.status(500).json({ error: "Falta configurar AI_GATEWAY_API_KEY en el servidor." });
   }
 
   const PROMPT = `Esta imagen es una foto o escaneo de un comprobante/impreso de entrega de medicamentos de una farmacia (QualMedical). Extrae cada artículo/medicamento listado, con su lote, fecha de caducidad y cantidad.
@@ -52,21 +59,20 @@ Responde ÚNICAMENTE con un arreglo JSON (sin texto adicional, sin explicación,
 Si algún dato no es legible o no aparece en la imagen, usa "" para texto o 1 para cantidad. No inventes datos que no puedas leer con razonable certeza.`;
 
   try {
-    const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
+    const aiRes = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
+        "Authorization": `Bearer ${process.env.AI_GATEWAY_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "claude-sonnet-5-5",
+        model: "anthropic/claude-sonnet-5-5",
         max_tokens: 2048,
         messages: [{
           role: "user",
           content: [
-            { type: "image", source: { type: "base64", media_type: mimeType, data: image } },
             { type: "text", text: PROMPT },
+            { type: "image_url", image_url: { url: `data:${mimeType};base64,${image}` } },
           ],
         }],
       }),
@@ -76,7 +82,7 @@ Si algún dato no es legible o no aparece en la imagen, usa "" para texto o 1 pa
       throw new Error(`Error del servicio de visión (${aiRes.status}): ${errBody.slice(0, 300)}`);
     }
     const aiData = await aiRes.json();
-    let text = (aiData.content || []).map(c => c.text || "").join("").trim();
+    let text = (aiData.choices?.[0]?.message?.content || "").trim();
     // El modelo a veces envuelve la respuesta en ```json ... ``` a pesar de
     // la instrucción -- se quita antes de parsear.
     text = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
