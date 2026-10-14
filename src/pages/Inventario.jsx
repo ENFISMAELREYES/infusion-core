@@ -2127,7 +2127,10 @@ export default function Inventario() {
             {/* Lista de artículos ya agregados a este movimiento -- pueden ser varios */}
             {moveList.length > 0 && (
               <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:280, overflowY:"auto" }}>
-                {moveList.map((it, i) => {
+                {/* Orden alfabético solo para mostrar -- aplica a entrada,
+                    salida, transferencia y solicitud de compra por igual, ya
+                    que todas comparten esta misma lista/modal. */}
+                {[...moveList].sort((a,b) => a.item.localeCompare(b.item)).map((it, i) => {
                   const showLotEntry = showMoveModal === "entrada" && needsLotEntry(it.item);
                   const showDirectEntry = showMoveModal === "entrada" && needsDirectEntry(it.item);
                   const showLotPick = showMoveModal === "entrada" && needsLotPick(it.item);
