@@ -1650,7 +1650,7 @@ export default function Inventario() {
                         últ. ${(i.lastCost||0).toFixed(2)} · prom. ${(i.avgCost||0).toFixed(2)}
                       </span>
                     )}
-                    {canEditInventory && (
+                    {canEditInventory ? (
                       <>
                         <input type="number" defaultValue={i.minStock ?? 0} placeholder="mín" title="Mínimo -- en cuanto la existencia baje de este número, se sugiere comprar"
                           onBlur={e => setMinStock(i.id, e.target.value)}
@@ -1660,6 +1660,10 @@ export default function Inventario() {
                           onBlur={e => setMaxStock(i.id, e.target.value)}
                           style={{ width:46, background:"rgba(175,169,236,0.06)", border:"1px solid rgba(175,169,236,0.2)", borderRadius:6, padding:"3px 6px", color:"#AFA9EC", fontSize:11, outline:"none", textAlign:"center" }} />
                       </>
+                    ) : (i.minStock > 0 || i.maxStock > 0) && (
+                      <span title="Mínimo / Máximo configurado para este artículo" style={{ fontSize:11, color:"#888", fontFamily:"'IBM Plex Mono', monospace", whiteSpace:"nowrap" }}>
+                        mín {i.minStock || 0} / máx {i.maxStock > 0 ? i.maxStock : "—"}
+                      </span>
                     )}
                   </div>
                   {itemLots.length > 0 && (
