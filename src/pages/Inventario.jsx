@@ -666,8 +666,20 @@ export default function Inventario() {
   const normalizeCaducidadText = (raw) => {
     const s = (raw || "").trim();
     if (!s) return "";
-    const full = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (full) return `${full[3]}-${full[2]}-${full[1]}`;
+    // Día/mes a veces vienen sin el cero inicial (ej. "18/1/2027") -- se
+    // acepta 1 o 2 dígitos, pero se valida que la fecha resultante exista
+    // de verdad (ej. "31/ABRIL/2029" o un 30 de febrero no pasan, se dejan
+    // tal cual para corregir a mano en vez de inventar algo incorrecto).
+    const full = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (full) {
+      const [, dd, mm, yyyy] = full;
+      const d = parseInt(dd), m = parseInt(mm), y = parseInt(yyyy);
+      const check = new Date(y, m - 1, d);
+      if (check.getFullYear() === y && check.getMonth() === m - 1 && check.getDate() === d) {
+        return `${yyyy}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+      }
+      return s;
+    }
     const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (ymd) return s;
     const mesAnio = s.match(/^([a-záéíóú]{3})[a-záéíóú]*[\s.-]+(\d{2,4})$/i);
@@ -684,6 +696,7 @@ export default function Inventario() {
   };
 
   const [extractingImage, setExtractingImage] = useState(false);
+  const [showPasteImport, setShowPasteImport] = useState(false);
   // Redimensiona/comprime antes de mandarla -- una foto de celular puede
   // pesar varios MB y no hace falta esa resolución para leer texto impreso;
   // además así el modelo de visión la procesa más rápido y barato.
@@ -759,6 +772,35 @@ export default function Inventario() {
     } finally {
       setExtractingImage(false);
     }
+  };
+
+  // Carga masiva de inventario existente (ej. el primer vaciado de un
+  // almacén que nunca se había capturado en la app) pegando la tabla desde
+  // Excel/Sheets -- 5 columnas en este orden: Medicamento, Marca, Lote,
+  // Caducidad, Cantidad. Al copiar celdas de una hoja de cálculo quedan
+  // separadas por tabulador; si alguien las escribe a mano en vez de
+  // copiarlas, también acepta 2+ espacios seguidos como separador. Entrega
+  // el mismo formato de "review" que XML/PDF/foto, así que reutiliza toda
+  // la pantalla de revisión y el guardado ya existentes -- nada se agrega
+  // al inventario sin que alguien lo revise primero.
+  const [pasteText, setPasteText] = useState("");
+  const parsePastedList = () => {
+    const lines = pasteText.split("\n").map(l => l.trim()).filter(Boolean);
+    const review = lines.map(line => {
+      const cols = line.includes("\t") ? line.split("\t") : line.split(/ {2,}/);
+      const [descripcion, marca, lote, caducidad, cantidadStr] = cols.map(c => (c || "").trim());
+      return {
+        descripcion, marca, lote,
+        caducidad: normalizeCaducidadText(caducidad),
+        cantidad: parseInt(cantidadStr) || 1,
+        valorUnitario: undefined,
+        matchedItem: suggestCatalogMatch(descripcion),
+      };
+    }).filter(r => r.descripcion);
+    if (review.length === 0) { alert("No se reconoció ningún renglón -- revisa que cada línea tenga Medicamento, Marca, Lote, Caducidad y Cantidad."); return; }
+    setXmlReview(review);
+    setPasteText("");
+    setShowPasteImport(false);
   };
 
   const confirmXmlReview = () => {
@@ -1846,7 +1888,7 @@ export default function Inventario() {
       })()}
 
       {showMoveModal && (
-        <div onClick={() => !saving && (setShowMoveModal(null), setXmlReview(null), setXmlReceptor(""), setEditingPO(null), setNewItemDraft(null), setLinkedPO(null))}
+        <div onClick={() => !saving && (setShowMoveModal(null), setXmlReview(null), setXmlReceptor(""), setEditingPO(null), setNewItemDraft(null), setLinkedPO(null), setShowPasteImport(false), setPasteText(""))}
           style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:460, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:12 }}>
             <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>
@@ -1917,6 +1959,24 @@ export default function Inventario() {
                   {extractingImage ? "Leyendo…" : "📷 Foto o PDF escaneado del impreso (sin archivo digital todavía)"}
                   <input type="file" accept="image/*,.pdf,application/pdf" disabled={extractingImage} style={{ display:"none" }} onChange={e => handleImageFile(e.target.files?.[0])} />
                 </label>
+                <button type="button" onClick={() => setShowPasteImport(v => !v)}
+                  style={{ padding:"10px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px dashed rgba(255,255,255,0.2)", color:"#ccc" }}>
+                  📋 {showPasteImport ? "Cancelar pegado de lista" : "Pegar lista (carga inicial desde Excel/Sheets)"}
+                </button>
+                {showPasteImport && (
+                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    <div style={{ fontSize:11, color:"#888" }}>
+                      5 columnas en este orden: Medicamento, Marca, Lote, Caducidad, Cantidad. Selecciona y copia las celdas desde Excel/Sheets y pégalas aquí tal cual (una fila por renglón).
+                    </div>
+                    <textarea value={pasteText} onChange={e => setPasteText(e.target.value)} rows={6}
+                      placeholder={"ATEZOLIZUMAB\tTECENTRIQ\tB0047B01\t26/01/2027\t1\nBEVACIZUMAB 400 MG\tJIMLY\tBEBH2515A\t28-sep\t2"}
+                      style={{ ...inputStyle, fontFamily:"'IBM Plex Mono', monospace", fontSize:11, resize:"vertical" }} />
+                    <button type="button" onClick={parsePastedList} disabled={!pasteText.trim()}
+                      style={{ padding:"9px", borderRadius:9, fontSize:12, fontWeight:600, cursor: pasteText.trim() ? "pointer" : "default", background:"rgba(0,212,170,0.15)", border:"1px solid rgba(0,212,170,0.4)", color:"#00d4aa", opacity: pasteText.trim() ? 1 : 0.5 }}>
+                      Procesar lista
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1936,9 +1996,9 @@ export default function Inventario() {
                 <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:280, overflowY:"auto" }}>
                   {xmlReview.map((r, i) => (
                     <div key={i} style={{ padding:"8px 10px", borderRadius:8, background: r.matchedItem ? "rgba(255,255,255,0.03)" : "rgba(255,107,107,0.06)", border:`1px solid ${r.matchedItem ? "rgba(255,255,255,0.07)" : "rgba(255,107,107,0.25)"}` }}>
-                      <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>Factura: "{r.descripcion}" · cant. {r.cantidad}{r.valorUnitario ? ` · $${r.valorUnitario.toFixed(2)} c/u (con IVA)` : ""}</div>
+                      <div style={{ fontSize:11, color:"#666", marginBottom:4 }}>"{r.descripcion}" · cant. {r.cantidad}{r.valorUnitario ? ` · $${r.valorUnitario.toFixed(2)} c/u (con IVA)` : ""}</div>
                       {(r.lote || r.caducidad || r.marca) && (
-                        <div style={{ fontSize:10, color:"#00d4aa", marginBottom:4 }}>Detectado en el PDF: {[r.marca && `marca ${r.marca}`, r.lote && `lote ${r.lote}`, r.caducidad && `caduca ${r.caducidad}`].filter(Boolean).join(" · ")} (se puede corregir abajo)</div>
+                        <div style={{ fontSize:10, color:"#00d4aa", marginBottom:4 }}>Detectado: {[r.marca && `marca ${r.marca}`, r.lote && `lote ${r.lote}`, r.caducidad && `caduca ${r.caducidad}`].filter(Boolean).join(" · ")} (se puede corregir abajo)</div>
                       )}
                       <select value={r.matchedItem} onChange={e => {
                           if (e.target.value === "__new__") {
