@@ -385,11 +385,12 @@ export default function Inventario() {
       const lots = inventoryLots
         .filter(l => l.warehouse === warehouse && l.item === i.item && (l.cantidadDisponible ?? 0) > 0)
         .sort((a,b) => (a.caducidad||"").localeCompare(b.caducidad||""));
+      const minMax = `${i.minStock > 0 ? i.minStock : "—"} / ${i.maxStock > 0 ? i.maxStock : "—"}`;
       if (lots.length === 0) {
-        return [`<tr><td>${i.item}</td><td>—</td><td>—</td><td>—</td><td style="text-align:right;font-weight:bold;">${i.currentStock} ${i.unit}</td></tr>`];
+        return [`<tr><td>${i.item}</td><td>—</td><td>—</td><td>—</td><td style="text-align:right;font-weight:bold;">${i.currentStock} ${i.unit}</td><td style="text-align:center;">${minMax}</td></tr>`];
       }
       return lots.map((l, li) =>
-        `<tr><td>${li === 0 ? i.item : ""}</td><td>${l.lote||"—"}</td><td>${l.caducidad||"—"}</td><td>${l.marca||"—"}</td><td style="text-align:right;font-weight:bold;">${l.cantidadDisponible} ${i.unit}</td></tr>`
+        `<tr><td>${li === 0 ? i.item : ""}</td><td>${l.lote||"—"}</td><td>${l.caducidad||"—"}</td><td>${l.marca||"—"}</td><td style="text-align:right;font-weight:bold;">${l.cantidadDisponible} ${i.unit}</td><td style="text-align:center;">${li === 0 ? minMax : ""}</td></tr>`
       );
     }).join("");
     const win = window.open("", "_blank", "width=800,height=900");
@@ -402,7 +403,7 @@ export default function Inventario() {
     </style></head><body>
       <h1>Reporte de existencias -- ${warehouseLabel(warehouse)}</h1>
       <p>${items.length} artículo${items.length!==1?"s":""} · Generado ${new Date().toLocaleString("es-MX")}</p>
-      <table><thead><tr><th>Medicamento</th><th>Lote</th><th>Caducidad</th><th>Marca</th><th style="text-align:right;">Cantidad</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>Medicamento</th><th>Lote</th><th>Caducidad</th><th>Marca</th><th style="text-align:right;">Cantidad</th><th style="text-align:center;">Mín/Máx</th></tr></thead><tbody>${rows}</tbody></table>
       <script>window.onload = () => window.print();<\/script>
     </body></html>`);
     win.document.close();
