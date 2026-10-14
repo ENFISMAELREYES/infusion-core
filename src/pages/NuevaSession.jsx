@@ -39,7 +39,7 @@ async function fetchCatalog(token, center) {
           { fieldPath: "patientName" }, { fieldPath: "dob" },
           { fieldPath: "diagnosis" }, { fieldPath: "physician" },
           { fieldPath: "insurance" }, { fieldPath: "center" },
-          { fieldPath: "meds" }, { fieldPath: "allergies" },
+          { fieldPath: "meds" }, { fieldPath: "allergies" }, { fieldPath: "cipiVariant" },
         ]},
         // Filtrar por centro AQUÍ (no después en el navegador), para que el
         // límite no se desperdicie en sesiones del otro centro.
@@ -59,7 +59,7 @@ async function fetchCatalog(token, center) {
     const f = d.document.fields || {};
     const g = (k) => f[k]?.stringValue || "";
     const medNames = (f.meds?.arrayValue?.values || []).map(m => m.mapValue?.fields?.name?.stringValue).filter(Boolean);
-    return { patientName: g("patientName"), dob: g("dob"), diagnosis: g("diagnosis"), physician: g("physician"), insurance: g("insurance"), center: g("center"), medNames, allergies: g("allergies") };
+    return { patientName: g("patientName"), dob: g("dob"), diagnosis: g("diagnosis"), physician: g("physician"), insurance: g("insurance"), center: g("center"), medNames, allergies: g("allergies"), cipiVariant: g("cipiVariant") };
   });
 
   const dedupe = (items, key) => {
@@ -149,7 +149,7 @@ export default function NuevaSession() {
   const [form, setForm] = useState({
     patientName: "", dob: "", diagnosis: "", physician: "",
     insurance: "", cycle: "", applicationDate: today, allergies: "", schemeId: "", procedureType: "",
-    isC1D1: false,
+    isC1D1: false, cipiVariant: "",
   });
   const [meds, setMeds]       = useState([emptyMed(1)]);
   const [saving, setSaving]   = useState(false);
@@ -177,6 +177,7 @@ export default function NuevaSession() {
       physician:   s.physician   || f.physician,
       insurance:   s.insurance   || f.insurance,
       allergies:   s.allergies   || f.allergies,
+      cipiVariant: s.cipiVariant || f.cipiVariant,
     }));
     try {
       const token = await user.getIdToken(true);
@@ -248,6 +249,10 @@ export default function NuevaSession() {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (profile?.center === "CIPI" && !form.cipiVariant) {
+      setError("Falta elegir PED o PRO antes de guardar.");
+      return;
+    }
     setSaving(true); setError("");
     try {
       const token = await user.getIdToken(true);
@@ -294,7 +299,7 @@ export default function NuevaSession() {
   };
 
   const reset = () => {
-    setForm({ patientName:"", dob:"", diagnosis:"", physician:"", insurance:"", cycle:"", applicationDate:today, allergies:"", schemeId:"", procedureType:"", isC1D1:false });
+    setForm({ patientName:"", dob:"", diagnosis:"", physician:"", insurance:"", cycle:"", applicationDate:today, allergies:"", schemeId:"", procedureType:"", isC1D1:false, cipiVariant:"" });
     setMeds([emptyMed(1)]); setSaved(false); setError("");
     setSessionType(null);
   };
@@ -368,6 +373,24 @@ export default function NuevaSession() {
                   <label style={labelStyle}>Nombre completo</label>
                   <Autocomplete value={form.patientName} onChange={v => setField("patientName", v)} suggestions={catalog.patients} onSelect={selectPatient} placeholder="ej: Juan Pérez García" field="patientName" />
                 </div>
+                {profile?.center === "CIPI" && (
+                  <div style={{ gridColumn:"1/-1" }}>
+                    <label style={labelStyle}>Tipo de atención</label>
+                    <div style={{ display:"flex", gap:8 }}>
+                      {["PRO","PED"].map(v => (
+                        <button key={v} type="button" onClick={() => setField("cipiVariant", v)}
+                          title={v === "PRO" ? "Centro de Infusión Profesional Integral" : "Centro de Infusión Pediátrica Integral"}
+                          style={{ flex:1, padding:"10px 13px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer",
+                            background: form.cipiVariant===v ? "rgba(175,169,236,0.15)" : "rgba(255,255,255,0.05)",
+                            border: `1px solid ${form.cipiVariant===v ? "rgba(175,169,236,0.4)" : "rgba(255,255,255,0.09)"}`,
+                            color: form.cipiVariant===v ? "#AFA9EC" : "#ccc" }}>
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                    {!form.cipiVariant && <div style={{ fontSize:11, color:"#ffb347", marginTop:6 }}>Se precarga solo si ya existe una sesión previa de este paciente -- confírmalo o cámbialo si cambió de tipo de atención.</div>}
+                  </div>
+                )}
                 <div>
                   <label style={labelStyle}>Fecha de nacimiento</label>
                   <input type="date" required value={form.dob} onChange={e => setField("dob", e.target.value)} style={inputStyle} />
