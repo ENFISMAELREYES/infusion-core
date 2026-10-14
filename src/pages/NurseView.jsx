@@ -1176,6 +1176,13 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
   const canStartWash2 = (med) => med.wash ? !!washEvents[`wash_${med.id}`]?.fin : !!medEvents[`med_${med.id}`]?.fin;
   const statusColor  = !session.authorized?"#ffb347":!events.ingreso?"#888":events.retiro?"#4fc3f7":"#1D9E75";
 
+  // Los medicamentos de domicilio nunca tienen "time" (no se infunden, se
+  // entregan), así que quedan fuera del resumen compacto de abajo sin
+  // importar en qué posición estén -- había que abrir toda la tarjeta para
+  // notar que faltaba entregarlo. Esta insignia lo hace visible en el
+  // encabezado colapsado, igual que "Sin autorizar".
+  const pendingDomicilioMeds = (session.meds||[]).filter(m => m.category === "domicilio" && !medEvents[`med_${m.id}`]?.inicio);
+
   // Resumen compacto: medicamento en curso (o el siguiente por iniciar) + el que sigue después de ese.
   const timedMeds = (session.meds||[]).filter(m => m.time).sort((a,b) => a.order - b.order);
   const inProgressMed = timedMeds.find(m => medEvents[`med_${m.id}`]?.inicio && !medEvents[`med_${m.id}`]?.fin);
@@ -1210,6 +1217,12 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
           <div style={{ fontSize:12, color:"#666", marginTop:3 }}>{session.diagnosis} · {session.cycle} · {session.physician}</div>
         </div>
         {events.ingreso && <div style={{ fontSize:13, color:"#aaa", fontFamily:"'IBM Plex Mono', monospace" }}>{pct}%</div>}
+        {events.ingreso && pendingDomicilioMeds.length > 0 && (
+          <span title={pendingDomicilioMeds.map(m => m.name).join(", ")}
+            style={{ fontSize:11, fontWeight:600, padding:"3px 10px", borderRadius:99, background:"rgba(130,196,248,0.15)", border:"1px solid rgba(130,196,248,0.4)", color:"#82C4F8" }}>
+            📦 Entregar a domicilio{pendingDomicilioMeds.length > 1 ? ` (${pendingDomicilioMeds.length})` : ""}
+          </span>
+        )}
         {!session.authorized && <span style={{ fontSize:11, color:"#ffb347", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", padding:"3px 10px", borderRadius:99 }}>⏳ Sin autorizar</span>}
         {session.authorized && session.sessionType !== "procedimiento" && isSessionC1D1(session) && (() => {
           // Solo C1D1 (inicio de línea de tratamiento) -- las demás sesiones
