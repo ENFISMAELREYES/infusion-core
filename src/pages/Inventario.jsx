@@ -356,11 +356,17 @@ export default function Inventario() {
 
   // Insumos y medicamentos viven en el mismo almacén de centro (CITIO, CIPI
   // PRO/PED) -- este filtro es solo de vista, para poder trabajar uno sin
-  // que el otro estorbe. No aplica a Qual (ahí solo hay medicamento).
+  // que el otro estorbe.
   const [catFilter, setCatFilter] = useState(""); // "" | "insumos" | "medicamentos"
   const catFilterActive = catFilter && !warehouse.startsWith("QUAL");
+  // Qual (farmacia) solo debe tener medicamento -- a diferencia del almacén
+  // de centro, aquí SIEMPRE se excluye lo que no sea medicamento (sin
+  // depender del toggle de arriba), por si algo se registró ahí por error
+  // antes de que existiera esta regla.
+  const isQualWarehouse = warehouse.startsWith("QUAL");
 
   const warehouseInventory = inventory.filter(i => i.warehouse === warehouse
+    && (!isQualWarehouse || isMedItem(i.item))
     && (!catFilterActive || (catFilter === "medicamentos" ? isMedItem(i.item) : !isMedItem(i.item))));
   const filteredInventory = search.trim()
     ? warehouseInventory.filter(i => i.item.toUpperCase().includes(search.toUpperCase()))
@@ -1220,6 +1226,16 @@ export default function Inventario() {
 
   const registerMovement = async () => {
     if (moveList.length === 0) { alert("Agrega al menos un artículo."); return; }
+    // Qual (farmacia) solo maneja medicamento -- si algo de la lista no lo
+    // es (ej. una solución que venía en la misma factura/PDF), se bloquea
+    // antes de guardar en vez de dejar que se cuele por error.
+    if (isQualWarehouse) {
+      const noMed = moveList.filter(it => !isMedItem(it.item));
+      if (noMed.length > 0) {
+        alert(`${warehouseLabel(warehouse)} solo maneja medicamento -- quita de la lista: ${noMed.map(m => m.item).join(", ")} (eso va al almacén del centro, no a Qual).`);
+        return;
+      }
+    }
     const type = showMoveModal; // "entrada" | "salida"
     if (type === "entrada") {
       const missingEntry = moveList.filter(it => (needsLotEntry(it.item) || needsDirectEntry(it.item))
