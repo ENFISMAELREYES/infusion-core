@@ -1553,7 +1553,7 @@ export default function Inventario() {
                     )}
                     <span style={{ fontSize:14, fontWeight:700, color: negative ? "#ff6b6b" : low ? "#ffb347" : "#00d4aa", fontFamily:"'IBM Plex Mono', monospace", minWidth:60, textAlign:"right", whiteSpace:"nowrap" }}>
                       {i.currentStock} {i.unit}{(min > 0 || i.maxStock > 0) && (
-                        <span style={{ color:"#666", fontWeight:400 }}>
+                        <span style={{ color:"#666", fontWeight:400, fontSize:11 }}>
                           {" "}({min > 0 ? `mín. ${min}` : ""}{min > 0 && i.maxStock > 0 ? " / " : ""}{i.maxStock > 0 ? `máx. ${i.maxStock}` : ""})
                         </span>
                       )}
@@ -1565,7 +1565,7 @@ export default function Inventario() {
                       </button>
                     )}
                     {(i.lastCost > 0 || i.avgCost > 0) && (
-                      <span style={{ fontSize:10, color:"#888", fontFamily:"'IBM Plex Mono', monospace", whiteSpace:"nowrap" }} title="Último costo / Costo promedio">
+                      <span style={{ fontSize:12, fontWeight:600, color:"#888", fontFamily:"'IBM Plex Mono', monospace", whiteSpace:"nowrap" }} title="Último costo / Costo promedio">
                         últ. ${(i.lastCost||0).toFixed(2)} · prom. ${(i.avgCost||0).toFixed(2)}
                       </span>
                     )}
