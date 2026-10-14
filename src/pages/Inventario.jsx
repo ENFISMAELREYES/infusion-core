@@ -374,6 +374,40 @@ export default function Inventario() {
   const lowStock = warehouseInventory.filter(i => i.currentStock < (i.minStock ?? 0));
   const suggestedReorders = warehouseInventory.filter(i => reorderInfo(i).suggestQty > 0);
 
+  // Reporte imprimible de existencias -- un renglón por lote (lote/
+  // caducidad/marca/cantidad) cuando el artículo lleva trazabilidad; si no
+  // tiene ningún lote capturado, un solo renglón con la existencia agregada.
+  // Mismo patrón de ventana + window.print() que ya usa "Total consolidado"
+  // en Insumos.jsx -- sin backend, nada que configurar.
+  const printStockReport = () => {
+    const items = [...warehouseInventory].sort((a,b) => a.item.localeCompare(b.item));
+    const rows = items.flatMap(i => {
+      const lots = inventoryLots
+        .filter(l => l.warehouse === warehouse && l.item === i.item && (l.cantidadDisponible ?? 0) > 0)
+        .sort((a,b) => (a.caducidad||"").localeCompare(b.caducidad||""));
+      if (lots.length === 0) {
+        return [`<tr><td>${i.item}</td><td>—</td><td>—</td><td>—</td><td style="text-align:right;font-weight:bold;">${i.currentStock} ${i.unit}</td></tr>`];
+      }
+      return lots.map((l, li) =>
+        `<tr><td>${li === 0 ? i.item : ""}</td><td>${l.lote||"—"}</td><td>${l.caducidad||"—"}</td><td>${l.marca||"—"}</td><td style="text-align:right;font-weight:bold;">${l.cantidadDisponible} ${i.unit}</td></tr>`
+      );
+    }).join("");
+    const win = window.open("", "_blank", "width=800,height=900");
+    win.document.write(`<!DOCTYPE html><html><head><title>Existencias -- ${warehouseLabel(warehouse)}</title><style>
+      body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;}
+      h1{font-size:18px;margin-bottom:2px;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
+      table{width:100%;border-collapse:collapse;font-size:11px;}
+      th{text-align:left;padding:6px 8px;border-bottom:2px solid #333;}
+      td{padding:5px 8px;border-bottom:1px solid #ddd;}
+    </style></head><body>
+      <h1>Reporte de existencias -- ${warehouseLabel(warehouse)}</h1>
+      <p>${items.length} artículo${items.length!==1?"s":""} · Generado ${new Date().toLocaleString("es-MX")}</p>
+      <table><thead><tr><th>Medicamento</th><th>Lote</th><th>Caducidad</th><th>Marca</th><th style="text-align:right;">Cantidad</th></tr></thead><tbody>${rows}</tbody></table>
+      <script>window.onload = () => window.print();<\/script>
+    </body></html>`);
+    win.document.close();
+  };
+
   const addToMoveList = (item, cost) => {
     const qty = parseInt(moveQty) || 1;
     setMoveList(prev => {
@@ -1543,6 +1577,9 @@ export default function Inventario() {
             )}
             <button onClick={() => { setShowMoveModal("compra"); setMoveList([]); setPurchaseConcept(""); setPurchaseNote(""); setEditingPO(null); }} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.3)", color:"#ffb347" }}>
               🧾 Solicitud de compra
+            </button>
+            <button onClick={() => printStockReport()} style={{ padding:"8px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>
+              🖨️ Reporte de existencias
             </button>
             {suggestedReorders.length > 0 && (
               <button onClick={() => {
