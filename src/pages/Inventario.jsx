@@ -133,6 +133,10 @@ export default function Inventario() {
   // solo dispensar lo que ya hay.
   const canValidate = isJefe || profile?.puedeValidarInsumos;
   const canAuthorize = isJefe;
+  // Corregir existencias/lotes a mano y capturar mínimo/máximo -- antes solo
+  // el jefe, ahora también Paola (mismo flag puedeValidarInsumos que ya la
+  // distingue en el resto de esta página).
+  const canEditInventory = isJefe || profile?.puedeValidarInsumos;
   // Qual·CITIO/Qual·CIPI ya no son un privilegio aparte de "ver ambos
   // centros" -- son parte del propio flujo de medicamentos de cada centro
   // (ahí es donde de verdad se registra la transferencia y se usa el lote
@@ -1581,7 +1585,7 @@ export default function Inventario() {
                     <span style={{ fontSize:14, fontWeight:700, color: negative ? "#ff6b6b" : low ? "#ffb347" : "#00d4aa", fontFamily:"'IBM Plex Mono', monospace", minWidth:60, textAlign:"right", whiteSpace:"nowrap" }}>
                       {i.currentStock} {i.unit}{min > 0 && <span style={{ color:"#666", fontWeight:400 }}> (mín. {min})</span>}
                     </span>
-                    {isJefe && (
+                    {canEditInventory && (
                       <button onClick={() => openAdjustStock(i)} title="Corregir a mano la existencia real de este artículo (reemplaza el número, no lo suma) -- para cuando no hay ningún lote que corregir"
                         style={{ padding:"2px 7px", borderRadius:6, fontSize:10, fontWeight:700, cursor:"pointer", background:"rgba(79,195,247,0.1)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7" }}>
                         ✏️
@@ -1592,7 +1596,7 @@ export default function Inventario() {
                         últ. ${(i.lastCost||0).toFixed(2)} · prom. ${(i.avgCost||0).toFixed(2)}
                       </span>
                     )}
-                    {isJefe && (
+                    {canEditInventory && (
                       <>
                         <input type="number" defaultValue={i.minStock ?? 0} placeholder="mín" title="Mínimo -- en cuanto la existencia baje de este número, se sugiere comprar"
                           onBlur={e => setMinStock(i.id, e.target.value)}
@@ -1621,7 +1625,7 @@ export default function Inventario() {
                                 💰 cotización
                               </button>
                             )}
-                            {isJefe && (
+                            {canEditInventory && (
                               <button onClick={() => openAdjustLot(l)} title="Corregir a mano la cantidad real de este lote (reemplaza el número, no lo suma) -- también recalcula la existencia agregada"
                                 style={{ padding:"1px 6px", borderRadius:99, fontSize:9, fontWeight:700, cursor:"pointer", background:"rgba(79,195,247,0.12)", border:"1px solid rgba(79,195,247,0.3)", color:"#4fc3f7" }}>
                                 ✏️ ajustar
