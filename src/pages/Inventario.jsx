@@ -1637,7 +1637,11 @@ export default function Inventario() {
                       </span>
                     )}
                     <span style={{ fontSize:14, fontWeight:700, color: negative ? "#ff6b6b" : low ? "#ffb347" : "#00d4aa", fontFamily:"'IBM Plex Mono', monospace", minWidth:60, textAlign:"right", whiteSpace:"nowrap" }}>
-                      {i.currentStock} {i.unit}{min > 0 && <span style={{ color:"#666", fontWeight:400 }}> (mín. {min})</span>}
+                      {i.currentStock} {i.unit}{(min > 0 || i.maxStock > 0) && (
+                        <span style={{ color:"#666", fontWeight:400 }}>
+                          {" "}({min > 0 ? `mín. ${min}` : ""}{min > 0 && i.maxStock > 0 ? " / " : ""}{i.maxStock > 0 ? `máx. ${i.maxStock}` : ""})
+                        </span>
+                      )}
                     </span>
                     {canEditInventory && (
                       <button onClick={() => openAdjustStock(i)} title="Corregir a mano la existencia real de este artículo (reemplaza el número, no lo suma) -- para cuando no hay ningún lote que corregir"
@@ -1650,7 +1654,7 @@ export default function Inventario() {
                         últ. ${(i.lastCost||0).toFixed(2)} · prom. ${(i.avgCost||0).toFixed(2)}
                       </span>
                     )}
-                    {canEditInventory ? (
+                    {canEditInventory && (
                       <>
                         <input type="number" defaultValue={i.minStock ?? 0} placeholder="mín" title="Mínimo -- en cuanto la existencia baje de este número, se sugiere comprar"
                           onBlur={e => setMinStock(i.id, e.target.value)}
@@ -1660,10 +1664,6 @@ export default function Inventario() {
                           onBlur={e => setMaxStock(i.id, e.target.value)}
                           style={{ width:46, background:"rgba(175,169,236,0.06)", border:"1px solid rgba(175,169,236,0.2)", borderRadius:6, padding:"3px 6px", color:"#AFA9EC", fontSize:11, outline:"none", textAlign:"center" }} />
                       </>
-                    ) : (i.minStock > 0 || i.maxStock > 0) && (
-                      <span title="Mínimo / Máximo configurado para este artículo" style={{ fontSize:11, color:"#888", fontFamily:"'IBM Plex Mono', monospace", whiteSpace:"nowrap" }}>
-                        mín {i.minStock || 0} / máx {i.maxStock > 0 ? i.maxStock : "—"}
-                      </span>
                     )}
                   </div>
                   {itemLots.length > 0 && (
