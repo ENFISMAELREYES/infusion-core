@@ -153,6 +153,40 @@ export const MATERIAL_DEFAULTS = {
     ],
     "soluciones": []
   },
+  "EPINEFRINA": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA 18G ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
+  "SULFATO DE MAGNESIO": {
+    "insumos": [
+      {
+        "item": "JERINGA DESECHABLE 10 ML",
+        "qty": 1
+      },
+      {
+        "item": "AGUJA 18G ROSA",
+        "qty": 1
+      },
+      {
+        "item": "TOALLITAS DE ALCOHOL",
+        "qty": 1
+      }
+    ],
+    "soluciones": []
+  },
   "HIOSCINA": {
     "insumos": [
       {
@@ -1207,6 +1241,7 @@ export const MEDICATION_ROUTES = {
   "DEXAMETASONA 6 MG": "ORAL",
   "DEXAMETASONA 8 MG": "INYECTABLE",
   "DIFENHIDRAMINA 100 MG": "INYECTABLE",
+  "EPINEFRINA 1 MG": "INYECTABLE",
   "ERITROPOYETINA ALFA 4000 UI": "INYECTABLE",
   "FEXOFENADINA 180 MG": "ORAL",
   "FILGRASTIM 300 MCG": "INYECTABLE",
@@ -1231,13 +1266,21 @@ export const MEDICATION_ROUTES = {
   "PARACETAMOL 500 MG": "ORAL",
   "PEGFILGRASTIM 6 MG": "INYECTABLE",
   "PREDNISONA 20 MG": "ORAL",
+  "PREDNISONA 50 MG": "ORAL",
   "RIFAMPICINA 300 MG": "ORAL",
+  "RIVAROXABAN 10 MG": "ORAL",
   "HARTMANN 1000 ML": "INYECTABLE",
   "HARTMANN 500 ML": "INYECTABLE",
   "TRAMADOL 100 ML": "INYECTABLE",
+  "TRAMADOL 50 MG": "ORAL",
   "HEPARINA 100 000 UI": "INYECTABLE",
+  "SULFATO DE MAGNESIO 1 GR": "INYECTABLE",
   "ABEMACICLIB 150 MG": "ORAL",
   "ACIDO FOLINICO 50 MG": "INYECTABLE",
+  "APALUTAMIDA 240 MG": "ORAL",
+  "ENZALUTAMIDA 160 MG": "ORAL",
+  "EXEMESTANO 25 MG": "ORAL",
+  "FEZOLINETANT 45 MG": "ORAL",
   "NAB PACLITAXEL 100 MG": "INYECTABLE",
   "AXITINIB 5 MG": "ORAL",
   "BENDAMUSTINA 100 MG": "INYECTABLE",
@@ -1252,6 +1295,7 @@ export const MEDICATION_ROUTES = {
   "CISPLATINO 10 MG": "INYECTABLE",
   "CISPLATINO 50 MG": "INYECTABLE",
   "DACARBAZINA 200 MG": "INYECTABLE",
+  "DACARBAZINA 500 MG": "INYECTABLE",
   "DEXRAZOXANO 500 MG": "INYECTABLE",
   "DOCETAXEL 20 MG": "INYECTABLE",
   "DOCETAXEL 80 MG": "INYECTABLE",
@@ -1601,12 +1645,22 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Medicamentos",
+    "item": "EPINEFRINA 1 MG",
+    "unit": "AMPOLLETA"
+  },
+  {
+    "category": "Medicamentos",
     "item": "ERITROPOYETINA ALFA 4000 UI",
     "unit": "CAJA"
   },
   {
     "category": "Medicamentos",
     "item": "FEXOFENADINA 180 MG",
+    "unit": "CAJA"
+  },
+  {
+    "category": "Medicamentos",
+    "item": "FEZOLINETANT 45 MG",
     "unit": "CAJA"
   },
   {
@@ -1721,7 +1775,17 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Medicamentos",
+    "item": "PREDNISONA 50 MG",
+    "unit": "CAJA"
+  },
+  {
+    "category": "Medicamentos",
     "item": "RIFAMPICINA 300 MG",
+    "unit": "CAJA"
+  },
+  {
+    "category": "Medicamentos",
+    "item": "RIVAROXABAN 10 MG",
     "unit": "CAJA"
   },
   {
@@ -1741,8 +1805,18 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Medicamentos",
+    "item": "TRAMADOL 50 MG",
+    "unit": "CAJA"
+  },
+  {
+    "category": "Medicamentos",
     "item": "HEPARINA 100 000 UI",
     "unit": "FRASCO"
+  },
+  {
+    "category": "Medicamentos",
+    "item": "SULFATO DE MAGNESIO 1 GR",
+    "unit": "AMPOLLETA"
   },
   {
     "category": "Oncológicos",
@@ -1753,6 +1827,21 @@ export const MASTER_CATALOG = [
     "category": "Oncológicos",
     "item": "ACIDO FOLINICO 50 MG",
     "unit": "FRASCO"
+  },
+  {
+    "category": "Oncológicos",
+    "item": "APALUTAMIDA 240 MG",
+    "unit": "CAJA"
+  },
+  {
+    "category": "Oncológicos",
+    "item": "ENZALUTAMIDA 160 MG",
+    "unit": "CAJA"
+  },
+  {
+    "category": "Oncológicos",
+    "item": "EXEMESTANO 25 MG",
+    "unit": "CAJA"
   },
   {
     "category": "Oncológicos",
@@ -1822,6 +1911,11 @@ export const MASTER_CATALOG = [
   {
     "category": "Oncológicos",
     "item": "DACARBAZINA 200 MG",
+    "unit": "FRASCO"
+  },
+  {
+    "category": "Oncológicos",
+    "item": "DACARBAZINA 500 MG",
     "unit": "FRASCO"
   },
   {
