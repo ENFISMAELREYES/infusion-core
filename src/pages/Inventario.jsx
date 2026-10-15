@@ -231,7 +231,7 @@ export default function Inventario() {
           body: JSON.stringify({ fields: {
             item: { stringValue: lot.item }, warehouse: { stringValue: lot.warehouse },
             category: { stringValue: existingInv?.category || "" }, unit: { stringValue: existingInv?.unit || "PIEZA" },
-            currentStock: toFV(sumForItem), minStock: toFV(existingInv?.minStock ?? 0),
+            currentStock: toFV(sumForItem), minStock: toFV(existingInv?.minStock ?? 0), maxStock: toFV(existingInv?.maxStock ?? 0),
             lastCost: toFV(existingInv?.lastCost ?? 0), avgCost: toFV(existingInv?.avgCost ?? 0), totalReceived: toFV(existingInv?.totalReceived ?? 0),
             lastUpdated: { stringValue: new Date().toISOString() },
           }}) });
@@ -268,7 +268,7 @@ export default function Inventario() {
           body: JSON.stringify({ fields: {
             item: { stringValue: doc.item }, warehouse: { stringValue: doc.warehouse },
             category: { stringValue: doc.category || "" }, unit: { stringValue: doc.unit || "PIEZA" },
-            currentStock: toFV(qty), minStock: toFV(doc.minStock ?? 0),
+            currentStock: toFV(qty), minStock: toFV(doc.minStock ?? 0), maxStock: toFV(doc.maxStock ?? 0),
             lastCost: toFV(doc.lastCost ?? 0), avgCost: toFV(doc.avgCost ?? 0), totalReceived: toFV(doc.totalReceived ?? 0),
             lastUpdated: { stringValue: new Date().toISOString() },
           }}) });
@@ -843,7 +843,7 @@ export default function Inventario() {
           body: JSON.stringify({ fields: {
             item: { stringValue: item }, warehouse: { stringValue: ev.warehouse },
             category: { stringValue: existing?.category || "" }, unit: { stringValue: existing?.unit || "PIEZA" },
-            currentStock: toFV(newStock), minStock: toFV(existing?.minStock ?? 0),
+            currentStock: toFV(newStock), minStock: toFV(existing?.minStock ?? 0), maxStock: toFV(existing?.maxStock ?? 0),
             lastCost: toFV(existing?.lastCost ?? 0), avgCost: toFV(existing?.avgCost ?? 0), totalReceived: toFV(existing?.totalReceived ?? 0),
             lastUpdated: { stringValue: new Date().toISOString() },
           }}),
@@ -923,7 +923,7 @@ export default function Inventario() {
             item: { stringValue: item }, warehouse: { stringValue: warehouse },
             category: { stringValue: catalogEntry?.category || fromExisting?.category || "" },
             unit: { stringValue: catalogEntry?.unit || fromExisting?.unit || "PIEZA" },
-            currentStock: toFV(fromStock - qty), minStock: toFV(fromExisting?.minStock ?? 0),
+            currentStock: toFV(fromStock - qty), minStock: toFV(fromExisting?.minStock ?? 0), maxStock: toFV(fromExisting?.maxStock ?? 0),
             lastCost: toFV(fromExisting?.lastCost ?? 0), avgCost: toFV(fromExisting?.avgCost ?? 0), totalReceived: toFV(fromExisting?.totalReceived ?? 0),
             lastUpdated: { stringValue: new Date().toISOString() },
           }}),
@@ -948,7 +948,7 @@ export default function Inventario() {
             item: { stringValue: item }, warehouse: { stringValue: transferTo },
             category: { stringValue: catalogEntry?.category || toExisting?.category || "" },
             unit: { stringValue: catalogEntry?.unit || toExisting?.unit || "PIEZA" },
-            currentStock: toFV(toStock + qty), minStock: toFV(toExisting?.minStock ?? 0),
+            currentStock: toFV(toStock + qty), minStock: toFV(toExisting?.minStock ?? 0), maxStock: toFV(toExisting?.maxStock ?? 0),
             lastCost: toFV(sourceCost || toExisting?.lastCost || 0), avgCost: toFV(newAvgCost), totalReceived: toFV(newTotalReceived),
             lastUpdated: { stringValue: new Date().toISOString() },
           }}),
@@ -1248,7 +1248,7 @@ export default function Inventario() {
             item: { stringValue: item }, warehouse: { stringValue: warehouse },
             category: { stringValue: catalogEntry?.category || existing?.category || "" },
             unit: { stringValue: catalogEntry?.unit || existing?.unit || "PIEZA" },
-            currentStock: toFV(newStock), minStock: toFV(minStock),
+            currentStock: toFV(newStock), minStock: toFV(minStock), maxStock: toFV(existing?.maxStock ?? 0),
             lastCost: toFV(lastCost), avgCost: toFV(avgCost), totalReceived: toFV(totalReceived),
             lastUpdated: { stringValue: new Date().toISOString() },
           }}),
@@ -1317,7 +1317,7 @@ export default function Inventario() {
                 item: { stringValue: item }, warehouse: { stringValue: qualWarehouse },
                 category: { stringValue: catalogEntry?.category || qualExisting?.category || "" },
                 unit: { stringValue: catalogEntry?.unit || qualExisting?.unit || "PIEZA" },
-                currentStock: toFV(qualCurrentStock - qty), minStock: toFV(qualExisting?.minStock ?? 0),
+                currentStock: toFV(qualCurrentStock - qty), minStock: toFV(qualExisting?.minStock ?? 0), maxStock: toFV(qualExisting?.maxStock ?? 0),
                 lastCost: toFV(qualExisting?.lastCost ?? 0), avgCost: toFV(qualExisting?.avgCost ?? 0), totalReceived: toFV(qualExisting?.totalReceived ?? 0),
                 lastUpdated: { stringValue: new Date().toISOString() },
               }}),
