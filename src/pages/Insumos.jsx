@@ -127,6 +127,27 @@ function categorizeItem(itemName) {
   return fuzzy && isMedCategory(fuzzy.category) ? "MEDICAMENTOS" : "INSUMOS";
 }
 
+// Constancia de qué salió de inventario y de dónde (lote/caducidad/marca de
+// cada medicamento) -- se genera al dar de baja (PatientMaterialRow) y se
+// puede volver a generar después con los mismos datos guardados en la
+// sesión, también desde Confirmaciones (visualizador/jefe), sin tener que
+// entrar a editar la sesión.
+async function generateComprobantePdf(s, cipiVariant, profile, items) {
+  const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
+  items.forEach(it => groups[categorizeItem(it.item)].push({ item: it.item, qty: it.qty, lotes: it.lotes }));
+  const res = await fetch("/api/generate-material-order", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      center: s.center, cipiVariant, patientName: s.patientName, cycle: s.cycle, date: s.date,
+      comprobante: true, groups,
+      signatures: [{ label: "DIO DE BAJA", name: profile?.name || "", signatureUrl: profile?.signatureUrl || null }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status} al generar el comprobante`);
+  const blob = await res.blob();
+  openPdfBlob(blob, `COMPROBANTE_BAJA_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`);
+}
+
 // Sugerencias del catálogo existente mientras se escribe, para elegir un producto
 // ya existente en vez de teclear uno nuevo (evita duplicados).
 function CatalogSuggestions({ query, catalog, onSelect }) {
@@ -712,24 +733,9 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   // de cada medicamento) -- se genera al dar de baja y se puede volver a
   // generar después con los mismos datos guardados en la sesión.
   const [generatingComprobante, setGeneratingComprobante] = useState(false);
-  const generateComprobante = async (items) => {
-    const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
-    items.forEach(it => groups[categorizeItem(it.item)].push({ item: it.item, qty: it.qty, lotes: it.lotes }));
-    const res = await fetch("/api/generate-material-order", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        center: s.center, cipiVariant, patientName: s.patientName, cycle: s.cycle, date: s.date,
-        comprobante: true, groups,
-        signatures: [{ label: "DIO DE BAJA", name: profile?.name || "", signatureUrl: profile?.signatureUrl || null }],
-      }),
-    });
-    if (!res.ok) throw new Error(`Error ${res.status} al generar el comprobante`);
-    const blob = await res.blob();
-    openPdfBlob(blob, `COMPROBANTE_BAJA_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`);
-  };
   const reprintComprobante = async () => {
     setGeneratingComprobante(true);
-    try { await generateComprobante(s.inventorySalidaMedsDetalle || []); }
+    try { await generateComprobantePdf(s, cipiVariant, profile, s.inventorySalidaMedsDetalle || []); }
     catch (e) { alert("Error al generar el comprobante: " + e.message); }
     finally { setGeneratingComprobante(false); }
   };
@@ -841,7 +847,7 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       // registrada), no se trata como error de la baja: se avisa aparte y
       // se puede reimprimir después con el botón 🖨️ Comprobante.
       if (invScope === "medicamentos") {
-        try { await generateComprobante(itemsWithLotes); }
+        try { await generateComprobantePdf(s, cipiVariant, profile, itemsWithLotes); }
         catch (pdfErr) { alert("La baja se registró, pero no se pudo generar el comprobante: " + pdfErr.message + "\n\nPuedes reimprimirlo después con el botón 🖨️ Comprobante."); }
       }
     } catch (e) {
@@ -1365,6 +1371,7 @@ export default function Insumos() {
   }, [profile, canSeeAllCenters]);
   const [dateFilter, setDateFilter] = useState("rango"); // "hoy" | "rango" | "todas"
   const [selectedDay, setSelectedDay] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }));
+  const [generatingComprobanteId, setGeneratingComprobanteId] = useState(null); // sesión cuyo comprobante se está generando desde Confirmaciones
   const [todasMode, setTodasMode] = useState("dia"); // "dia" | "rango" | "todo" -- cómo filtrar la pestaña "Con solicitud generada"
   const [rangeFrom, setRangeFrom] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }));
   const [rangeTo, setRangeTo] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 6); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); });
@@ -1647,6 +1654,12 @@ export default function Insumos() {
        centerFilter === "CIPI PED" ? (s.center === "CIPI" && s.cipiVariant === "PED") :
        s.center === centerFilter)));
     const confirmedCount = dayList.filter(attended).length;
+    const printComprobante = async (s) => {
+      setGeneratingComprobanteId(s.id);
+      try { await generateComprobantePdf(s, s.cipiVariant, profile, s.inventorySalidaMedsDetalle || []); }
+      catch (e) { alert("Error al generar el comprobante: " + e.message); }
+      finally { setGeneratingComprobanteId(null); }
+    };
     return (
       <div>
         <div style={{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap" }}>
@@ -1698,6 +1711,13 @@ export default function Insumos() {
                     color: attended(s) ? "#00d4aa" : "#ffb347" }}>
                     {s.confirmed ? "✓ Confirmada" : attended(s) ? "✓ Asistió" : "⏳ Sin confirmar"}
                   </span>
+                  {s.inventorySalidaMedsDone && (
+                    <button onClick={() => printComprobante(s)} disabled={generatingComprobanteId === s.id}
+                      title="Generar el comprobante de dónde salió cada medicamento"
+                      style={{ padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor: generatingComprobanteId === s.id ? "wait" : "pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.09)", color:"#888", flexShrink:0 }}>
+                      {generatingComprobanteId === s.id ? "…" : "🖨️ Comprobante"}
+                    </button>
+                  )}
                 </div>
                 {(s.meds || []).length > 0 && (
                   <div style={{ marginTop:6, paddingTop:6, borderTop:"1px solid rgba(255,255,255,0.05)", display:"flex", flexWrap:"wrap", gap:6 }}>
