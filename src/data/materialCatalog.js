@@ -1396,6 +1396,11 @@ export const MASTER_CATALOG = [
   },
   {
     "category": "Insumos",
+    "item": "ALCOHOL ETILICO 71.5° 1000 ML",
+    "unit": "FRASCO"
+  },
+  {
+    "category": "Insumos",
     "item": "APOSITO TRANSPARENTE ESTERIL 10CM X 12CM",
     "unit": "PIEZA"
   },
@@ -1462,6 +1467,16 @@ export const MASTER_CATALOG = [
   {
     "category": "Insumos",
     "item": "CATETER INTRAVENOSO PERIFERICO 24G",
+    "unit": "PIEZA"
+  },
+  {
+    "category": "Insumos",
+    "item": "CONTENEDOR RPBI ROJO 1 LT",
+    "unit": "PIEZA"
+  },
+  {
+    "category": "Insumos",
+    "item": "CONTENEDOR RPBI ROJO 4 LT",
     "unit": "PIEZA"
   },
   {
