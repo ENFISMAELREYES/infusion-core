@@ -17,6 +17,7 @@ const NAV = {
     { to:"/reportes", icon:"📊", label:"Reportes" },
     { to:"/inventario", icon:"📦", label:"Inventario" },
     { to:"/fichas-tecnicas", icon:"📋", label:"Fichas técnicas" },
+    { to:"/protocolos", icon:"🧪", label:"Protocolos" },
     { to:"/auditoria", icon:"🛡️", label:"Auditoría" },
   ],
   enfermera: [
@@ -28,6 +29,7 @@ const NAV = {
     { to:"/insumos", icon:"🧰", label:"Insumos" },
     { to:"/inventario", icon:"📦", label:"Inventario" },
     { to:"/fichas-tecnicas", icon:"📋", label:"Fichas técnicas" },
+    { to:"/protocolos", icon:"🧪", label:"Protocolos" },
     { to:"/calculadoras", icon:"🧮", label:"Calculadoras" },
   ],
   visualizador: [
@@ -51,9 +53,22 @@ export default function Layout() {
   // isMedico en su documento de usuario) además puede consultar fichas
   // técnicas, a diferencia de contabilidad/admisión que comparten el mismo
   // rol pero no deben verlas (mismo criterio que el ícono de Monitor).
-  let nav = (role === "visualizador" && profile?.isMedico)
-    ? [...NAV.visualizador, { to:"/fichas-tecnicas", icon:"📋", label:"Fichas técnicas" }]
-    : (NAV[role] || []);
+  // Coordinador de protocolos: cuenta dedicada que solo ve Protocolos --
+  // a diferencia de isMedico (que AGREGA fichas técnicas al menú base de
+  // visualizador), este flag REEMPLAZA el menú por completo.
+  let nav;
+  if (role === "visualizador" && profile?.isCoordinadorProtocolos) {
+    nav = [{ to:"/protocolos", icon:"🧪", label:"Protocolos" }];
+  } else {
+    nav = (role === "visualizador" && profile?.isMedico)
+      ? [...NAV.visualizador, { to:"/fichas-tecnicas", icon:"📋", label:"Fichas técnicas" }]
+      : (NAV[role] || []);
+    // Cuenta visualizador ya existente (ej. médico) a la que además se le
+    // habilitó ver Protocolos, sin convertirla en coordinador dedicado.
+    if (role === "visualizador" && profile?.puedeVerProtocolos) {
+      nav = [...nav, { to:"/protocolos", icon:"🧪", label:"Protocolos" }];
+    }
+  }
   // Historial anexo: herramienta puntual para trámites de seguro de gastos
   // médicos -- el jefe siempre la ve; en cualquier otro rol se activa por
   // cuenta vía profile.puedeEditarTratamientos (ver firestore.rules).

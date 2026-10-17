@@ -17,6 +17,7 @@ import Auditoria from "./pages/Auditoria";
 import Inventario from "./pages/Inventario";
 import FichasTecnicas from "./pages/FichasTecnicas";
 import HistorialAnexo from "./pages/HistorialAnexo";
+import Protocolos from "./pages/Protocolos";
 function PrivateRoute({ children, roles }) {
   const { user, profile, loading } = useAuth();
   if (loading) return (
@@ -71,6 +72,10 @@ function AppRoutes() {
             a los 3 roles y HistorialAnexo.jsx filtra adentro -- solo entra
             el jefe o la cuenta puntual marcada con profile.puedeEditarTratamientos. */}
         <Route path="historial-anexo" element={<PrivateRoute roles={["jefe","enfermera","visualizador"]}><HistorialAnexo /></PrivateRoute>} />
+        {/* Mismo criterio que fichas-tecnicas: ruta abierta a los 3 roles,
+            Protocolos.jsx bloquea adentro al visualizador que no sea
+            coordinador de protocolos ni tenga puedeVerProtocolos. */}
+        <Route path="protocolos" element={<PrivateRoute roles={["jefe","enfermera","visualizador"]}><Protocolos /></PrivateRoute>} />
       </Route>
     </Routes>
   );
