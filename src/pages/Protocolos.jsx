@@ -44,10 +44,13 @@ async function fetchCollection(token, collectionId, limit = 1000) {
 // margen de CITIO/CIPI.
 const WAREHOUSE = "PROTOCOLO";
 const MED_CATEGORIES = ["Medicamentos", "Oncológicos", "Inmunoterapia"];
-// Único protocolo por ahora (toma de muestras + aplicación IM). El campo
-// queda guardado en cada visita para poder distinguir el de infusión
-// cuando se defina, sin tener que migrar nada de lo ya capturado.
-const PROTOCOLO_ACTUAL = "muestras_im";
+// Protocolos de investigación clínica dados de alta -- cada uno se
+// identifica por su código real (el que usa el patrocinador/CRO), nunca
+// por un nombre interno. Para agregar el siguiente (ej. el de infusión
+// que viene en camino) basta con sumar una línea aquí.
+const PROTOCOLOS = [
+  { code: "WO46063", label: "WO46063" },
+];
 
 function inventoryDocId(warehouse, item) {
   return `${warehouse}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
@@ -113,7 +116,15 @@ export default function Protocolos() {
   const fullCatalog = [...MASTER_CATALOG, ...extraCatalog];
   const insumoOptions = fullCatalog.filter(c => !MED_CATEGORIES.includes(c.category)).map(c => c.item);
   const medOptions = fullCatalog.filter(c => MED_CATEGORIES.includes(c.category)).map(c => c.item);
-  const patientOptions = [...new Set(visits.map(v => v.patientName).filter(Boolean))].sort();
+
+  // Selector único a nivel de página -- qué protocolo se está capturando o
+  // consultando. Con un solo protocolo de alta no hace nada todavía, pero
+  // ya identifica cada visita con su código real y queda listo para elegir
+  // entre varios en cuanto se dé de alta el siguiente.
+  const [protocolo, setProtocolo] = useState(PROTOCOLOS[0].code);
+  const protocoloLabel = PROTOCOLOS.find(p => p.code === protocolo)?.label || protocolo;
+  const visitsDelProtocolo = visits.filter(v => v.protocolo === protocolo);
+  const patientOptions = [...new Set(visitsDelProtocolo.map(v => v.patientName).filter(Boolean))].sort();
 
   const [tab, setTab] = useState(canCapture ? "captura" : "paciente");
 
@@ -124,6 +135,13 @@ export default function Protocolos() {
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 24, color: "#fff", marginBottom: 4 }}>Protocolos</h1>
         <p style={{ fontSize: 13, color: "#555" }}>Material, muestras y medicamento de los pacientes en protocolo de investigación clínica</p>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <label style={{ fontSize: 11, color: "#666" }}>Protocolo</label>
+        <select value={protocolo} onChange={e => setProtocolo(e.target.value)} style={inputStyle}>
+          {PROTOCOLOS.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
+        </select>
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
@@ -140,19 +158,19 @@ export default function Protocolos() {
       {loading ? <div style={{ color: "#555", padding: 40, textAlign: "center" }}>Cargando…</div> : (
         <>
           {tab === "captura" && canCapture && (
-            <CapturaForm token={token} profile={profile} visits={visits} insumoOptions={insumoOptions} medOptions={medOptions}
+            <CapturaForm token={token} profile={profile} visits={visitsDelProtocolo} protocolo={protocolo} insumoOptions={insumoOptions} medOptions={medOptions}
               patientOptions={patientOptions} onSaved={() => loadVisits(token)} />
           )}
-          {tab === "paciente" && <ReportePorPaciente visits={visits} patientOptions={patientOptions} />}
-          {tab === "dia" && <ReportePorDia visits={visits} />}
-          {tab === "mes" && <ReportePorMes visits={visits} />}
+          {tab === "paciente" && <ReportePorPaciente visits={visitsDelProtocolo} patientOptions={patientOptions} protocoloLabel={protocoloLabel} />}
+          {tab === "dia" && <ReportePorDia visits={visitsDelProtocolo} protocoloLabel={protocoloLabel} />}
+          {tab === "mes" && <ReportePorMes visits={visitsDelProtocolo} protocoloLabel={protocoloLabel} />}
         </>
       )}
     </div>
   );
 }
 
-function CapturaForm({ token, profile, visits, insumoOptions, medOptions, patientOptions, onSaved }) {
+function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOptions, patientOptions, onSaved }) {
   const [patientName, setPatientName] = useState("");
   const [date, setDate] = useState(todayStr());
   const [visitNumber, setVisitNumber] = useState("");
@@ -194,7 +212,7 @@ function CapturaForm({ token, profile, visits, insumoOptions, medOptions, patien
     setNotice("");
     try {
       const visit = {
-        protocolo: PROTOCOLO_ACTUAL,
+        protocolo,
         patientName: patientName.trim(),
         date, visitNumber: visitNumber ? Number(visitNumber) : null,
         material, muestras, medicamento,
@@ -351,22 +369,22 @@ function VisitTable({ rows, showPatient }) {
   );
 }
 
-function ReportePorPaciente({ visits, patientOptions }) {
+function ReportePorPaciente({ visits, patientOptions, protocoloLabel }) {
   const [patient, setPatient] = useState(patientOptions[0] || "");
   useEffect(() => { if (!patient && patientOptions.length > 0) setPatient(patientOptions[0]); }, [patientOptions]);
 
-  if (patientOptions.length === 0) return <div style={{ color: "#444", padding: 40, textAlign: "center" }}>Aún no hay visitas registradas.</div>;
+  if (patientOptions.length === 0) return <div style={{ color: "#444", padding: 40, textAlign: "center" }}>Aún no hay visitas registradas para {protocoloLabel}.</div>;
 
   const rows = visits.filter(v => v.patientName === patient).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 
   const print = () => {
     const body = `
-      <h1>Protocolos — ${patient}</h1>
+      <h1>Protocolo ${protocoloLabel} — ${patient}</h1>
       <p>${rows.length} visita${rows.length !== 1 ? "s" : ""} · Generado ${new Date().toLocaleString("es-MX")}</p>
       <table><thead><tr><th>Fecha</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th></tr></thead><tbody>
       ${rows.map(v => `<tr><td>${v.date}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td></tr>`).join("")}
       </tbody></table>`;
-    openPrintWindow(`Protocolos — ${patient}`, body);
+    openPrintWindow(`Protocolo ${protocoloLabel} — ${patient}`, body);
   };
 
   return (
@@ -382,18 +400,18 @@ function ReportePorPaciente({ visits, patientOptions }) {
   );
 }
 
-function ReportePorDia({ visits }) {
+function ReportePorDia({ visits, protocoloLabel }) {
   const [day, setDay] = useState(todayStr());
   const rows = visits.filter(v => v.date === day).sort((a, b) => (a.patientName || "").localeCompare(b.patientName || ""));
 
   const print = () => {
     const body = `
-      <h1>Protocolos — ${day}</h1>
+      <h1>Protocolo ${protocoloLabel} — ${day}</h1>
       <p>${rows.length} visita${rows.length !== 1 ? "s" : ""} · Generado ${new Date().toLocaleString("es-MX")}</p>
       <table><thead><tr><th>Paciente</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th></tr></thead><tbody>
       ${rows.map(v => `<tr><td>${v.patientName}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td></tr>`).join("")}
       </tbody></table>`;
-    openPrintWindow(`Protocolos — ${day}`, body);
+    openPrintWindow(`Protocolo ${protocoloLabel} — ${day}`, body);
   };
 
   return (
@@ -409,7 +427,7 @@ function ReportePorDia({ visits }) {
   );
 }
 
-function ReportePorMes({ visits }) {
+function ReportePorMes({ visits, protocoloLabel }) {
   const [month, setMonth] = useState(todayStr().slice(0, 7));
   const rows = visits.filter(v => (v.date || "").startsWith(month)).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const patients = new Set(rows.map(v => v.patientName));
@@ -425,7 +443,7 @@ function ReportePorMes({ visits }) {
 
   const print = () => {
     const body = `
-      <h1>Protocolos — ${month}</h1>
+      <h1>Protocolo ${protocoloLabel} — ${month}</h1>
       <p>${rows.length} visita${rows.length !== 1 ? "s" : ""} · ${patients.size} paciente${patients.size !== 1 ? "s" : ""} · Generado ${new Date().toLocaleString("es-MX")}</p>
       <h2>Material consumido</h2>
       <table><thead><tr><th>Artículo</th><th style="text-align:right;">Cantidad</th></tr></thead><tbody>${totalsRows(matTotals)}</tbody></table>
@@ -437,7 +455,7 @@ function ReportePorMes({ visits }) {
       <table><thead><tr><th>Fecha</th><th>Paciente</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th></tr></thead><tbody>
       ${rows.map(v => `<tr><td>${v.date}</td><td>${v.patientName}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td></tr>`).join("")}
       </tbody></table>`;
-    openPrintWindow(`Protocolos — ${month}`, body);
+    openPrintWindow(`Protocolo ${protocoloLabel} — ${month}`, body);
   };
 
   return (
