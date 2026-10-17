@@ -177,6 +177,7 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
   const [material, setMaterial] = useState([]);
   const [muestras, setMuestras] = useState([]);
   const [medicamento, setMedicamento] = useState([]);
+  const [notas, setNotas] = useState("");
   const [draftMaterial, setDraftMaterial] = useState("");
   const [draftMed, setDraftMed] = useState("");
   const [saving, setSaving] = useState(false);
@@ -204,8 +205,8 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
 
   const save = async () => {
     if (!patientName.trim()) { setNotice("Falta el nombre del paciente."); return; }
-    if (material.length === 0 && muestras.length === 0 && medicamento.length === 0) {
-      setNotice("Agrega al menos material, una muestra o medicamento.");
+    if (material.length === 0 && muestras.length === 0 && medicamento.length === 0 && !notas.trim()) {
+      setNotice("Agrega al menos material, una muestra, medicamento o una nota.");
       return;
     }
     setSaving(true);
@@ -215,7 +216,7 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
         protocolo,
         patientName: patientName.trim(),
         date, visitNumber: visitNumber ? Number(visitNumber) : null,
-        material, muestras, medicamento,
+        material, muestras, medicamento, notas: notas.trim(),
         capturedBy: profile?.name || "",
         createdAt: new Date().toISOString(),
       };
@@ -241,7 +242,7 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
         });
       }
 
-      setPatientName(""); setVisitNumber(""); setMaterial([]); setMuestras([]); setMedicamento([]);
+      setPatientName(""); setVisitNumber(""); setMaterial([]); setMuestras([]); setMedicamento([]); setNotas("");
       setNotice(missing.length > 0
         ? `Visita guardada. Sin descontar (no están registrados en el almacén "Protocolos" de Inventario): ${missing.join(", ")}.`
         : "Visita guardada.");
@@ -328,6 +329,12 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
         </div>
       </div>
 
+      <div>
+        <label style={{ display: "block", fontSize: 11, color: "#666", marginBottom: 4 }}>Notas (ej. días de hidratación relacionados, observaciones)</label>
+        <textarea value={notas} onChange={e => setNotas(e.target.value)} rows={2} placeholder="Texto libre…"
+          style={{ ...inputStyle, width: "100%", resize: "vertical", fontFamily: "inherit" }} />
+      </div>
+
       {notice && <div style={{ fontSize: 12, color: notice.startsWith("Error") ? "#ff6b6b" : "#00d4aa", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "8px 12px" }}>{notice}</div>}
 
       <button onClick={save} disabled={saving} style={{ ...btnStyle, alignSelf: "flex-start", padding: "10px 20px", fontSize: 13, cursor: saving ? "wait" : "pointer" }}>
@@ -350,6 +357,7 @@ function VisitTable({ rows, showPatient }) {
             <th style={{ padding: "6px 8px" }}>Material</th>
             <th style={{ padding: "6px 8px" }}>Muestras</th>
             <th style={{ padding: "6px 8px" }}>Medicamento</th>
+            <th style={{ padding: "6px 8px" }}>Notas</th>
           </tr>
         </thead>
         <tbody>
@@ -361,6 +369,7 @@ function VisitTable({ rows, showPatient }) {
               <td style={{ padding: "6px 8px", color: "#AFA9EC" }}>{fmtMaterial(v.material)}</td>
               <td style={{ padding: "6px 8px", color: "#00d4aa" }}>{fmtMuestras(v.muestras)}</td>
               <td style={{ padding: "6px 8px", color: "#ffb347" }}>{fmtMedicamento(v.medicamento)}</td>
+              <td style={{ padding: "6px 8px", color: "#999" }}>{v.notas || "—"}</td>
             </tr>
           ))}
         </tbody>
@@ -381,8 +390,8 @@ function ReportePorPaciente({ visits, patientOptions, protocoloLabel }) {
     const body = `
       <h1>Protocolo ${protocoloLabel} — ${patient}</h1>
       <p>${rows.length} visita${rows.length !== 1 ? "s" : ""} · Generado ${new Date().toLocaleString("es-MX")}</p>
-      <table><thead><tr><th>Fecha</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th></tr></thead><tbody>
-      ${rows.map(v => `<tr><td>${v.date}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td></tr>`).join("")}
+      <table><thead><tr><th>Fecha</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th><th>Notas</th></tr></thead><tbody>
+      ${rows.map(v => `<tr><td>${v.date}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td><td>${v.notas || "—"}</td></tr>`).join("")}
       </tbody></table>`;
     openPrintWindow(`Protocolo ${protocoloLabel} — ${patient}`, body);
   };
@@ -408,8 +417,8 @@ function ReportePorDia({ visits, protocoloLabel }) {
     const body = `
       <h1>Protocolo ${protocoloLabel} — ${day}</h1>
       <p>${rows.length} visita${rows.length !== 1 ? "s" : ""} · Generado ${new Date().toLocaleString("es-MX")}</p>
-      <table><thead><tr><th>Paciente</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th></tr></thead><tbody>
-      ${rows.map(v => `<tr><td>${v.patientName}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td></tr>`).join("")}
+      <table><thead><tr><th>Paciente</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th><th>Notas</th></tr></thead><tbody>
+      ${rows.map(v => `<tr><td>${v.patientName}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td><td>${v.notas || "—"}</td></tr>`).join("")}
       </tbody></table>`;
     openPrintWindow(`Protocolo ${protocoloLabel} — ${day}`, body);
   };
@@ -452,8 +461,8 @@ function ReportePorMes({ visits, protocoloLabel }) {
       <h2>Muestras tomadas</h2>
       <table><thead><tr><th>Tipo</th><th style="text-align:right;">Cantidad</th></tr></thead><tbody>${totalsRows(muestraTotals)}</tbody></table>
       <h2>Detalle por visita</h2>
-      <table><thead><tr><th>Fecha</th><th>Paciente</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th></tr></thead><tbody>
-      ${rows.map(v => `<tr><td>${v.date}</td><td>${v.patientName}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td></tr>`).join("")}
+      <table><thead><tr><th>Fecha</th><th>Paciente</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th><th>Notas</th></tr></thead><tbody>
+      ${rows.map(v => `<tr><td>${v.date}</td><td>${v.patientName}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td><td>${v.notas || "—"}</td></tr>`).join("")}
       </tbody></table>`;
     openPrintWindow(`Protocolo ${protocoloLabel} — ${month}`, body);
   };
