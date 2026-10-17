@@ -72,6 +72,7 @@ const WAREHOUSES = [
   { key: "CITIO", label: "CITIO" },
   { key: "CIPI_PRO", label: "CIPI PRO" },
   { key: "CIPI_PED", label: "CIPI PED" },
+  { key: "PROTOCOLO", label: "Protocolos" },
 ];
 // Inventario general de la farmacia (QualMedical) -- todo el medicamento
 // pertenece a esta farmacia antes de asignarse a un centro. Solo el jefe lo
@@ -143,7 +144,10 @@ export default function Inventario() {
   // el día de la sesión, ver Insumos.jsx), así que cualquier enfermera de
   // CITIO entra a Qual·CITIO igual que a su propio almacén, y lo mismo
   // CIPI con Qual·CIPI.
-  const allowedWarehouses = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI_PRO","CIPI_PED","QUAL_CIPI"] : ["CITIO","QUAL_CITIO"]);
+  // "Protocolos" no es de un centro -- es el almacén de material de los
+  // protocolos de investigación clínica (ver Protocolos.jsx), así que se
+  // ve igual sin importar el centro de la cuenta.
+  const allowedWarehouses = canSeeAllCenters ? null : [...(profile?.center === "CIPI" ? ["CIPI_PRO","CIPI_PED","QUAL_CIPI"] : ["CITIO","QUAL_CITIO"]), "PROTOCOLO"];
   const [tab, setTab] = useState("existencias"); // "existencias" | "movimientos"
   const [warehouse, setWarehouse] = useState(() => canSeeAllCenters ? "CITIO" : (allowedWarehouses?.[0] || "CITIO"));
   useEffect(() => {

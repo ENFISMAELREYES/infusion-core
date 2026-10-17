@@ -18,6 +18,7 @@ import Inventario from "./pages/Inventario";
 import FichasTecnicas from "./pages/FichasTecnicas";
 import HistorialAnexo from "./pages/HistorialAnexo";
 import ManualesGuias from "./pages/ManualesGuias";
+import Protocolos from "./pages/Protocolos";
 function PrivateRoute({ children, roles }) {
   const { user, profile, loading } = useAuth();
   if (loading) return (
@@ -75,6 +76,10 @@ function AppRoutes() {
         {/* Mismo criterio que fichas-tecnicas: ruta abierta a los 3 roles,
             ManualesGuias.jsx bloquea adentro a visualizador no-médico. */}
         <Route path="manuales-guias" element={<PrivateRoute roles={["jefe","enfermera","visualizador"]}><ManualesGuias /></PrivateRoute>} />
+        {/* Mismo criterio que fichas-tecnicas/manuales-guias: ruta abierta a
+            los 3 roles, Protocolos.jsx bloquea adentro al visualizador que
+            no sea coordinador de protocolos ni tenga puedeVerProtocolos. */}
+        <Route path="protocolos" element={<PrivateRoute roles={["jefe","enfermera","visualizador"]}><Protocolos /></PrivateRoute>} />
       </Route>
     </Routes>
   );

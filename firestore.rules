@@ -180,7 +180,21 @@ service cloud.firestore {
     // solo el jefe las sube/edita/borra. Mismo criterio que fichas_tecnicas.
     match /manuales_guias/{id} {
       allow read: if isAuth();
-      allow write: if isAuth() && userRole() == "jefe"; 
+      allow write: if isAuth() && userRole() == "jefe";
+    }
+
+    // Protocolos de investigación clínica: toma de muestras y aplicación de
+    // medicamento a pacientes de un protocolo. Enfermería y jefe capturan
+    // las visitas (igual que sessions); el coordinador de protocolos y
+    // cualquier otra cuenta "visualizador" marcada con puedeVerProtocolos
+    // solo pueden leer -- ven los reportes, nunca el formulario de captura.
+    function puedeVerProtocolos() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isCoordinadorProtocolos == true
+        || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.puedeVerProtocolos == true;
+    }
+    match /protocol_visits/{id} {
+      allow read: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera" || puedeVerProtocolos());
+      allow write: if isAuth() && (userRole() == "jefe" || userRole() == "enfermera");
     }
   }
 }
