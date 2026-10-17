@@ -172,6 +172,7 @@ export default function Protocolos() {
 
 function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOptions, patientOptions, onSaved }) {
   const [patientName, setPatientName] = useState("");
+  const [dob, setDob] = useState("");
   const [date, setDate] = useState(todayStr());
   const [visitNumber, setVisitNumber] = useState("");
   const [material, setMaterial] = useState([]);
@@ -183,13 +184,20 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
 
-  // Sugiere el siguiente número de visita según cuántas ya tiene ese
-  // paciente -- no bloquea, se puede corregir a mano antes de guardar.
-  useEffect(() => {
-    if (!patientName.trim()) return;
-    const count = visits.filter(v => (v.patientName || "").toUpperCase() === patientName.trim().toUpperCase()).length;
-    setVisitNumber(String(count + 1));
-  }, [patientName, visits]);
+  // Precarga la fecha de nacimiento de visitas anteriores con el mismo
+  // nombre -- igual que ya se hace con dob en NuevaSession, la fecha de
+  // nacimiento es la regla de identificación real, el nombre solo no basta
+  // (dos pacientes pueden compartir nombre). Si hay más de una fecha
+  // distinta para el mismo nombre, no se precarga nada -- se avisa para
+  // que se escriba a mano y no se arrastre la de otro paciente.
+  const handlePatientBlur = () => {
+    if (!patientName.trim() || dob) return;
+    const dobs = [...new Set(visits
+      .filter(v => (v.patientName || "").toUpperCase() === patientName.trim().toUpperCase() && v.dob)
+      .map(v => v.dob))];
+    if (dobs.length === 1) setDob(dobs[0]);
+    else if (dobs.length > 1) setNotice("Hay más de una fecha de nacimiento registrada con este nombre -- verifica cuál paciente es y captúrala a mano.");
+  };
 
   const addMaterial = () => {
     if (!draftMaterial.trim()) return;
@@ -205,6 +213,7 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
 
   const save = async () => {
     if (!patientName.trim()) { setNotice("Falta el nombre del paciente."); return; }
+    if (!dob) { setNotice("Falta la fecha de nacimiento (regla de identificación del paciente)."); return; }
     if (material.length === 0 && muestras.length === 0 && medicamento.length === 0 && !notas.trim()) {
       setNotice("Agrega al menos material, una muestra, medicamento o una nota.");
       return;
@@ -215,7 +224,8 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
       const visit = {
         protocolo,
         patientName: patientName.trim(),
-        date, visitNumber: visitNumber ? Number(visitNumber) : null,
+        dob,
+        date, visitNumber: visitNumber.trim() || null,
         material, muestras, medicamento, notas: notas.trim(),
         capturedBy: profile?.name || "",
         createdAt: new Date().toISOString(),
@@ -242,7 +252,7 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
         });
       }
 
-      setPatientName(""); setVisitNumber(""); setMaterial([]); setMuestras([]); setMedicamento([]); setNotas("");
+      setPatientName(""); setDob(""); setVisitNumber(""); setMaterial([]); setMuestras([]); setMedicamento([]); setNotas("");
       setNotice(missing.length > 0
         ? `Visita guardada. Sin descontar (no están registrados en el almacén "Protocolos" de Inventario): ${missing.join(", ")}.`
         : "Visita guardada.");
@@ -259,17 +269,21 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <div>
           <label style={{ display: "block", fontSize: 11, color: "#666", marginBottom: 4 }}>Paciente</label>
-          <input list="protocolos-pacientes" value={patientName} onChange={e => setPatientName(e.target.value)}
+          <input list="protocolos-pacientes" value={patientName} onChange={e => { setPatientName(e.target.value); setDob(""); }} onBlur={handlePatientBlur}
             placeholder="Nombre del paciente" style={{ ...inputStyle, width: 240 }} />
           <datalist id="protocolos-pacientes">{patientOptions.map(p => <option key={p} value={p} />)}</datalist>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 11, color: "#666", marginBottom: 4 }}>Fecha de nacimiento</label>
+          <input type="date" value={dob} onChange={e => setDob(e.target.value)} style={inputStyle} />
         </div>
         <div>
           <label style={{ display: "block", fontSize: 11, color: "#666", marginBottom: 4 }}>Fecha</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
         </div>
         <div>
-          <label style={{ display: "block", fontSize: 11, color: "#666", marginBottom: 4 }}>Visita #</label>
-          <input type="number" min="1" value={visitNumber} onChange={e => setVisitNumber(e.target.value)} style={{ ...inputStyle, width: 70 }} />
+          <label style={{ display: "block", fontSize: 11, color: "#666", marginBottom: 4 }}>Visita (ej. C4D15)</label>
+          <input value={visitNumber} onChange={e => setVisitNumber(e.target.value)} placeholder="C4D15" style={{ ...inputStyle, width: 90 }} />
         </div>
       </div>
 
@@ -353,6 +367,7 @@ function VisitTable({ rows, showPatient }) {
           <tr style={{ textAlign: "left", color: "#666" }}>
             <th style={{ padding: "6px 8px" }}>Fecha</th>
             {showPatient && <th style={{ padding: "6px 8px" }}>Paciente</th>}
+            {showPatient && <th style={{ padding: "6px 8px" }}>Fecha nac.</th>}
             <th style={{ padding: "6px 8px" }}>Visita</th>
             <th style={{ padding: "6px 8px" }}>Material</th>
             <th style={{ padding: "6px 8px" }}>Muestras</th>
@@ -365,6 +380,7 @@ function VisitTable({ rows, showPatient }) {
             <tr key={v.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
               <td style={{ padding: "6px 8px", color: "#ccc" }}>{v.date}</td>
               {showPatient && <td style={{ padding: "6px 8px", color: "#f0f0f0", fontWeight: 600 }}>{v.patientName}</td>}
+              {showPatient && <td style={{ padding: "6px 8px", color: "#888" }}>{v.dob || "—"}</td>}
               <td style={{ padding: "6px 8px", color: "#888" }}>{v.visitNumber ?? "—"}</td>
               <td style={{ padding: "6px 8px", color: "#AFA9EC" }}>{fmtMaterial(v.material)}</td>
               <td style={{ padding: "6px 8px", color: "#00d4aa" }}>{fmtMuestras(v.muestras)}</td>
@@ -385,11 +401,12 @@ function ReportePorPaciente({ visits, patientOptions, protocoloLabel }) {
   if (patientOptions.length === 0) return <div style={{ color: "#444", padding: 40, textAlign: "center" }}>Aún no hay visitas registradas para {protocoloLabel}.</div>;
 
   const rows = visits.filter(v => v.patientName === patient).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const dob = rows.find(v => v.dob)?.dob;
 
   const print = () => {
     const body = `
       <h1>Protocolo ${protocoloLabel} — ${patient}</h1>
-      <p>${rows.length} visita${rows.length !== 1 ? "s" : ""} · Generado ${new Date().toLocaleString("es-MX")}</p>
+      <p>${dob ? `Fecha de nacimiento: ${dob} · ` : ""}${rows.length} visita${rows.length !== 1 ? "s" : ""} · Generado ${new Date().toLocaleString("es-MX")}</p>
       <table><thead><tr><th>Fecha</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th><th>Notas</th></tr></thead><tbody>
       ${rows.map(v => `<tr><td>${v.date}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td><td>${v.notas || "—"}</td></tr>`).join("")}
       </tbody></table>`;
@@ -402,6 +419,7 @@ function ReportePorPaciente({ visits, patientOptions, protocoloLabel }) {
         <select value={patient} onChange={e => setPatient(e.target.value)} style={inputStyle}>
           {patientOptions.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
+        {dob && <span style={{ fontSize: 12, color: "#888" }}>Fecha de nacimiento: {dob}</span>}
         <button onClick={print} style={btnStyle}>🖨️ Imprimir</button>
       </div>
       <VisitTable rows={rows} showPatient={false} />
@@ -417,8 +435,8 @@ function ReportePorDia({ visits, protocoloLabel }) {
     const body = `
       <h1>Protocolo ${protocoloLabel} — ${day}</h1>
       <p>${rows.length} visita${rows.length !== 1 ? "s" : ""} · Generado ${new Date().toLocaleString("es-MX")}</p>
-      <table><thead><tr><th>Paciente</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th><th>Notas</th></tr></thead><tbody>
-      ${rows.map(v => `<tr><td>${v.patientName}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td><td>${v.notas || "—"}</td></tr>`).join("")}
+      <table><thead><tr><th>Paciente</th><th>Fecha nac.</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th><th>Notas</th></tr></thead><tbody>
+      ${rows.map(v => `<tr><td>${v.patientName}</td><td>${v.dob || "—"}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td><td>${v.notas || "—"}</td></tr>`).join("")}
       </tbody></table>`;
     openPrintWindow(`Protocolo ${protocoloLabel} — ${day}`, body);
   };
@@ -461,8 +479,8 @@ function ReportePorMes({ visits, protocoloLabel }) {
       <h2>Muestras tomadas</h2>
       <table><thead><tr><th>Tipo</th><th style="text-align:right;">Cantidad</th></tr></thead><tbody>${totalsRows(muestraTotals)}</tbody></table>
       <h2>Detalle por visita</h2>
-      <table><thead><tr><th>Fecha</th><th>Paciente</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th><th>Notas</th></tr></thead><tbody>
-      ${rows.map(v => `<tr><td>${v.date}</td><td>${v.patientName}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td><td>${v.notas || "—"}</td></tr>`).join("")}
+      <table><thead><tr><th>Fecha</th><th>Paciente</th><th>Fecha nac.</th><th>Visita</th><th>Material</th><th>Muestras</th><th>Medicamento</th><th>Notas</th></tr></thead><tbody>
+      ${rows.map(v => `<tr><td>${v.date}</td><td>${v.patientName}</td><td>${v.dob || "—"}</td><td>${v.visitNumber ?? "—"}</td><td>${fmtMaterial(v.material)}</td><td>${fmtMuestras(v.muestras)}</td><td>${fmtMedicamento(v.medicamento)}</td><td>${v.notas || "—"}</td></tr>`).join("")}
       </tbody></table>`;
     openPrintWindow(`Protocolo ${protocoloLabel} — ${month}`, body);
   };
