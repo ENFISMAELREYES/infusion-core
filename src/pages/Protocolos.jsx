@@ -52,6 +52,19 @@ const PROTOCOLOS = [
   { code: "WO46063", label: "WO46063" },
 ];
 
+// Insumos más usados en una visita de toma de muestra/IM (según el registro
+// real de mayo) -- aparecen como botón de acceso rápido arriba de la lista
+// de material, para no tener que buscarlos uno por uno cada vez. Nombres
+// tal cual el catálogo oficial de la app, no como se anotaron en la hoja de
+// control (que usaba apodos del mismo insumo).
+const QUICK_MATERIAL = [
+  "GUANTE DE LATEX MEDIANO ESTERIL",
+  "CUBREBOCAS DESECHABLE",
+  "BATA P/ CIRUJANO DESECHABLE",
+  "TOALLITAS DE ALCOHOL",
+  "BANDA ADHESIVA CIRCULAR 22 MM",
+];
+
 function inventoryDocId(warehouse, item) {
   return `${warehouse}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
 }
@@ -204,6 +217,12 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
     setMaterial(prev => [...prev, { item: draftMaterial.trim().toUpperCase(), qty: 1 }]);
     setDraftMaterial("");
   };
+  // Botón de acceso rápido: agrega el insumo con cantidad 1 si no estaba ya
+  // en la lista -- si ya está, no hace nada (la cantidad se ajusta en el
+  // campo numérico de abajo, no a base de tocar varias veces el botón).
+  const addQuickMaterial = (item) => {
+    setMaterial(prev => prev.some(m => m.item === item) ? prev : [...prev, { item, qty: 1 }]);
+  };
   const addMedicamento = () => {
     if (!draftMed.trim()) return;
     setMedicamento(prev => [...prev, { item: draftMed.trim().toUpperCase(), dosis: "", qty: 1 }]);
@@ -289,6 +308,20 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
 
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, color: "#f0f0f0", marginBottom: 8 }}>🧰 Material usado</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          {QUICK_MATERIAL.map(item => {
+            const added = material.some(m => m.item === item);
+            return (
+              <button key={item} onClick={() => addQuickMaterial(item)} disabled={added}
+                style={{ padding: "6px 10px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: added ? "default" : "pointer",
+                  background: added ? "rgba(0,212,170,0.1)" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${added ? "rgba(0,212,170,0.3)" : "rgba(255,255,255,0.08)"}`,
+                  color: added ? "#00d4aa" : "#ccc" }}>
+                {added ? "✓ " : "+ "}{item}
+              </button>
+            );
+          })}
+        </div>
         {material.map((m, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
             <span style={{ flex: 1, fontSize: 12, color: "#ccc" }}>{m.item}</span>
