@@ -5,6 +5,7 @@ import MaterialModal from "../components/MaterialModal";
 
 import { PROJECT_ID, DATABASE_ID } from "../config";
 import { openPdfBlob } from "../pdfOpen";
+import { patchInventoryDoc } from "../inventoryPatch";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -341,25 +342,15 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   // existencia agregada tiene que bajar el mismo día, igual que el lote.
   const adjustAggregateStock = async (warehouse, item, deltaQty) => {
     const docId = `${warehouse}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
-    let currentStock = 0, minStock = 0, category = "", unit = "PIEZA";
+    let existing = null;
     try {
       const getRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`, { headers:{ "Authorization":`Bearer ${token}` } });
-      if (getRes.ok) {
-        const doc = await getRes.json();
-        currentStock = parseInt(doc.fields?.currentStock?.integerValue || doc.fields?.currentStock?.doubleValue || 0);
-        minStock = parseInt(doc.fields?.minStock?.integerValue || 0);
-        category = doc.fields?.category?.stringValue || "";
-        unit = doc.fields?.unit?.stringValue || "PIEZA";
-      }
+      if (getRes.ok) existing = parseDoc(await getRes.json());
     } catch {}
-    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`,
-      { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-        body: JSON.stringify({ fields: {
-          item: { stringValue: item }, warehouse: { stringValue: warehouse },
-          category: { stringValue: category }, unit: { stringValue: unit },
-          currentStock: toFV(currentStock + deltaQty), minStock: toFV(minStock),
-          lastUpdated: { stringValue: new Date().toISOString() },
-        }}) });
+    const currentStock = existing?.currentStock ?? 0;
+    const res = await patchInventoryDoc(token, docId, existing,
+      { currentStock: currentStock + deltaQty, lastUpdated: new Date().toISOString() },
+      { item, warehouse, category: existing?.category || CATALOG_BY_NAME[item.toUpperCase()] || "", unit: existing?.unit || "PIEZA" });
     if (!res.ok) { let msg = `Error ${res.status}`; try { const b = await res.json(); msg = b?.error?.message || msg; } catch {} throw new Error(`Existencias de "${item}" en ${warehouse}: ${msg}`); }
   };
 
@@ -629,25 +620,15 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
         const inventoryDocId = (w, item) => `${w}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
         for (const it of anexoToAutoDeduct) {
           const docId = inventoryDocId(warehouse, it.item);
-          let currentStock = 0, minStock = 0, category = "", unit = "PIEZA";
+          let existing = null;
           try {
             const getRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`, { headers:{ "Authorization":`Bearer ${token}` } });
-            if (getRes.ok) {
-              const doc = await getRes.json();
-              currentStock = parseInt(doc.fields?.currentStock?.integerValue || doc.fields?.currentStock?.doubleValue || 0);
-              minStock = parseInt(doc.fields?.minStock?.integerValue || 0);
-              category = doc.fields?.category?.stringValue || "";
-              unit = doc.fields?.unit?.stringValue || "PIEZA";
-            }
+            if (getRes.ok) existing = parseDoc(await getRes.json());
           } catch {}
-          await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`,
-            { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-              body: JSON.stringify({ fields: {
-                item: { stringValue: it.item }, warehouse: { stringValue: warehouse },
-                category: { stringValue: category }, unit: { stringValue: unit },
-                currentStock: toFV(currentStock - it.qty), minStock: toFV(minStock),
-                lastUpdated: { stringValue: new Date().toISOString() },
-              }}) });
+          const currentStock = existing?.currentStock ?? 0;
+          await patchInventoryDoc(token, docId, existing,
+            { currentStock: currentStock - it.qty, lastUpdated: new Date().toISOString() },
+            { item: it.item, warehouse, category: existing?.category || CATALOG_BY_NAME[it.item.toUpperCase()] || "", unit: existing?.unit || "PIEZA" });
         }
         await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory_events`,
           { method:"POST", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
@@ -760,25 +741,15 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
 
       for (const it of itemsToDeduct) {
         const docId = inventoryDocId(warehouse, it.item);
-        let currentStock = 0, minStock = 0, category = "", unit = "PIEZA";
+        let existing = null;
         try {
           const getRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`, { headers:{ "Authorization":`Bearer ${token}` } });
-          if (getRes.ok) {
-            const doc = await getRes.json();
-            currentStock = parseInt(doc.fields?.currentStock?.integerValue || doc.fields?.currentStock?.doubleValue || 0);
-            minStock = parseInt(doc.fields?.minStock?.integerValue || 0);
-            category = doc.fields?.category?.stringValue || "";
-            unit = doc.fields?.unit?.stringValue || "PIEZA";
-          }
+          if (getRes.ok) existing = parseDoc(await getRes.json());
         } catch {}
-        const invRes = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/inventory/${docId}`,
-          { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-            body: JSON.stringify({ fields: {
-              item: { stringValue: it.item }, warehouse: { stringValue: warehouse },
-              category: { stringValue: category }, unit: { stringValue: unit },
-              currentStock: toFV(currentStock - it.qty), minStock: toFV(minStock),
-              lastUpdated: { stringValue: new Date().toISOString() },
-            }}) });
+        const currentStock = existing?.currentStock ?? 0;
+        const invRes = await patchInventoryDoc(token, docId, existing,
+          { currentStock: currentStock - it.qty, lastUpdated: new Date().toISOString() },
+          { item: it.item, warehouse, category: existing?.category || CATALOG_BY_NAME[it.item.toUpperCase()] || "", unit: existing?.unit || "PIEZA" });
         await checkOk(invRes, `Existencias de "${it.item}"`);
       }
 
