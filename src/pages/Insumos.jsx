@@ -6,6 +6,7 @@ import MaterialModal from "../components/MaterialModal";
 import { PROJECT_ID, DATABASE_ID } from "../config";
 import { openPdfBlob } from "../pdfOpen";
 import { patchInventoryDoc } from "../inventoryPatch";
+import { protocoloWarehouseFor } from "../data/protocolos";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -635,7 +636,10 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
       // material) ya se había cerrado.
       const anexoToAutoDeduct = anexoItems.filter(it => categorizeItem(it.item) === "MEDICAMENTOS" ? s.inventorySalidaMedsDone : s.inventorySalidaMaterialDone);
       if (anexoToAutoDeduct.length > 0) {
-        const warehouse = s.center === "CIPI" ? `CIPI_${(cipiVariant || "PRO").toUpperCase()}` : (s.center || "");
+        // Si el régimen de atención trae el código de un protocolo de
+        // investigación clínica, el material se descuenta de SU almacén,
+        // no del almacén normal del centro.
+        const warehouse = protocoloWarehouseFor(s.insurance) || (s.center === "CIPI" ? `CIPI_${(cipiVariant || "PRO").toUpperCase()}` : (s.center || ""));
         const inventoryDocId = (w, item) => `${w}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
         for (const it of anexoToAutoDeduct) {
           const docId = inventoryDocId(warehouse, it.item);
@@ -750,7 +754,10 @@ function PatientMaterialRow({ s, material, note, expanded, onToggle, token, user
   const confirmInvSalida = async () => {
     setSavingInv(true);
     try {
-      const warehouse = s.center === "CIPI" ? `CIPI_${(cipiVariant || "PRO").toUpperCase()}` : (s.center || "");
+      // Si el régimen de atención trae el código de un protocolo de
+      // investigación clínica, el material/medicamento se descuenta de SU
+      // almacén, no del almacén normal del centro.
+      const warehouse = protocoloWarehouseFor(s.insurance) || (s.center === "CIPI" ? `CIPI_${(cipiVariant || "PRO").toUpperCase()}` : (s.center || ""));
       const inventoryDocId = (w, item) => `${w}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
       const checkOk = async (res, label) => {
         if (!res.ok) { let msg=`Error ${res.status}`; try{const b=await res.json(); msg=b?.error?.message||msg;}catch{} throw new Error(`${label}: ${msg}`); }

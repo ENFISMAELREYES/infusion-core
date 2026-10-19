@@ -4,6 +4,7 @@ import { PROJECT_ID, FIRESTORE_BASE_URL, IS_TEST_ENV } from "../config";
 import { MASTER_CATALOG } from "../data/materialCatalog";
 import { openPdfBlob } from "../pdfOpen";
 import { patchInventoryDoc } from "../inventoryPatch";
+import { PROTOCOLOS } from "../data/protocolos";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -69,11 +70,16 @@ async function saveExtraCatalog(token, updated) {
 
 // El almacén ahora se identifica por centro real: CITIO, CIPI_PED, CIPI_PRO
 // (CIPI se dividió en dos almacenes separados por variante).
+// Un almacén por protocolo dado de alta (ver src/data/protocolos.js) -- así
+// el material que se estoquea ahí sirve tanto para las visitas de
+// muestras/IM de Protocolos.jsx como para las sesiones de infusión/
+// hidratación de ese mismo protocolo en Insumos.jsx.
+const PROTOCOLO_WAREHOUSES = PROTOCOLOS.map(p => ({ key: `PROTOCOLO_${p.code}`, label: `Protocolo ${p.label}` }));
 const WAREHOUSES = [
   { key: "CITIO", label: "CITIO" },
   { key: "CIPI_PRO", label: "CIPI PRO" },
   { key: "CIPI_PED", label: "CIPI PED" },
-  { key: "PROTOCOLO", label: "Protocolos" },
+  ...PROTOCOLO_WAREHOUSES,
 ];
 // Inventario general de la farmacia (QualMedical) -- todo el medicamento
 // pertenece a esta farmacia antes de asignarse a un centro. Solo el jefe lo
@@ -145,10 +151,10 @@ export default function Inventario() {
   // el día de la sesión, ver Insumos.jsx), así que cualquier enfermera de
   // CITIO entra a Qual·CITIO igual que a su propio almacén, y lo mismo
   // CIPI con Qual·CIPI.
-  // "Protocolos" no es de un centro -- es el almacén de material de los
-  // protocolos de investigación clínica (ver Protocolos.jsx), así que se
-  // ve igual sin importar el centro de la cuenta.
-  const allowedWarehouses = canSeeAllCenters ? null : [...(profile?.center === "CIPI" ? ["CIPI_PRO","CIPI_PED","QUAL_CIPI"] : ["CITIO","QUAL_CITIO"]), "PROTOCOLO"];
+  // Los almacenes de protocolo no son de un centro -- son el material de
+  // los protocolos de investigación clínica (ver Protocolos.jsx), así que
+  // se ven igual sin importar el centro de la cuenta.
+  const allowedWarehouses = canSeeAllCenters ? null : [...(profile?.center === "CIPI" ? ["CIPI_PRO","CIPI_PED","QUAL_CIPI"] : ["CITIO","QUAL_CITIO"]), ...PROTOCOLO_WAREHOUSES.map(w => w.key)];
   const [tab, setTab] = useState("existencias"); // "existencias" | "movimientos"
   const [movSubTab, setMovSubTab] = useState("historial"); // "historial" | "conteos" -- sub-pestaña dentro de Movimientos, para no saturar la barra principal con el historial de conteos físicos aparte
   const [warehouse, setWarehouse] = useState(() => canSeeAllCenters ? "CITIO" : (allowedWarehouses?.[0] || "CITIO"));

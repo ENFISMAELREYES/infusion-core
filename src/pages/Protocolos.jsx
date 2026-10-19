@@ -3,6 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { FIRESTORE_BASE_URL } from "../config";
 import { MASTER_CATALOG } from "../data/materialCatalog";
 import { patchInventoryDoc } from "../inventoryPatch";
+import { PROTOCOLOS } from "../data/protocolos";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -40,18 +41,14 @@ async function fetchCollection(token, collectionId, limit = 1000) {
   return data.filter(d => d.document).map(d => parseDoc(d.document));
 }
 
-// Mismo criterio que Inventario.jsx: el almacén "PROTOCOLO" es donde vive el
-// material/medicamento de los protocolos de investigación clínica, al
-// margen de CITIO/CIPI.
-const WAREHOUSE = "PROTOCOLO";
+// El almacén de cada protocolo es "PROTOCOLO_<código>" (ej. PROTOCOLO_WO46063)
+// -- mismo criterio que CIPI_PRO/CIPI_PED en Inventario.jsx, uno por
+// protocolo en vez de uno genérico. Así el material que se estoquea ahí
+// sirve tanto para las visitas de muestras/IM capturadas aquí como para
+// las sesiones de infusión/hidratación de ese mismo protocolo en Insumos.jsx
+// (ver régimen de atención -> almacén de protocolo).
+const warehouseFor = (code) => `PROTOCOLO_${code}`;
 const MED_CATEGORIES = ["Medicamentos", "Oncológicos", "Inmunoterapia"];
-// Protocolos de investigación clínica dados de alta -- cada uno se
-// identifica por su código real (el que usa el patrocinador/CRO), nunca
-// por un nombre interno. Para agregar el siguiente (ej. el de infusión
-// que viene en camino) basta con sumar una línea aquí.
-const PROTOCOLOS = [
-  { code: "WO46063", label: "WO46063" },
-];
 
 // Insumos más usados en una visita de toma de muestra/IM (según el registro
 // real de mayo) -- aparecen como botón de acceso rápido arriba de la lista
@@ -92,8 +89,8 @@ function inventoryDeltas(oldArr, newArr) {
 // existencia registrada ahí, SÍ se crea y se le permite quedar en números
 // rojos (igual que ya funciona en Inventario.jsx: refleja que ya se usó
 // algo pendiente de reponer, en vez de saltárselo en silencio).
-async function applyInventoryDelta(token, item, delta) {
-  const docId = inventoryDocId(WAREHOUSE, item);
+async function applyInventoryDelta(token, warehouse, item, delta) {
+  const docId = inventoryDocId(warehouse, item);
   let existing = null;
   try {
     const getRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`, { headers: { Authorization: `Bearer ${token}` } });
@@ -103,7 +100,7 @@ async function applyInventoryDelta(token, item, delta) {
   const newStock = currentStock - delta;
   await patchInventoryDoc(token, docId, existing,
     { currentStock: newStock, lastUpdated: new Date().toISOString() },
-    { item, warehouse: WAREHOUSE, category: "", unit: "PIEZA" });
+    { item, warehouse, category: "", unit: "PIEZA" });
   return newStock;
 }
 
@@ -239,6 +236,7 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
   const [draftMed, setDraftMed] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [materialOpen, setMaterialOpen] = useState(true);
 
   // Precarga el formulario con la visita a corregir -- faltó agregar
   // material, o al final sí pasó a hidratación y hay que sumar algo más.
@@ -320,7 +318,7 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
       // saltarse el descuento en silencio.
       const negativos = [];
       for (const it of [...material, ...medicamento]) {
-        const newStock = await applyInventoryDelta(token, it.item, it.qty || 0);
+        const newStock = await applyInventoryDelta(token, warehouseFor(protocolo), it.item, it.qty || 0);
         if (newStock < 0) negativos.push(it.item);
       }
 
@@ -360,7 +358,7 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
       const newCombined = [...material, ...medicamento];
       const negativos = [];
       for (const { item, delta } of inventoryDeltas(oldCombined, newCombined)) {
-        const newStock = await applyInventoryDelta(token, item, delta);
+        const newStock = await applyInventoryDelta(token, warehouseFor(editingVisit.protocolo || protocolo), item, delta);
         if (newStock < 0) negativos.push(item);
       }
 
@@ -408,7 +406,11 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
       </div>
 
       <div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "#f0f0f0", marginBottom: 8 }}>🧰 Material usado</div>
+        <div onClick={() => setMaterialOpen(o => !o)} style={{ fontSize: 13, fontWeight: 600, color: "#f0f0f0", marginBottom: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, userSelect: "none" }}>
+          <span style={{ fontSize: 10, color: "#666" }}>{materialOpen ? "▾" : "▸"}</span>
+          🧰 Material usado
+          {material.length > 0 && <span style={{ fontSize: 11, color: "#888", fontWeight: 400 }}>({material.length})</span>}
+        </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
           {QUICK_MATERIAL.map(item => {
             const added = material.some(m => m.item === item);
@@ -423,7 +425,7 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
             );
           })}
         </div>
-        {material.map((m, i) => (
+        {materialOpen && material.map((m, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
             <span style={{ flex: 1, fontSize: 12, color: "#ccc" }}>{m.item}</span>
             <input type="number" min="1" value={m.qty} onChange={e => setMaterial(prev => prev.map((x, xi) => xi === i ? { ...x, qty: Math.max(1, Number(e.target.value)) } : x))}
