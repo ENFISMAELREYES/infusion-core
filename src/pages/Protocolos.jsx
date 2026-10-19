@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { FIRESTORE_BASE_URL } from "../config";
 import { MASTER_CATALOG } from "../data/materialCatalog";
+import { patchInventoryDoc } from "../inventoryPatch";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -67,6 +68,43 @@ const QUICK_MATERIAL = [
 
 function inventoryDocId(warehouse, item) {
   return `${warehouse}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
+}
+
+// Diferencia entre lo que ya se había descontado (oldArr) y lo que debería
+// quedar descontado ahora (newArr) -- se usa al editar una visita ya
+// guardada, para no volver a descontar todo desde cero (duplicaría el
+// descuento) sino solo el delta: positivo = descontar más, negativo =
+// regresar al inventario lo que ya no se usó.
+function inventoryDeltas(oldArr, newArr) {
+  const oldMap = Object.fromEntries((oldArr || []).map(x => [x.item, x.qty || 0]));
+  const newMap = Object.fromEntries((newArr || []).map(x => [x.item, x.qty || 0]));
+  const items = new Set([...Object.keys(oldMap), ...Object.keys(newMap)]);
+  const out = [];
+  items.forEach(item => {
+    const delta = (newMap[item] || 0) - (oldMap[item] || 0);
+    if (delta !== 0) out.push({ item, delta });
+  });
+  return out;
+}
+
+// Descuenta (o regresa, si delta es negativo) un insumo del almacén del
+// protocolo -- a diferencia de antes, si el artículo todavía no tiene
+// existencia registrada ahí, SÍ se crea y se le permite quedar en números
+// rojos (igual que ya funciona en Inventario.jsx: refleja que ya se usó
+// algo pendiente de reponer, en vez de saltárselo en silencio).
+async function applyInventoryDelta(token, item, delta) {
+  const docId = inventoryDocId(WAREHOUSE, item);
+  let existing = null;
+  try {
+    const getRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (getRes.ok) existing = parseDoc(await getRes.json());
+  } catch {}
+  const currentStock = existing?.currentStock ?? 0;
+  const newStock = currentStock - delta;
+  await patchInventoryDoc(token, docId, existing,
+    { currentStock: newStock, lastUpdated: new Date().toISOString() },
+    { item, warehouse: WAREHOUSE, category: "", unit: "PIEZA" });
+  return newStock;
 }
 
 const todayStr = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
@@ -140,6 +178,10 @@ export default function Protocolos() {
   const patientOptions = [...new Set(visitsDelProtocolo.map(v => v.patientName).filter(Boolean))].sort();
 
   const [tab, setTab] = useState(canCapture ? "captura" : "paciente");
+  // Visita que se está corrigiendo (ej. faltó agregar material, o al final
+  // sí pasó a hidratación) -- null cuando el formulario es para una nueva.
+  const [editingVisit, setEditingVisit] = useState(null);
+  const startEdit = (v) => { setEditingVisit(v); setTab("captura"); };
 
   if (blocked) return <div style={{ padding: 40, color: "#666", textAlign: "center" }}>No tienes acceso a esta sección.</div>;
 
@@ -172,18 +214,19 @@ export default function Protocolos() {
         <>
           {tab === "captura" && canCapture && (
             <CapturaForm token={token} profile={profile} visits={visitsDelProtocolo} protocolo={protocolo} insumoOptions={insumoOptions} medOptions={medOptions}
-              patientOptions={patientOptions} onSaved={() => loadVisits(token)} />
+              patientOptions={patientOptions} editingVisit={editingVisit} onCancelEdit={() => setEditingVisit(null)}
+              onSaved={() => { setEditingVisit(null); loadVisits(token); }} />
           )}
-          {tab === "paciente" && <ReportePorPaciente visits={visitsDelProtocolo} patientOptions={patientOptions} protocoloLabel={protocoloLabel} />}
-          {tab === "dia" && <ReportePorDia visits={visitsDelProtocolo} protocoloLabel={protocoloLabel} />}
-          {tab === "mes" && <ReportePorMes visits={visitsDelProtocolo} protocoloLabel={protocoloLabel} />}
+          {tab === "paciente" && <ReportePorPaciente visits={visitsDelProtocolo} patientOptions={patientOptions} protocoloLabel={protocoloLabel} canEdit={canCapture} onEdit={startEdit} />}
+          {tab === "dia" && <ReportePorDia visits={visitsDelProtocolo} protocoloLabel={protocoloLabel} canEdit={canCapture} onEdit={startEdit} />}
+          {tab === "mes" && <ReportePorMes visits={visitsDelProtocolo} protocoloLabel={protocoloLabel} canEdit={canCapture} onEdit={startEdit} />}
         </>
       )}
     </div>
   );
 }
 
-function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOptions, patientOptions, onSaved }) {
+function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOptions, patientOptions, editingVisit, onCancelEdit, onSaved }) {
   const [patientName, setPatientName] = useState("");
   const [dob, setDob] = useState("");
   const [date, setDate] = useState(todayStr());
@@ -196,6 +239,21 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
   const [draftMed, setDraftMed] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+
+  // Precarga el formulario con la visita a corregir -- faltó agregar
+  // material, o al final sí pasó a hidratación y hay que sumar algo más.
+  useEffect(() => {
+    if (!editingVisit) return;
+    setPatientName(editingVisit.patientName || "");
+    setDob(editingVisit.dob || "");
+    setDate(editingVisit.date || todayStr());
+    setVisitNumber(editingVisit.visitNumber != null ? String(editingVisit.visitNumber) : "");
+    setMaterial(editingVisit.material || []);
+    setMuestras(editingVisit.muestras || []);
+    setMedicamento(editingVisit.medicamento || []);
+    setNotas(editingVisit.notas || "");
+    setNotice("");
+  }, [editingVisit?.id]);
 
   // Precarga la fecha de nacimiento de visitas anteriores con el mismo
   // nombre -- igual que ya se hace con dob en NuevaSession, la fecha de
@@ -255,26 +313,62 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
       });
       if (!res.ok) throw new Error(`Error ${res.status} al guardar la visita`);
 
-      // Descontar del almacén "Protocolos" de Inventario -- best-effort: si
-      // el artículo todavía no tiene una entrada registrada ahí, se avisa
-      // pero la visita ya quedó guardada (el control clínico no depende de
-      // que el inventario esté al día).
-      const missing = [];
+      // Descontar del almacén "Protocolos" de Inventario -- igual que en
+      // Inventario.jsx, se PERMITE quedar en números rojos si no hay
+      // existencia suficiente (o el artículo nunca se había registrado
+      // ahí): refleja que ya se usó, pendiente de reponer, en vez de
+      // saltarse el descuento en silencio.
+      const negativos = [];
       for (const it of [...material, ...medicamento]) {
-        const docId = inventoryDocId(WAREHOUSE, it.item);
-        const getRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`, { headers: { Authorization: `Bearer ${token}` } });
-        if (!getRes.ok) { missing.push(it.item); continue; }
-        const doc = parseDoc(await getRes.json());
-        await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}?updateMask.fieldPaths=currentStock&updateMask.fieldPaths=lastUpdated`, {
-          method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body: JSON.stringify({ fields: { currentStock: toFV((doc.currentStock || 0) - (it.qty || 0)), lastUpdated: toFV(new Date().toISOString()) } }),
-        });
+        const newStock = await applyInventoryDelta(token, it.item, it.qty || 0);
+        if (newStock < 0) negativos.push(it.item);
       }
 
       setPatientName(""); setDob(""); setVisitNumber(""); setMaterial([]); setMuestras([]); setMedicamento([]); setNotas("");
-      setNotice(missing.length > 0
-        ? `Visita guardada. Sin descontar (no están registrados en el almacén "Protocolos" de Inventario): ${missing.join(", ")}.`
+      setNotice(negativos.length > 0
+        ? `Visita guardada. Sin existencia suficiente (quedó en números rojos en Inventario, hay que reponer): ${negativos.join(", ")}.`
         : "Visita guardada.");
+      onSaved();
+    } catch (e) {
+      setNotice("Error al guardar: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveEdit = async () => {
+    if (!patientName.trim()) { setNotice("Falta el nombre del paciente."); return; }
+    if (!dob) { setNotice("Falta la fecha de nacimiento (regla de identificación del paciente)."); return; }
+    setSaving(true);
+    setNotice("");
+    try {
+      const updated = {
+        patientName: patientName.trim(), dob, date, visitNumber: visitNumber.trim() || null,
+        material, muestras, medicamento, notas: notas.trim(),
+      };
+      const mask = Object.keys(updated).map(k => `updateMask.fieldPaths=${k}`).join("&");
+      const res = await fetch(`${FIRESTORE_BASE_URL}/protocol_visits/${editingVisit.id}?${mask}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ fields: Object.fromEntries(Object.entries(updated).map(([k, v]) => [k, toFV(v)])) }),
+      });
+      if (!res.ok) throw new Error(`Error ${res.status} al guardar los cambios`);
+
+      // Solo se ajusta el delta contra lo que ya se había descontado --
+      // evita volver a descontar todo desde cero (lo que duplicaría el
+      // descuento de lo que no cambió).
+      const oldCombined = [...(editingVisit.material || []), ...(editingVisit.medicamento || [])];
+      const newCombined = [...material, ...medicamento];
+      const negativos = [];
+      for (const { item, delta } of inventoryDeltas(oldCombined, newCombined)) {
+        const newStock = await applyInventoryDelta(token, item, delta);
+        if (newStock < 0) negativos.push(item);
+      }
+
+      setNotice(negativos.length > 0
+        ? `Cambios guardados. Sin existencia suficiente (quedó en números rojos en Inventario, hay que reponer): ${negativos.join(", ")}.`
+        : "Cambios guardados.");
+      onCancelEdit();
+      setPatientName(""); setDob(""); setVisitNumber(""); setMaterial([]); setMuestras([]); setMedicamento([]); setNotas("");
       onSaved();
     } catch (e) {
       setNotice("Error al guardar: " + e.message);
@@ -285,6 +379,13 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {editingVisit && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: "#ffb347", background: "rgba(255,179,71,0.08)", border: "1px solid rgba(255,179,71,0.25)", borderRadius: 8, padding: "8px 12px" }}>
+          <span>✏️ Editando la visita de {editingVisit.patientName} ({editingVisit.date})</span>
+          <button onClick={() => { onCancelEdit(); setPatientName(""); setDob(""); setVisitNumber(""); setMaterial([]); setMuestras([]); setMedicamento([]); setNotas(""); setNotice(""); }}
+            style={removeBtnStyle}>Cancelar</button>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <div>
           <label style={{ display: "block", fontSize: 11, color: "#666", marginBottom: 4 }}>Paciente</label>
@@ -384,14 +485,14 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
 
       {notice && <div style={{ fontSize: 12, color: notice.startsWith("Error") ? "#ff6b6b" : "#00d4aa", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "8px 12px" }}>{notice}</div>}
 
-      <button onClick={save} disabled={saving} style={{ ...btnStyle, alignSelf: "flex-start", padding: "10px 20px", fontSize: 13, cursor: saving ? "wait" : "pointer" }}>
-        {saving ? "Guardando…" : "Guardar visita"}
+      <button onClick={editingVisit ? saveEdit : save} disabled={saving} style={{ ...btnStyle, alignSelf: "flex-start", padding: "10px 20px", fontSize: 13, cursor: saving ? "wait" : "pointer" }}>
+        {saving ? "Guardando…" : editingVisit ? "Guardar cambios" : "Guardar visita"}
       </button>
     </div>
   );
 }
 
-function VisitTable({ rows, showPatient }) {
+function VisitTable({ rows, showPatient, canEdit, onEdit }) {
   if (rows.length === 0) return <div style={{ color: "#444", padding: 30, textAlign: "center", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 14 }}>Sin visitas para este filtro.</div>;
   return (
     <div style={{ overflowX: "auto" }}>
@@ -406,6 +507,7 @@ function VisitTable({ rows, showPatient }) {
             <th style={{ padding: "6px 8px" }}>Muestras</th>
             <th style={{ padding: "6px 8px" }}>Medicamento</th>
             <th style={{ padding: "6px 8px" }}>Notas</th>
+            {canEdit && <th style={{ padding: "6px 8px" }}></th>}
           </tr>
         </thead>
         <tbody>
@@ -419,6 +521,10 @@ function VisitTable({ rows, showPatient }) {
               <td style={{ padding: "6px 8px", color: "#00d4aa" }}>{fmtMuestras(v.muestras)}</td>
               <td style={{ padding: "6px 8px", color: "#ffb347" }}>{fmtMedicamento(v.medicamento)}</td>
               <td style={{ padding: "6px 8px", color: "#999" }}>{v.notas || "—"}</td>
+              {canEdit && <td style={{ padding: "6px 8px" }}>
+                <button onClick={() => onEdit(v)} title="Editar material/muestras/medicamento de esta visita"
+                  style={{ padding: "3px 8px", borderRadius: 6, fontSize: 11, cursor: "pointer", background: "rgba(175,169,236,0.1)", border: "1px solid rgba(175,169,236,0.3)", color: "#AFA9EC" }}>✏️</button>
+              </td>}
             </tr>
           ))}
         </tbody>
@@ -427,7 +533,7 @@ function VisitTable({ rows, showPatient }) {
   );
 }
 
-function ReportePorPaciente({ visits, patientOptions, protocoloLabel }) {
+function ReportePorPaciente({ visits, patientOptions, protocoloLabel, canEdit, onEdit }) {
   const [patient, setPatient] = useState(patientOptions[0] || "");
   useEffect(() => { if (!patient && patientOptions.length > 0) setPatient(patientOptions[0]); }, [patientOptions]);
 
@@ -455,12 +561,12 @@ function ReportePorPaciente({ visits, patientOptions, protocoloLabel }) {
         {dob && <span style={{ fontSize: 12, color: "#888" }}>Fecha de nacimiento: {dob}</span>}
         <button onClick={print} style={btnStyle}>🖨️ Imprimir</button>
       </div>
-      <VisitTable rows={rows} showPatient={false} />
+      <VisitTable rows={rows} showPatient={false} canEdit={canEdit} onEdit={onEdit} />
     </div>
   );
 }
 
-function ReportePorDia({ visits, protocoloLabel }) {
+function ReportePorDia({ visits, protocoloLabel, canEdit, onEdit }) {
   const [day, setDay] = useState(todayStr());
   const rows = visits.filter(v => v.date === day).sort((a, b) => (a.patientName || "").localeCompare(b.patientName || ""));
 
@@ -482,12 +588,12 @@ function ReportePorDia({ visits, protocoloLabel }) {
         <button onClick={() => { const d = new Date(day + "T12:00:00"); d.setDate(d.getDate() + 1); setDay(d.toLocaleDateString("en-CA")); }} style={{ ...inputStyle, cursor: "pointer" }}>▶</button>
         <button onClick={print} style={btnStyle}>🖨️ Imprimir</button>
       </div>
-      <VisitTable rows={rows} showPatient={true} />
+      <VisitTable rows={rows} showPatient={true} canEdit={canEdit} onEdit={onEdit} />
     </div>
   );
 }
 
-function ReportePorMes({ visits, protocoloLabel }) {
+function ReportePorMes({ visits, protocoloLabel, canEdit, onEdit }) {
   const [month, setMonth] = useState(todayStr().slice(0, 7));
   const rows = visits.filter(v => (v.date || "").startsWith(month)).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const patients = new Set(rows.map(v => v.patientName));
@@ -527,7 +633,7 @@ function ReportePorMes({ visits, protocoloLabel }) {
       <div style={{ marginBottom: 16, fontSize: 13, color: "#888" }}>
         {rows.length} visita{rows.length !== 1 ? "s" : ""} · {patients.size} paciente{patients.size !== 1 ? "s" : ""}
       </div>
-      <VisitTable rows={rows} showPatient={true} />
+      <VisitTable rows={rows} showPatient={true} canEdit={canEdit} onEdit={onEdit} />
     </div>
   );
 }
