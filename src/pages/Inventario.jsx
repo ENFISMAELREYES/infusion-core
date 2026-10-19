@@ -3,6 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { PROJECT_ID, FIRESTORE_BASE_URL, IS_TEST_ENV } from "../config";
 import { MASTER_CATALOG } from "../data/materialCatalog";
 import { openPdfBlob } from "../pdfOpen";
+import { patchInventoryDoc } from "../inventoryPatch";
 
 function parseDoc(doc) {
   const parse = (v) => {
@@ -230,15 +231,9 @@ export default function Inventario() {
       const sumForItem = updatedLots.filter(l => l.warehouse === lot.warehouse && l.item === lot.item).reduce((acc, l) => acc + (l.cantidadDisponible || 0), 0);
       const docId = inventoryDocId(lot.warehouse, lot.item);
       const existingInv = inventory.find(i => i.id === docId);
-      const invRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`,
-        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-          body: JSON.stringify({ fields: {
-            item: { stringValue: lot.item }, warehouse: { stringValue: lot.warehouse },
-            category: { stringValue: existingInv?.category || "" }, unit: { stringValue: existingInv?.unit || "PIEZA" },
-            currentStock: toFV(sumForItem), minStock: toFV(existingInv?.minStock ?? 0), maxStock: toFV(existingInv?.maxStock ?? 0),
-            lastCost: toFV(existingInv?.lastCost ?? 0), avgCost: toFV(existingInv?.avgCost ?? 0), totalReceived: toFV(existingInv?.totalReceived ?? 0),
-            lastUpdated: { stringValue: new Date().toISOString() },
-          }}) });
+      const invRes = await patchInventoryDoc(token, docId, existingInv,
+        { currentStock: sumForItem, lastUpdated: new Date().toISOString() },
+        { item: lot.item, warehouse: lot.warehouse, category: existingInv?.category || "", unit: existingInv?.unit || "PIEZA" });
       if (!invRes.ok) { const err = await invRes.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${invRes.status}`); }
 
       setInventoryLots(updatedLots);
@@ -267,15 +262,7 @@ export default function Inventario() {
     setSavingAdjustStock(true);
     try {
       const doc = adjustStock;
-      const res = await fetch(`${FIRESTORE_BASE_URL}/inventory/${doc.id}`,
-        { method:"PATCH", headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
-          body: JSON.stringify({ fields: {
-            item: { stringValue: doc.item }, warehouse: { stringValue: doc.warehouse },
-            category: { stringValue: doc.category || "" }, unit: { stringValue: doc.unit || "PIEZA" },
-            currentStock: toFV(qty), minStock: toFV(doc.minStock ?? 0), maxStock: toFV(doc.maxStock ?? 0),
-            lastCost: toFV(doc.lastCost ?? 0), avgCost: toFV(doc.avgCost ?? 0), totalReceived: toFV(doc.totalReceived ?? 0),
-            lastUpdated: { stringValue: new Date().toISOString() },
-          }}) });
+      const res = await patchInventoryDoc(token, doc.id, doc, { currentStock: qty, lastUpdated: new Date().toISOString() });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || `Error ${res.status}`); }
       setInventory(prev => prev.map(x => x.id === doc.id ? { ...x, currentStock: qty } : x));
       setAdjustStock(null); setAdjustStockQty("");
@@ -927,16 +914,9 @@ export default function Inventario() {
         const currentStock = existing?.currentStock ?? 0;
         // Revertir: si el movimiento original fue entrada, se resta; si fue salida, se suma de vuelta.
         const newStock = ev.type === "entrada" ? currentStock - qty : currentStock + qty;
-        const invRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`, {
-          method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body: JSON.stringify({ fields: {
-            item: { stringValue: item }, warehouse: { stringValue: ev.warehouse },
-            category: { stringValue: existing?.category || "" }, unit: { stringValue: existing?.unit || "PIEZA" },
-            currentStock: toFV(newStock), minStock: toFV(existing?.minStock ?? 0), maxStock: toFV(existing?.maxStock ?? 0),
-            lastCost: toFV(existing?.lastCost ?? 0), avgCost: toFV(existing?.avgCost ?? 0), totalReceived: toFV(existing?.totalReceived ?? 0),
-            lastUpdated: { stringValue: new Date().toISOString() },
-          }}),
-        });
+        const invRes = await patchInventoryDoc(token, docId, existing,
+          { currentStock: newStock, lastUpdated: new Date().toISOString() },
+          { item, warehouse: ev.warehouse, category: existing?.category || "", unit: existing?.unit || "PIEZA" });
         await checkOk(invRes, `Existencias de "${item}"`);
       }
 
@@ -1006,17 +986,9 @@ export default function Inventario() {
         const fromDocId = inventoryDocId(warehouse, item);
         const fromExisting = inventory.find(i => i.id === fromDocId);
         const fromStock = fromExisting?.currentStock ?? 0;
-        const fromRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${fromDocId}`, {
-          method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body: JSON.stringify({ fields: {
-            item: { stringValue: item }, warehouse: { stringValue: warehouse },
-            category: { stringValue: catalogEntry?.category || fromExisting?.category || "" },
-            unit: { stringValue: catalogEntry?.unit || fromExisting?.unit || "PIEZA" },
-            currentStock: toFV(fromStock - qty), minStock: toFV(fromExisting?.minStock ?? 0), maxStock: toFV(fromExisting?.maxStock ?? 0),
-            lastCost: toFV(fromExisting?.lastCost ?? 0), avgCost: toFV(fromExisting?.avgCost ?? 0), totalReceived: toFV(fromExisting?.totalReceived ?? 0),
-            lastUpdated: { stringValue: new Date().toISOString() },
-          }}),
-        });
+        const fromRes = await patchInventoryDoc(token, fromDocId, fromExisting,
+          { currentStock: fromStock - qty, lastUpdated: new Date().toISOString() },
+          { item, warehouse, category: catalogEntry?.category || fromExisting?.category || "", unit: catalogEntry?.unit || fromExisting?.unit || "PIEZA" });
         await checkOk(fromRes, `Salida de "${item}" en ${warehouseLabel(warehouse)}`);
 
         // Sumar al almacén destino, llevándose el costo consigo (se pondera
@@ -1031,17 +1003,9 @@ export default function Inventario() {
         const newAvgCost = sourceCost > 0
           ? ((toAvgCost * toTotalReceived) + (sourceCost * qty)) / (newTotalReceived || 1)
           : toAvgCost;
-        const toRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${toDocId}`, {
-          method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body: JSON.stringify({ fields: {
-            item: { stringValue: item }, warehouse: { stringValue: transferTo },
-            category: { stringValue: catalogEntry?.category || toExisting?.category || "" },
-            unit: { stringValue: catalogEntry?.unit || toExisting?.unit || "PIEZA" },
-            currentStock: toFV(toStock + qty), minStock: toFV(toExisting?.minStock ?? 0), maxStock: toFV(toExisting?.maxStock ?? 0),
-            lastCost: toFV(sourceCost || toExisting?.lastCost || 0), avgCost: toFV(newAvgCost), totalReceived: toFV(newTotalReceived),
-            lastUpdated: { stringValue: new Date().toISOString() },
-          }}),
-        });
+        const toRes = await patchInventoryDoc(token, toDocId, toExisting,
+          { currentStock: toStock + qty, lastCost: sourceCost || toExisting?.lastCost || 0, avgCost: newAvgCost, totalReceived: newTotalReceived, lastUpdated: new Date().toISOString() },
+          { item, warehouse: transferTo, category: catalogEntry?.category || toExisting?.category || "", unit: catalogEntry?.unit || toExisting?.unit || "PIEZA" });
         await checkOk(toRes, `Entrada de "${item}" en ${warehouseLabel(transferTo)}`);
       }
 
@@ -1315,33 +1279,25 @@ export default function Inventario() {
         const docId = inventoryDocId(warehouse, item);
         const existing = inventory.find(i => i.id === docId);
         const currentStock = existing?.currentStock ?? 0;
-        const minStock = existing?.minStock ?? 0;
         const catalogEntry = effectiveCatalog.find(c => c.item === item);
         const newStock = type === "entrada" ? currentStock + qty : currentStock - qty;
 
         // Costo: solo se actualiza en entradas y solo si se capturó un costo.
         // El promedio es ponderado por cantidad recibida a lo largo del tiempo.
-        let lastCost = existing?.lastCost ?? 0;
-        let avgCost = existing?.avgCost ?? 0;
-        let totalReceived = existing?.totalReceived ?? 0;
+        // Si no cambia, no se vuelve a enviar -- así nunca se arriesga con un
+        // valor desactualizado.
+        const changedFields = { currentStock: newStock, lastUpdated: new Date().toISOString() };
         if (type === "entrada" && cost > 0) {
+          const totalReceived = existing?.totalReceived ?? 0;
+          const avgCost = existing?.avgCost ?? 0;
           const newTotalReceived = totalReceived + qty;
-          avgCost = newTotalReceived > 0 ? ((avgCost * totalReceived) + (cost * qty)) / newTotalReceived : cost;
-          totalReceived = newTotalReceived;
-          lastCost = cost;
+          changedFields.avgCost = newTotalReceived > 0 ? ((avgCost * totalReceived) + (cost * qty)) / newTotalReceived : cost;
+          changedFields.totalReceived = newTotalReceived;
+          changedFields.lastCost = cost;
         }
 
-        const invRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${docId}`, {
-          method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body: JSON.stringify({ fields: {
-            item: { stringValue: item }, warehouse: { stringValue: warehouse },
-            category: { stringValue: catalogEntry?.category || existing?.category || "" },
-            unit: { stringValue: catalogEntry?.unit || existing?.unit || "PIEZA" },
-            currentStock: toFV(newStock), minStock: toFV(minStock), maxStock: toFV(existing?.maxStock ?? 0),
-            lastCost: toFV(lastCost), avgCost: toFV(avgCost), totalReceived: toFV(totalReceived),
-            lastUpdated: { stringValue: new Date().toISOString() },
-          }}),
-        });
+        const invRes = await patchInventoryDoc(token, docId, existing, changedFields,
+          { item, warehouse, category: catalogEntry?.category || existing?.category || "", unit: catalogEntry?.unit || existing?.unit || "PIEZA" });
         await checkOk(invRes, `Existencias de "${item}"`);
       }
 
@@ -1400,17 +1356,9 @@ export default function Inventario() {
             const qualExisting = inventory.find(i => i.id === qualDocId);
             const qualCurrentStock = qualExisting?.currentStock ?? 0;
             const catalogEntry = effectiveCatalog.find(c => c.item === item);
-            const qualRes = await fetch(`${FIRESTORE_BASE_URL}/inventory/${qualDocId}`, {
-              method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-              body: JSON.stringify({ fields: {
-                item: { stringValue: item }, warehouse: { stringValue: qualWarehouse },
-                category: { stringValue: catalogEntry?.category || qualExisting?.category || "" },
-                unit: { stringValue: catalogEntry?.unit || qualExisting?.unit || "PIEZA" },
-                currentStock: toFV(qualCurrentStock - qty), minStock: toFV(qualExisting?.minStock ?? 0), maxStock: toFV(qualExisting?.maxStock ?? 0),
-                lastCost: toFV(qualExisting?.lastCost ?? 0), avgCost: toFV(qualExisting?.avgCost ?? 0), totalReceived: toFV(qualExisting?.totalReceived ?? 0),
-                lastUpdated: { stringValue: new Date().toISOString() },
-              }}),
-            });
+            const qualRes = await patchInventoryDoc(token, qualDocId, qualExisting,
+              { currentStock: qualCurrentStock - qty, lastUpdated: new Date().toISOString() },
+              { item, warehouse: qualWarehouse, category: catalogEntry?.category || qualExisting?.category || "", unit: catalogEntry?.unit || qualExisting?.unit || "PIEZA" });
             await checkOk(qualRes, `Traslado desde ${warehouseLabel(qualWarehouse)} de "${item}"`);
           }
           await fetch(`${FIRESTORE_BASE_URL}/inventory_events`, {
