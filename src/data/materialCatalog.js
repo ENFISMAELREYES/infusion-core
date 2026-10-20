@@ -2524,6 +2524,10 @@ const PREMEDICACION_DRUGS = new Set([
     if (combined[item] !== undefined) combined[item] = qty;
   });
   (session.extraMaterial || []).forEach(({ item, qty }) => add(item, qty || 0));
+  // Medicamento anexado aparte (ver MaterialModal.jsx) -- separado de
+  // extraMaterial para que se guarde y valide del lado de medicamentos,
+  // no del lado de insumos.
+  (session.extraMedicamento || []).forEach(({ item, qty }) => add(item, qty || 0));
 
   // Piezas del medicamento en sí (frascos/ampolletas según la dosis) -- se
   // agrega AL FINAL a propósito: su cantidad correcta solo la define

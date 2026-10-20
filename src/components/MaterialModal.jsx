@@ -1,8 +1,15 @@
 import { useState, useEffect } from "react";
 import { computeSessionMaterial, computeMedicationPieces, getMedicationPresentations, MASTER_CATALOG } from "../data/materialCatalog";
 import { useAuth } from "../hooks/useAuth";
-
 import { PROJECT_ID, DATABASE_ID } from "../config";
+
+// Mismo criterio que Insumos.jsx/Inventario.jsx para distinguir qué
+// categorías del catálogo cuentan como "medicamento" -- separa el buscador
+// de "anexar" en dos (insumo/solución vs. medicamento), para que lo que se
+// agregue aquí se guarde y valide del lado correcto (antes, un medicamento
+// agregado por aquí se guardaba como material y pasaba por el checkup de
+// insumos, no por el de medicamentos).
+const MED_CATEGORIES = ["Medicamentos", "Oncológicos", "Inmunoterapia"];
 
 function parseFirestoreDoc(doc) {
   const parse = (v) => {
@@ -135,6 +142,8 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
   const [excludedItems, setExcludedItems] = useState(session.excludedMaterial || []);
   const [extraItems, setExtraItems] = useState(session.extraMaterial || []);
   const [extraSearch, setExtraSearch] = useState("");
+  const [extraMedItems, setExtraMedItems] = useState(session.extraMedicamento || []);
+  const [extraMedSearch, setExtraMedSearch] = useState("");
   const [qtyOverrides, setQtyOverrides] = useState(session.qtyOverrides || {});
   const [pieceOverrides, setPieceOverrides] = useState(session.pieceOverrides || {});
   const [materialNote, setMaterialNote] = useState(session.materialNote || "");
@@ -147,12 +156,13 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
   // medicamentos sin afectar (o ignorar) los insumos, y viceversa. El
   // cálculo se sigue viendo junto en esta misma pantalla -- solo el
   // guardado quedó separado.
-  const saveMedsRequest = async (newPieceOverrides) => {
+  const saveMedsRequest = async (newPieceOverrides, newExtraMedItems) => {
     setSavingMeds(true);
     try {
       const freshToken = await user.getIdToken(true);
       await patchSession(freshToken, session.id, {
         pieceOverrides: newPieceOverrides,
+        extraMedicamento: newExtraMedItems,
         medsSolicitudGuardada: true,
         medsSolicitudGuardadaAt: new Date().toISOString(),
         // SOLICITA es quien guarda el cálculo, no quien después descarga el
@@ -262,9 +272,14 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
         });
         medPieces.forEach(p => p.calc.pieces.forEach(({ item, count }) => { combined[item] = (combined[item]||0) + count; }));
         extraItems.forEach(({ item, qty }) => { combined[item] = (combined[item]||0) + (qty||0); });
+        extraMedItems.forEach(({ item, qty }) => { combined[item] = (combined[item]||0) + (qty||0); });
         const totalList = Object.entries(combined).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
+        const fullCatalog = [...MASTER_CATALOG, ...catalogOverrides.extraCatalog];
         const filteredCatalog = extraSearch.trim().length >= 2
-          ? [...MASTER_CATALOG, ...catalogOverrides.extraCatalog].filter(c => c.item.toUpperCase().includes(extraSearch.toUpperCase())).slice(0, 8)
+          ? fullCatalog.filter(c => !MED_CATEGORIES.includes(c.category) && c.item.toUpperCase().includes(extraSearch.toUpperCase())).slice(0, 8)
+          : [];
+        const filteredMedCatalog = extraMedSearch.trim().length >= 2
+          ? fullCatalog.filter(c => MED_CATEGORIES.includes(c.category) && c.item.toUpperCase().includes(extraMedSearch.toUpperCase())).slice(0, 8)
           : [];
         const toggleExcluded = (item) => setExcludedItems(prev => prev.includes(item) ? prev.filter(x => x!==item) : [...prev, item]);
         const setItemQty = (item, qty) => setQtyOverrides(prev => ({ ...prev, [item]: qty }));
@@ -395,6 +410,35 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
               )}
 
               <div>
+                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>+ Anexar medicamento adicional</label>
+                <input value={extraMedSearch} onChange={e => setExtraMedSearch(e.target.value)} placeholder="Buscar medicamento en el catálogo (mín. 2 letras)..."
+                  style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 12px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                {filteredMedCatalog.length > 0 && (
+                  <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:4 }}>
+                    {filteredMedCatalog.map((c,i) => (
+                      <button key={i} onClick={() => { setExtraMedItems(prev => [...prev, { item:c.item, qty:1 }]); setExtraMedSearch(""); }}
+                        style={{ textAlign:"left", padding:"7px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", color:"#ccc" }}>
+                        + {c.item} <span style={{ color:"#555" }}>({c.category})</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {extraMedItems.length > 0 && (
+                  <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:5 }}>
+                    {extraMedItems.map((ei, i) => (
+                      <div key={i} style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <span style={{ flex:1, fontSize:11, color:"#ccc" }}>{ei.item}</span>
+                        <input type="number" min="1" value={ei.qty} onChange={e => setExtraMedItems(prev => prev.map((p,pi) => pi===i ? {...p, qty:parseInt(e.target.value)||1} : p))}
+                          style={{ width:50, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:6, padding:"4px 6px", color:"#f0f0f0", fontSize:11, outline:"none", textAlign:"center" }} />
+                        <button onClick={() => setExtraMedItems(prev => prev.filter((_,pi) => pi!==i))}
+                          style={{ padding:"4px 8px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
                 <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>Nota</label>
                 <textarea value={materialNote} onChange={e => setMaterialNote(e.target.value)} placeholder="Ej: aumento de material durante la infusión, motivo del cambio, etc."
                   rows={2} style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:12, outline:"none", resize:"vertical" }} />
@@ -419,8 +463,8 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
               </div>
 
               <div>
-                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>+ Anexar material adicional</label>
-                <input value={extraSearch} onChange={e => setExtraSearch(e.target.value)} placeholder="Buscar en el catálogo (mín. 2 letras)..."
+                <label style={{ fontSize:11, color:"#666", textTransform:"uppercase", letterSpacing:1, display:"block", marginBottom:6 }}>+ Anexar insumo/solución adicional</label>
+                <input value={extraSearch} onChange={e => setExtraSearch(e.target.value)} placeholder="Buscar insumo o solución en el catálogo (mín. 2 letras)..."
                   style={{ width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 12px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
                 {filteredCatalog.length > 0 && (
                   <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:4 }}>
@@ -461,7 +505,7 @@ export default function MaterialModal({ session, token, user, onRefresh, compact
               </div>
 
               <div style={{ display:"flex", gap:8 }}>
-                <button onClick={async () => await saveMedsRequest(pieceOverrides)} disabled={savingMeds || session.inventorySalidaMedsDone}
+                <button onClick={async () => await saveMedsRequest(pieceOverrides, extraMedItems)} disabled={savingMeds || session.inventorySalidaMedsDone}
                   title={session.inventorySalidaMedsDone ? "Ya se dieron de baja los medicamentos de esta sesión -- si necesitas agregar algo, usa Anexar en Insumos" : "Guarda solo las piezas de medicamento -- activa el filtro de Paola y, si aplica, tu autorización"}
                   style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (savingMeds || session.inventorySalidaMedsDone) ? "not-allowed" : "pointer", background: session.inventorySalidaMedsDone ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#5DCAA5,#2f8f74)", border:"none", color: session.inventorySalidaMedsDone ? "#666" : "#fff", opacity: savingMeds ? 0.6 : 1 }}>
                   {savingMeds ? "Guardando…" : session.inventorySalidaMedsDone ? "🔒 Medicamentos ya dados de baja" : session.medsSolicitudGuardada ? "✓ Medicamentos guardados" : "✓ Guardar medicamentos"}
