@@ -19,12 +19,19 @@ function parseDoc(doc) {
   return { id, ...Object.fromEntries(Object.entries(doc.fields || {}).map(([k, v]) => [k, parse(v)])) };
 }
 
-async function fetchCollection(token, collection) {
+// El límite de 500 (sin orderBy, así que Firestore regresa en un orden que
+// no se controla) se quedaba corto para "sessions" en cuanto el historial
+// real pasó de 500 documentos -- un paciente con sesiones ya registradas
+// dejaba de aparecer en Agenda (ni en la búsqueda ni en "+ Asignar
+// esquema") sin ningún aviso, porque sus sesiones simplemente nunca
+// llegaban a cargarse. 2000 deja el mismo margen que ya usa fetchAppointments
+// más abajo en este mismo archivo.
+async function fetchCollection(token, collection, limit = 2000) {
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: collection }], limit: 500 } })
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: collection }], limit } })
   });
   const data = await res.json();
   if (!Array.isArray(data)) return [];
