@@ -134,7 +134,7 @@ const FIELD_LABELS = {
   meds: "Medicamentos", medEvents: "Eventos de medicamento", washEvents: "Eventos de lavado",
   events: "Ingreso/Retiro", signatures: "Firmas", globalNote: "Nota global",
   catheterType: "Tipo de acceso", catheterGauge: "Calibre de catéter", equipoChoice: "Equipo de infusión",
-  extraMaterial: "Material adicional", excludedMaterial: "Material excluido",
+  extraMaterial: "Material adicional", extraMedicamento: "Medicamento adicional", excludedMaterial: "Material excluido",
   qtyOverrides: "Cantidades ajustadas", pieceOverrides: "Piezas ajustadas", materialNote: "Nota de material",
   excludePatientDefault: "Excluir material de paciente", excludeFromOrder: "Excluida del pedido",
   pedidoGeneradoAt: "Pedido generado", anexos: "Anexos", date: "Fecha", cycle: "Ciclo",
