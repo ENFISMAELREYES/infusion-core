@@ -2307,7 +2307,7 @@ export function matchMedication(medName, extraDefaults = {}) {
   return candidates.length === 1 ? candidates[0] : null;
 }
 
-function parseDiluent(diluent) {
+export function parseDiluent(diluent) {
   if (!diluent) return null;
   const volMatch = diluent.match(/(\d+)\s*ML/i);
   const vol = volMatch ? parseInt(volMatch[1]) : null;

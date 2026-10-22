@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { uploadSignature, uploadUserSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
-import { computeSessionMaterial } from "../data/materialCatalog";
-import { normalizeMedName, findFichaMatch, findFichaMatches, isSessionC1D1, valorTexto } from "./FichasTecnicas";
+import { computeSessionMaterial, computeMedicationPieces, parseDiluent } from "../data/materialCatalog";
+import { normalizeMedName, findFichaMatch, findFichaMatches, isSessionC1D1, valorTexto, isAlertaCritica } from "./FichasTecnicas";
 import { openPdfBlob } from "../pdfOpen";
 import EtiquetaPanel, { computeVm } from "../label";
 
@@ -810,11 +810,35 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
     const hoy = new Date();
     const fechaHoy = hoy.toISOString().slice(0, 10);
     const horaHoy  = hoy.toTimeString().slice(0, 5);
+
+    // Piezas/lote/caducidad del medicamento -- ya se capturan al confirmar
+    // asistencia (ver Insumos.jsx: asignación de lote, solo CITIO lleva
+    // trazabilidad por ahora), así que se autocompletan aquí en vez de
+    // volver a pedírselos a la enfermera. Si la dosis se cubre con más de
+    // una presentación distinta (ej. dos tamaños de frasco), piezas suma el
+    // total pero lote/caducidad se dejan en blanco para completar a mano,
+    // porque ya no hay un solo lote que aplique a todas las piezas.
+    const pieces = computeMedicationPieces(med.name, med.dose)?.pieces || [];
+    const totalPiezas = pieces.reduce((acc, p) => acc + p.count, 0);
+    const singleItem = pieces.length === 1 ? pieces[0].item : null;
+    const lotePick = singleItem
+      ? (session.lotAssignments || []).find(a => a.item === singleItem)?.picks?.find(p => p.lote)
+      : null;
+
+    // Alto riesgo -- de la ficha técnica (alerta_critica_seguridad), no se
+    // vuelve a decidir a mano cada vez.
+    const ficha = findFichaMatch(med.name, fichasByName);
+    const altoRiesgo = ficha ? isAlertaCritica(ficha.alerta_critica_seguridad) : false;
+
+    // Volumen de preparación -- del propio diluyente ya capturado en la sesión.
+    const parsedDil = parseDiluent(med.diluent);
+
     setLabelMed(med);
     setLabelForm({
       mgFrasco:"", mlFrasco:"", enf1: profile?.name || "", enf2:"",
-      piezas:"1", medico:"", loteMed:"", cadMed:"", loteDil:"", cadDil:"",
-      altoRiesgo:false, volumenPrep:"",
+      piezas: totalPiezas ? String(totalPiezas) : "1", medico:"",
+      loteMed: lotePick?.lote || "", cadMed: lotePick?.caducidad || "", loteDil:"", cadDil:"",
+      altoRiesgo, volumenPrep: parsedDil?.vol ? String(parsedDil.vol) : "",
       fechaElaboracion: fechaHoy, horaElaboracion: horaHoy,
       fechaCadRefrigeracion:"", horaCadRefrigeracion:"",
       fechaEntrega: fechaHoy, horaEntrega: horaHoy,
@@ -1611,6 +1635,8 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
       )}
       {labelMed && (() => {
         const vm = computeVm(labelMed.dose, labelForm.mgFrasco, labelForm.mlFrasco);
+        const ficha = findFichaMatch(labelMed.name, fichasByName);
+        const estabilidad = valorTexto(ficha?.estabilidad_post_dilucion);
         const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:13, outline:"none" };
         return (
           <div onClick={() => !savingLabel && setLabelMed(null)}
@@ -1693,6 +1719,11 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                     <input type="time" value={labelForm.horaElaboracion} onChange={e => setLabelForm(f => ({ ...f, horaElaboracion:e.target.value }))} style={inputStyle} />
                   </div>
                 </div>
+                {estabilidad && (
+                  <div style={{ fontSize:11, color:"#AFA9EC", background:"rgba(175,169,236,0.08)", border:"1px solid rgba(175,169,236,0.2)", borderRadius:7, padding:"6px 8px" }}>
+                    Estabilidad post-dilución (ficha técnica): {estabilidad}
+                  </div>
+                )}
                 <div style={{ display:"flex", gap:10 }}>
                   <div style={{ flex:1 }}>
                     <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Fecha cad. refrigeración</label>
