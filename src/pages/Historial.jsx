@@ -4,6 +4,7 @@ import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { normalizeMedName, findFichaMatch, findFichaMatches, isSessionC1D1 } from "./FichasTecnicas";
 import { openPdfBlob } from "../pdfOpen";
+import { printLabel } from "../label";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -472,6 +473,17 @@ const saveEdit = async () => {
                       {/* Medicamento domicilio */}
                       {m.category === "domicilio" && ev.inicio && (
                         <div style={{ marginTop:4, fontSize:11, color:"#82C4F8" }}>📦 Entregado a las {ev.inicio}</div>
+                      )}
+
+                      {/* Etiqueta de la mezcla -- reimprime exactamente lo que
+                          se generó la primera vez, sin volver a capturar
+                          mg/ml ni los nombres. */}
+                      {m.etiqueta && (
+                        <button onClick={e => { e.stopPropagation(); printLabel(s, m); }}
+                          title={`Etiqueta generada ${new Date(m.etiqueta.printedAt).toLocaleString("es-MX")} por ${m.etiqueta.printedBy || ""}`}
+                          style={{ marginTop:6, padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                          🏷️ Reimprimir etiqueta
+                        </button>
                       )}
                     </div>
                   </div>

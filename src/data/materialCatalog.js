@@ -2333,7 +2333,7 @@ function parsePresentationMg(itemName) {
   return null;
 }
 
-function parseDoseMg(doseStr) {
+export function parseDoseMg(doseStr) {
   if (!doseStr) return null;
   const gr = doseStr.match(/(\d+\.\d+|\.\d+|\d+)\s*GR/i);
   if (gr) return parseFloat(gr[1]) * 1000;

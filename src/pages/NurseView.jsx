@@ -5,6 +5,7 @@ import SignaturePad from "../components/SignaturePad";
 import { computeSessionMaterial } from "../data/materialCatalog";
 import { normalizeMedName, findFichaMatch, findFichaMatches, isSessionC1D1, valorTexto } from "./FichasTecnicas";
 import { openPdfBlob } from "../pdfOpen";
+import { printLabel, computeVm } from "../label";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -801,9 +802,37 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
   const [sigPaciente, setSigPaciente]     = useState(null);
   const [sigEnfermeria, setSigEnfermeria] = useState(null);
   const [signing, setSigning]             = useState(false);
+  const [labelMed, setLabelMed]           = useState(null); // medicamento para el que se está capturando la etiqueta, o null
+  const [labelForm, setLabelForm]         = useState({ mgFrasco:"", mlFrasco:"", enf1:"", enf2:"" });
+  const [savingLabel, setSavingLabel]     = useState(false);
+  const openLabelModal = (med) => { setLabelMed(med); setLabelForm({ mgFrasco:"", mlFrasco:"", enf1: profile?.name || "", enf2:"" }); };
   const events     = session.events    || {};
   const medEvents  = session.medEvents || {};
   const washEvents = session.washEvents || {};
+
+  // Guarda los datos de la etiqueta (mg/ml del frasco ya calculan el
+  // volumen a retirar, más quién mezcla/aplica) en el medicamento de la
+  // sesión -- no son datos clínicos, así que no se pide reautorizar -- y
+  // de inmediato abre la etiqueta lista para imprimir. Queda guardado para
+  // poder reimprimirla después desde Historial sin volver a capturar nada.
+  const saveLabelAndPrint = async (med, data) => {
+    setSavingLabel(true);
+    try {
+      const etiqueta = {
+        mgFrasco: data.mgFrasco, mlFrasco: data.mlFrasco, vm: data.vm,
+        enf1: data.enf1 || "", enf2: data.enf2 || "",
+        printedAt: new Date().toISOString(), printedBy: profile?.name || "",
+      };
+      const updatedMeds = (session.meds || []).map(m => m.id === med.id ? { ...m, etiqueta } : m);
+      await saveMeds(updatedMeds, false);
+      printLabel(session, { ...med, etiqueta });
+      setLabelMed(null);
+    } catch (e) {
+      alert("Error al guardar la etiqueta: " + e.message);
+    } finally {
+      setSavingLabel(false);
+    }
+  };
 
   // Genera el consentimiento informado con los datos ya capturados de esta
   // sesión (paciente, diagnóstico, y los medicamentos del tratamiento en sí
@@ -1456,6 +1485,13 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                           <button onClick={() => handleDelete(med.id)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑 Eliminar</button>
                         </div>
                       )}
+                      {med.category !== "domicilio" && (
+                        <div style={{ padding:"0 14px 10px" }}>
+                          <button onClick={() => med.etiqueta ? printLabel(session, med) : openLabelModal(med)} style={{ width:"100%", padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                            🏷️ {med.etiqueta ? "Reimprimir etiqueta" : "Generar etiqueta"}
+                          </button>
+                        </div>
+                      )}
                     </div>
                     {isEditing && !started && (
                       <EditMedForm med={med} onSave={handleEdit} onCancel={() => setEditingId(null)} />
@@ -1552,6 +1588,53 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
           </div>
         </div>
       )}
+      {labelMed && (() => {
+        const vm = computeVm(labelMed.dose, labelForm.mgFrasco, labelForm.mlFrasco);
+        const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:13, outline:"none" };
+        return (
+          <div onClick={() => !savingLabel && setLabelMed(null)}
+            style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:380, display:"flex", flexDirection:"column", gap:14 }}>
+              <div>
+                <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>🏷️ Generar etiqueta</div>
+                <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{labelMed.name} {labelMed.dose} — para calcular cuántos ml del medicamento se retiran</div>
+              </div>
+              <div style={{ display:"flex", gap:10 }}>
+                <div style={{ flex:1 }}>
+                  <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>MG por frasco</label>
+                  <input type="number" min="0" value={labelForm.mgFrasco} onChange={e => setLabelForm(f => ({ ...f, mgFrasco:e.target.value }))} placeholder="ej: 100" style={inputStyle} />
+                </div>
+                <div style={{ flex:1 }}>
+                  <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>ML por frasco</label>
+                  <input type="number" min="0" value={labelForm.mlFrasco} onChange={e => setLabelForm(f => ({ ...f, mlFrasco:e.target.value }))} placeholder="ej: 50" style={inputStyle} />
+                </div>
+              </div>
+              <div style={{ padding:"8px 12px", borderRadius:8, background:"rgba(0,212,170,0.08)", border:"1px solid rgba(0,212,170,0.2)", fontSize:13, color:"#00d4aa", textAlign:"center" }}>
+                Volumen a retirar: {vm != null ? `${vm.toFixed(2)} ml` : "—"}
+              </div>
+              <div>
+                <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Enf. 1 (quien mezcla)</label>
+                <input value={labelForm.enf1} onChange={e => setLabelForm(f => ({ ...f, enf1:e.target.value }))} style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Enf. 2</label>
+                <input value={labelForm.enf2} onChange={e => setLabelForm(f => ({ ...f, enf2:e.target.value }))} placeholder="Nombre" style={inputStyle} />
+              </div>
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={() => setLabelMed(null)} disabled={savingLabel}
+                  style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingLabel ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                  Cancelar
+                </button>
+                <button onClick={() => saveLabelAndPrint(labelMed, { ...labelForm, vm })} disabled={savingLabel || vm == null}
+                  style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (savingLabel || vm == null) ? "not-allowed" : "pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: (savingLabel || vm == null) ? 0.5 : 1 }}>
+                  {savingLabel ? "Guardando…" : "✓ Generar e imprimir"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
