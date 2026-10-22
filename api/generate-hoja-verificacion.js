@@ -173,11 +173,14 @@ export default async function handler(req, res) {
     doc.font("Helvetica").fontSize(8.5);
     checklistLine(`1. Retirar ${num(calculo.vr)} ml del envase diluyente.`);
     checklistLine(`2. Extraer ${num(calculo.vm)} ml del (de los) vial(es) de medicamento.`);
-    checklistLine(`3. Inyectar el volumen de medicamento en el diluyente y homogenizar.  ¿Se homogeniza?  ${hv.homogeniza === true ? "SÍ" : hv.homogeniza === false ? "NO" : "—"}`);
+    // "¿Se homogeniza?" y "¿Libre de partículas?" se imprimen en blanco a
+    // propósito -- esa verificación se hace presencial, al momento de
+    // mezclar, no se captura digitalmente (mismo criterio que CEMI).
+    checklistLine("3. Inyectar el volumen de medicamento en el diluyente y homogenizar.  ¿Se homogeniza?  Sí: ___  No: ___");
     y += 6;
     doc.font("Helvetica-Bold").fontSize(8.5).text("Posterior a la mezcla:", 45, y); y = doc.y + 2;
     doc.font("Helvetica").fontSize(8.5);
-    checklistLine(`1. La mezcla está libre de partículas, homogeneizada:  ${hv.libreParticulas === true ? "SÍ" : hv.libreParticulas === false ? "NO" : "—"}`);
+    checklistLine("1. La mezcla está libre de partículas, homogeneizada:  Sí: ___  No: ___");
     checklistLine(`2. Fecha y hora de expiración:  ${fmtFechaCorta(hv.fechaExpiracion)}  ${hv.horaExpiracion || ""} HRS`);
     checklistLine(`3. Condición de almacenamiento:  ${hv.condicionAlmacenamiento === "ambiente" ? "Ambiente" : "Refrigeración"}`);
 

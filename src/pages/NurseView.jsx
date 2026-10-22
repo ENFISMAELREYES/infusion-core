@@ -380,7 +380,7 @@ function EditMedForm({ med, onSave, onCancel }) {
 }
 
 // Tarjeta para sesiones pendientes y programadas (no del día)
-function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
+function PendingSessionCard({ session, user, onRefresh }) {
   const { profile } = useAuth();
   const [open, setOpen]     = useState(false);
   const [editDate, setEditDate] = useState(session.date || "");
@@ -403,16 +403,17 @@ function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
     const hoy = new Date();
     const fechaHoy = hoy.toISOString().slice(0, 10);
     const horaHoy  = hoy.toTimeString().slice(0, 5);
-    const { totalPiezas, lotePick, altoRiesgo, parsedDil } = autoFillFromSystem(session, med, fichasByName);
+    const { totalPiezas, lotePick, altoRiesgo, parsedDil } = autoFillFromSystem(session, med);
     setHvMed(med);
     setHvForm({
       mgFrasco: med.etiqueta?.mgFrasco || "", mlFrasco: med.etiqueta?.mlFrasco || "",
       piezas: totalPiezas ? String(totalPiezas) : "1",
       ve: parsedDil?.vol ? String(parsedDil.vol) : "", vd: parsedDil?.vol ? String(parsedDil.vol) : "",
-      medico:"", loteMed: lotePick?.lote || "", cadMed: lotePick?.caducidad || "", loteDil:"", cadDil:"",
+      // Médico -- ya se captura al crear la sesión (session.physician), no
+      // se vuelve a pedir aquí.
+      medico: session.physician || "", loteMed: lotePick?.lote || "", cadMed: lotePick?.caducidad || "", loteDil:"", cadDil:"",
       altoRiesgo,
       fechaPreparacion: fechaHoy, horaPreparacion: horaHoy,
-      homogeniza: null, libreParticulas: null,
       fechaExpiracion:"", horaExpiracion:"", condicionAlmacenamiento:"refrigeracion",
     });
   };
@@ -638,11 +639,20 @@ function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
                   </div>
                   {/* Solo una vez autorizada (dilución/presentación ya
                       confirmadas por el jefe) tiene sentido llenar esto --
-                      en "Pendientes" (sin autorizar) ese botón no aparece. */}
-                  {session.authorized && m.category !== "domicilio" && (
+                      en "Pendientes" (sin autorizar) ese botón no aparece.
+                      Obligatoria (resaltada) solo para quimio/inmunoterapia
+                      -- el resto de categorías la puede usar igual, pero no
+                      se marca como pendiente si falta. */}
+                  {session.authorized && m.category !== "domicilio" && (() => {
+                    const requerida = m.category === "quimioterapia" || m.category === "inmunoterapia";
+                    const falta = requerida && !m.hojaVerificacion;
+                    return (
                     <div style={{ display:"flex", gap:6, marginTop:6 }}>
-                      <button onClick={() => openHVModal(m)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(93,202,165,0.1)", border:"1px solid rgba(93,202,165,0.3)", color:"#5DCAA5" }}>
-                        📋 {m.hojaVerificacion?.revisadoPor ? "Ver hoja de verif." : m.hojaVerificacion?.preparadoPor ? "Falta revisión" : "Hoja de verificación"}
+                      <button onClick={() => openHVModal(m)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer",
+                        background: falta ? "rgba(255,179,71,0.12)" : "rgba(93,202,165,0.1)",
+                        border: `1px solid ${falta ? "rgba(255,179,71,0.35)" : "rgba(93,202,165,0.3)"}`,
+                        color: falta ? "#ffb347" : "#5DCAA5" }}>
+                        📋 {m.hojaVerificacion?.revisadoPor ? "Ver hoja de verif." : m.hojaVerificacion?.preparadoPor ? "Falta revisión" : falta ? "Hoja de verificación (requerida)" : "Hoja de verificación"}
                       </button>
                       {/* La etiqueta de bolsa se arma sola en cuanto se firma
                           la Hoja de Verificación (ver signHV) -- no hace
@@ -653,7 +663,8 @@ function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
                         </button>
                       )}
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -721,20 +732,6 @@ function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
           value: hvForm[key] ?? "", disabled: readOnly, style: inputStyle,
           onChange: e => setHvForm(f => ({ ...f, [key]: e.target.value })), ...extra,
         });
-        const Toggle = ({ k, labels }) => (
-          <div style={{ display:"flex", gap:6 }}>
-            {[true, false].map(v => (
-              <button key={String(v)} disabled={readOnly} onClick={() => setHvForm(f => ({ ...f, [k]: v }))}
-                style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor: readOnly ? "default" : "pointer",
-                  background: hvForm[k] === v ? "rgba(93,202,165,0.15)" : "rgba(255,255,255,0.04)",
-                  border: `1px solid ${hvForm[k] === v ? "rgba(93,202,165,0.4)" : "rgba(255,255,255,0.08)"}`,
-                  color: hvForm[k] === v ? "#5DCAA5" : "#888" }}>
-                {v ? labels[0] : labels[1]}
-              </button>
-            ))}
-          </div>
-        );
-
         return (
           <div onClick={() => !savingHV && setHvMed(null)}
             style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
@@ -784,14 +781,10 @@ function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
               <div style={{ fontSize:12, fontWeight:600, color:"#5DCAA5", marginTop:4 }}>3. Verificación de la mezcla</div>
               <div style={{ fontSize:12, color:"#aaa", background:"rgba(255,255,255,0.03)", borderRadius:8, padding:"8px 10px" }}>
                 Retirar {vr != null ? vr.toFixed(2) : "___"} ml del envase diluyente · Extraer {vm != null ? vm.toFixed(2) : "___"} ml del (de los) vial(es) · Inyectar y homogenizar.
-              </div>
-              <div>
-                <label style={labelStyle}>¿Se homogeniza?</label>
-                <Toggle k="homogeniza" labels={["Sí", "No"]} />
-              </div>
-              <div>
-                <label style={labelStyle}>¿Libre de partículas?</label>
-                <Toggle k="libreParticulas" labels={["Sí", "No"]} />
+                {/* "¿Se homogeniza?" y "¿Libre de partículas?" ya no se
+                    capturan aquí -- esa verificación se hace presencial, al
+                    momento de mezclar, así que se imprimen en blanco en el
+                    PDF para llenarse a mano (mismo criterio que CEMI). */}
               </div>
               <div style={{ display:"flex", gap:10 }}>
                 <div style={{ flex:1 }}><label style={labelStyle}>Fecha de expiración</label><input type="date" {...field("fechaExpiracion")} /></div>
@@ -1037,15 +1030,18 @@ function RepresentanteModal({ session, onClose, onConfirm, saving }) {
 // frasco), piezas suma el total pero lote/caducidad se dejan en blanco
 // para completar a mano, porque ya no hay un solo lote que aplique a
 // todas las piezas.
-function autoFillFromSystem(session, med, fichasByName) {
+function autoFillFromSystem(session, med) {
   const pieces = computeMedicationPieces(med.name, med.dose)?.pieces || [];
   const totalPiezas = pieces.reduce((acc, p) => acc + p.count, 0);
   const singleItem = pieces.length === 1 ? pieces[0].item : null;
   const lotePick = singleItem
     ? (session.lotAssignments || []).find(a => a.item === singleItem)?.picks?.find(p => p.lote)
     : null;
-  const ficha = findFichaMatch(med.name, fichasByName);
-  const altoRiesgo = ficha ? isAlertaCritica(ficha.alerta_critica_seguridad) : false;
+  // Alto riesgo -- estándar en todos los medicamentos de quimio/sesión
+  // mezclada (decisión explícita: más vale el sello de más que confiar en
+  // que la ficha técnica de cada fármaco ya tenga el campo lleno). Sigue
+  // editable por si algún día hace falta una excepción.
+  const altoRiesgo = true;
   const parsedDil = parseDiluent(med.diluent);
   return { totalPiezas, lotePick, altoRiesgo, parsedDil };
 }
@@ -2148,7 +2144,7 @@ const scheduled = nurseData.filter(s => s.authorized && s.date !== today && s.st
               <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
                 No hay sesiones pendientes de autorización.
               </div>
-            ) : pendingSessions.map(s => <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} fichasByName={fichasByName} />)
+            ) : pendingSessions.map(s => <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} />)
           )}
 
           {tab === "programados" && (
@@ -2159,7 +2155,7 @@ const scheduled = nurseData.filter(s => s.authorized && s.date !== today && s.st
             ) : scheduledSessions.map(s => 
                 s.status === "en_curso" 
                   ? <SessionCard key={s.id} session={s} token={token} onRefresh={load} user={user} fichasByName={fichasByName} />
-                  : <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} fichasByName={fichasByName} />
+                  : <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} />
               )
           )}
         </>
