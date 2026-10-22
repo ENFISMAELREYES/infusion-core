@@ -803,10 +803,23 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
   const [sigEnfermeria, setSigEnfermeria] = useState(null);
   const [signing, setSigning]             = useState(false);
   const [labelMed, setLabelMed]           = useState(null); // medicamento para el que se está capturando la etiqueta, o null
-  const [labelForm, setLabelForm]         = useState({ mgFrasco:"", mlFrasco:"", enf1:"", enf2:"" });
+  const [labelForm, setLabelForm]         = useState({ mgFrasco:"", mlFrasco:"", enf1:"", enf2:"", piezas:"1", medico:"", loteMed:"", cadMed:"", loteDil:"", cadDil:"", altoRiesgo:false, volumenPrep:"", fechaElaboracion:"", horaElaboracion:"", fechaCadRefrigeracion:"", horaCadRefrigeracion:"", fechaEntrega:"", horaEntrega:"" });
   const [savingLabel, setSavingLabel]     = useState(false);
   const [viewingLabel, setViewingLabel]   = useState(null); // medicamento (ya con etiqueta) que se muestra en el panel de texto
-  const openLabelModal = (med) => { setLabelMed(med); setLabelForm({ mgFrasco:"", mlFrasco:"", enf1: profile?.name || "", enf2:"" }); };
+  const openLabelModal = (med) => {
+    const hoy = new Date();
+    const fechaHoy = hoy.toISOString().slice(0, 10);
+    const horaHoy  = hoy.toTimeString().slice(0, 5);
+    setLabelMed(med);
+    setLabelForm({
+      mgFrasco:"", mlFrasco:"", enf1: profile?.name || "", enf2:"",
+      piezas:"1", medico:"", loteMed:"", cadMed:"", loteDil:"", cadDil:"",
+      altoRiesgo:false, volumenPrep:"",
+      fechaElaboracion: fechaHoy, horaElaboracion: horaHoy,
+      fechaCadRefrigeracion:"", horaCadRefrigeracion:"",
+      fechaEntrega: fechaHoy, horaEntrega: horaHoy,
+    });
+  };
   const events     = session.events    || {};
   const medEvents  = session.medEvents || {};
   const washEvents = session.washEvents || {};
@@ -822,6 +835,13 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
       const etiqueta = {
         mgFrasco: data.mgFrasco, mlFrasco: data.mlFrasco, vm: data.vm,
         enf1: data.enf1 || "", enf2: data.enf2 || "",
+        piezas: data.piezas || "", medico: data.medico || "",
+        loteMed: data.loteMed || "", cadMed: data.cadMed || "",
+        loteDil: data.loteDil || "", cadDil: data.cadDil || "",
+        altoRiesgo: !!data.altoRiesgo, volumenPrep: data.volumenPrep || "",
+        fechaElaboracion: data.fechaElaboracion || "", horaElaboracion: data.horaElaboracion || "",
+        fechaCadRefrigeracion: data.fechaCadRefrigeracion || "", horaCadRefrigeracion: data.horaCadRefrigeracion || "",
+        fechaEntrega: data.fechaEntrega || "", horaEntrega: data.horaEntrega || "",
         printedAt: new Date().toISOString(), printedBy: profile?.name || "",
       };
       const updatedMeds = (session.meds || []).map(m => m.id === med.id ? { ...m, etiqueta } : m);
@@ -1596,7 +1616,7 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
           <div onClick={() => !savingLabel && setLabelMed(null)}
             style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
             <div onClick={e => e.stopPropagation()}
-              style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:380, display:"flex", flexDirection:"column", gap:14 }}>
+              style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:440, maxHeight:"90vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:14 }}>
               <div>
                 <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>🏷️ Generar etiqueta</div>
                 <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{labelMed.name} {labelMed.dose} — para calcular cuántos ml del medicamento se retiran</div>
@@ -1622,6 +1642,79 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                 <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Enf. 2</label>
                 <input value={labelForm.enf2} onChange={e => setLabelForm(f => ({ ...f, enf2:e.target.value }))} placeholder="Nombre" style={inputStyle} />
               </div>
+
+              <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)", paddingTop:12, display:"flex", flexDirection:"column", gap:10 }}>
+                <div style={{ fontSize:12, fontWeight:600, color:"#AFA9EC" }}>Datos para etiqueta de expediente (opcional)</div>
+                <div style={{ display:"flex", gap:10 }}>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Fco(s).</label>
+                    <input type="number" min="0" value={labelForm.piezas} onChange={e => setLabelForm(f => ({ ...f, piezas:e.target.value }))} style={inputStyle} />
+                  </div>
+                  <div style={{ flex:2, display:"flex", alignItems:"flex-end", gap:6, paddingBottom:8 }}>
+                    <input type="checkbox" checked={labelForm.altoRiesgo} onChange={e => setLabelForm(f => ({ ...f, altoRiesgo:e.target.checked }))} style={{ width:16, height:16 }} />
+                    <span style={{ fontSize:12, color:"#ccc" }}>Alto riesgo</span>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Médico (área solicitante)</label>
+                  <input value={labelForm.medico} onChange={e => setLabelForm(f => ({ ...f, medico:e.target.value }))} style={inputStyle} />
+                </div>
+                <div style={{ display:"flex", gap:10 }}>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Lote medicamento</label>
+                    <input value={labelForm.loteMed} onChange={e => setLabelForm(f => ({ ...f, loteMed:e.target.value }))} style={inputStyle} />
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Caducidad</label>
+                    <input type="date" value={labelForm.cadMed} onChange={e => setLabelForm(f => ({ ...f, cadMed:e.target.value }))} style={inputStyle} />
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:10 }}>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Lote diluyente</label>
+                    <input value={labelForm.loteDil} onChange={e => setLabelForm(f => ({ ...f, loteDil:e.target.value }))} style={inputStyle} />
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Caducidad</label>
+                    <input type="date" value={labelForm.cadDil} onChange={e => setLabelForm(f => ({ ...f, cadDil:e.target.value }))} style={inputStyle} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Volumen de preparación (ml)</label>
+                  <input type="number" min="0" value={labelForm.volumenPrep} onChange={e => setLabelForm(f => ({ ...f, volumenPrep:e.target.value }))} placeholder="ej: 250" style={inputStyle} />
+                </div>
+                <div style={{ display:"flex", gap:10 }}>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Fecha elaboración</label>
+                    <input type="date" value={labelForm.fechaElaboracion} onChange={e => setLabelForm(f => ({ ...f, fechaElaboracion:e.target.value }))} style={inputStyle} />
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Hora</label>
+                    <input type="time" value={labelForm.horaElaboracion} onChange={e => setLabelForm(f => ({ ...f, horaElaboracion:e.target.value }))} style={inputStyle} />
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:10 }}>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Fecha cad. refrigeración</label>
+                    <input type="date" value={labelForm.fechaCadRefrigeracion} onChange={e => setLabelForm(f => ({ ...f, fechaCadRefrigeracion:e.target.value }))} style={inputStyle} />
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Hora</label>
+                    <input type="time" value={labelForm.horaCadRefrigeracion} onChange={e => setLabelForm(f => ({ ...f, horaCadRefrigeracion:e.target.value }))} style={inputStyle} />
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:10 }}>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Fecha entrega</label>
+                    <input type="date" value={labelForm.fechaEntrega} onChange={e => setLabelForm(f => ({ ...f, fechaEntrega:e.target.value }))} style={inputStyle} />
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Hora</label>
+                    <input type="time" value={labelForm.horaEntrega} onChange={e => setLabelForm(f => ({ ...f, horaEntrega:e.target.value }))} style={inputStyle} />
+                  </div>
+                </div>
+              </div>
+
               <div style={{ display:"flex", gap:8 }}>
                 <button onClick={() => setLabelMed(null)} disabled={savingLabel}
                   style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingLabel ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
