@@ -125,7 +125,7 @@ const [editDraft, setEditDraft] = useState(null);
     const res = await fetch("/api/generate-hoja-verificacion", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        center: s.center, patientName: s.patientName, dob: s.dob, date: s.date,
+        center: s.center, patientName: s.patientName, dob: s.dob, date: s.date, diagnosis: s.diagnosis,
         medName: med.name, dose: med.dose, diluent: med.diluent,
         hv, calculo: { c: (parseFloat(hv.mgFrasco) && parseFloat(hv.mlFrasco)) ? parseFloat(hv.mgFrasco)/parseFloat(hv.mlFrasco) : null, vm, vr, vt, ct, doseMg },
       }),

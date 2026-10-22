@@ -28,7 +28,7 @@ function fmtFechaCorta(iso) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { center, patientName, dob, date, medName, dose, diluent, hv, calculo } = req.body;
+  const { center, patientName, dob, date, diagnosis, medName, dose, diluent, hv, calculo } = req.body;
 
   try {
     const fetchSigBuffer = async (url) => {
@@ -160,8 +160,10 @@ export default async function handler(req, res) {
       doc.fontSize(9.5).fillColor("#000").font("Helvetica-Bold").text("Paciente:", 45, y, { continued: true }).font("Helvetica").text(`  ${patientName || ""}`, { width: 250 });
       doc.font("Helvetica-Bold").text("F. Nac:", 320, y, { continued: true }).font("Helvetica").text(`  ${fmtFechaCorta(dob)}`);
       y += 15;
-      doc.font("Helvetica-Bold").text("Médico:", 45, y, { continued: true }).font("Helvetica").text(`  ${hv.medico || ""}`, { width: 250 });
+      doc.font("Helvetica-Bold").text("Diagnóstico:", 45, y, { continued: true }).font("Helvetica").text(`  ${diagnosis || ""}`, { width: 250 });
       doc.font("Helvetica-Bold").text("Fecha:", 320, y, { continued: true }).font("Helvetica").text(`  ${fmtFechaCorta(date)}`);
+      y += 15;
+      doc.font("Helvetica-Bold").text("Médico:", 45, y, { continued: true }).font("Helvetica").text(`  ${hv.medico || ""}`, { width: 460 });
       y += 15;
       doc.font("Helvetica-Bold").text("Medicamento:", 45, y, { continued: true }).font("Helvetica").text(`  ${medName || ""} ${dose || ""}`, { width: 460 });
       y += 15;
@@ -223,6 +225,21 @@ export default async function handler(req, res) {
       { t: "D" }, { v: num(calculo.doseMg, 1), u: "mg" }, { t: " % Vt" }, { v: num(calculo.vt), u: "ml" },
       { t: " = Ct" }, { v: num(calculo.ct), u: "mg/ml" },
     ], y);
+
+    // Firma de página 1 -- renglón de texto simple (igual que CEMI: aquí
+    // no lleva imagen de firma, esa va en la Hoja de Verificación, página
+    // 2). "Calculado por" reutiliza a quien preparó, porque en nuestro
+    // flujo es la misma persona que hace el cálculo.
+    y = Math.max(y + 24, doc.page.height - 90);
+    doc.fontSize(9).fillColor("#000").font("Helvetica-Bold").text("Calculado por:", 45, y, { continued: true })
+      .font("Helvetica").text(`  ${hv.preparadoPorName || ""}`, { continued: true, width: 200 })
+      .font("Helvetica-Bold").text("   Fecha:", { continued: true })
+      .font("Helvetica").text(`  ${hv.preparadoAt ? fmtFechaCorta(hv.preparadoAt.slice(0, 10)) : ""}`);
+    y += 18;
+    doc.font("Helvetica-Bold").text("Revisado por:", 45, y, { continued: true })
+      .font("Helvetica").text(`  ${hv.revisadoPorName || "Pendiente"}`, { continued: true, width: 200 })
+      .font("Helvetica-Bold").text("   Fecha:", { continued: true })
+      .font("Helvetica").text(`  ${hv.revisadoAt ? fmtFechaCorta(hv.revisadoAt.slice(0, 10)) : ""}`);
 
     // ---------- Página 2: Hoja de verificación ----------
     doc.addPage();

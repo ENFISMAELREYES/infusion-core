@@ -1104,7 +1104,7 @@ async function generateHVPdf(session, med, hv) {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       center: session.center,
-      patientName: session.patientName, dob: session.dob, date: session.date,
+      patientName: session.patientName, dob: session.dob, date: session.date, diagnosis: session.diagnosis,
       medName: med.name, dose: med.dose, diluent: med.diluent,
       hv, calculo: { c: (parseFloat(hv.mgFrasco) && parseFloat(hv.mlFrasco)) ? parseFloat(hv.mgFrasco)/parseFloat(hv.mlFrasco) : null, vm, vr, vt, ct, doseMg },
     }),
