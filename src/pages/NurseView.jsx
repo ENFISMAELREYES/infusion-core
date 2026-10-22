@@ -397,6 +397,7 @@ function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
   const [hvMed, setHvMed]       = useState(null);
   const [hvForm, setHvForm]     = useState(null);
   const [savingHV, setSavingHV] = useState(false);
+  const [viewingLabel, setViewingLabel] = useState(null); // medicamento (ya con etiqueta) que se muestra en el panel de texto
   const openHVModal = (med) => {
     if (med.hojaVerificacion) { setHvMed(med); setHvForm({ ...med.hojaVerificacion }); return; }
     const hoy = new Date();
@@ -425,8 +426,19 @@ function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
           ? { preparadoPor: user?.uid || "", preparadoPorName: profile?.name || "", preparadoAt: now, preparadoSignatureUrl: profile?.signatureUrl || null }
           : { revisadoPor: user?.uid || "", revisadoPorName: profile?.name || "", revisadoAt: now, revisadoSignatureUrl: profile?.signatureUrl || null }),
       };
+      // La Hoja de Verificación ya trae mg/ml del frasco y quién prepara/
+      // revisa -- son los mismos datos que pedía el modal de "Generar
+      // etiqueta" aparte, así que la etiqueta de bolsa se arma sola aquí
+      // (Enf. 1 = preparado por, Enf. 2 = revisado por) en vez de hacerla
+      // capturar otra vez en SessionCard.
+      const vm = computeVm(hvMed.dose, hojaVerificacion.mgFrasco, hojaVerificacion.mlFrasco);
+      const etiqueta = {
+        mgFrasco: hojaVerificacion.mgFrasco, mlFrasco: hojaVerificacion.mlFrasco, vm,
+        enf1: hojaVerificacion.preparadoPorName || "", enf2: hojaVerificacion.revisadoPorName || "",
+        printedAt: now, printedBy: profile?.name || "",
+      };
       const token = await user.getIdToken(true);
-      const updatedMeds = (session.meds || []).map(m => m.id === hvMed.id ? { ...m, hojaVerificacion } : m);
+      const updatedMeds = (session.meds || []).map(m => m.id === hvMed.id ? { ...m, hojaVerificacion, ...(vm != null ? { etiqueta } : {}) } : m);
       await updateSessionMeds(token, session.id, updatedMeds, false);
       setHvMed(null);
       onRefresh();
@@ -628,9 +640,19 @@ function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
                       confirmadas por el jefe) tiene sentido llenar esto --
                       en "Pendientes" (sin autorizar) ese botón no aparece. */}
                   {session.authorized && m.category !== "domicilio" && (
-                    <button onClick={() => openHVModal(m)} style={{ width:"100%", marginTop:6, padding:"6px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(93,202,165,0.1)", border:"1px solid rgba(93,202,165,0.3)", color:"#5DCAA5" }}>
-                      📋 {m.hojaVerificacion?.revisadoPor ? "Ver hoja de verif." : m.hojaVerificacion?.preparadoPor ? "Falta revisión" : "Hoja de verificación"}
-                    </button>
+                    <div style={{ display:"flex", gap:6, marginTop:6 }}>
+                      <button onClick={() => openHVModal(m)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(93,202,165,0.1)", border:"1px solid rgba(93,202,165,0.3)", color:"#5DCAA5" }}>
+                        📋 {m.hojaVerificacion?.revisadoPor ? "Ver hoja de verif." : m.hojaVerificacion?.preparadoPor ? "Falta revisión" : "Hoja de verificación"}
+                      </button>
+                      {/* La etiqueta de bolsa se arma sola en cuanto se firma
+                          la Hoja de Verificación (ver signHV) -- no hace
+                          falta volver a capturarla aparte. */}
+                      {m.etiqueta && (
+                        <button onClick={() => setViewingLabel(m)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                          🏷️ Ver etiqueta
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -831,6 +853,7 @@ function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
           </div>
         );
       })()}
+      {viewingLabel && <EtiquetaPanel session={session} med={viewingLabel} onCerrar={() => setViewingLabel(null)} />}
     </div>
   );
 }
