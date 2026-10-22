@@ -4,7 +4,7 @@ import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { normalizeMedName, findFichaMatch, findFichaMatches, isSessionC1D1 } from "./FichasTecnicas";
 import { openPdfBlob } from "../pdfOpen";
-import { printLabel } from "../label";
+import EtiquetaPanel from "../label";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -109,6 +109,7 @@ const [editDraft, setEditDraft] = useState(null);
   // la sesión desde la primera vez que se generó (representante, etc.) --
   // sin volver a preguntar nada. Solo aparece si ya se había generado antes.
   const [reprintingConsent, setReprintingConsent] = useState(false);
+  const [viewingLabel, setViewingLabel] = useState(null); // medicamento cuya etiqueta se muestra en el panel de texto
   const reprintConsent = async () => {
     setReprintingConsent(true);
     try {
@@ -475,14 +476,14 @@ const saveEdit = async () => {
                         <div style={{ marginTop:4, fontSize:11, color:"#82C4F8" }}>📦 Entregado a las {ev.inicio}</div>
                       )}
 
-                      {/* Etiqueta de la mezcla -- reimprime exactamente lo que
-                          se generó la primera vez, sin volver a capturar
-                          mg/ml ni los nombres. */}
+                      {/* Etiqueta de la mezcla -- vuelve a mostrar exactamente
+                          lo que se generó la primera vez, sin volver a
+                          capturar mg/ml ni los nombres. */}
                       {m.etiqueta && (
-                        <button onClick={e => { e.stopPropagation(); printLabel(s, m); }}
+                        <button onClick={e => { e.stopPropagation(); setViewingLabel(m); }}
                           title={`Etiqueta generada ${new Date(m.etiqueta.printedAt).toLocaleString("es-MX")} por ${m.etiqueta.printedBy || ""}`}
                           style={{ marginTop:6, padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
-                          🏷️ Reimprimir etiqueta
+                          🏷️ Ver etiqueta
                         </button>
                       )}
                     </div>
@@ -722,6 +723,8 @@ const saveEdit = async () => {
           </div>
         </div>
       )}
+
+      {viewingLabel && <EtiquetaPanel session={s} med={viewingLabel} onCerrar={() => setViewingLabel(null)} />}
 
       {dupModal && (
         <div onClick={e => { e.stopPropagation(); !duping && setDupModal(null); }}

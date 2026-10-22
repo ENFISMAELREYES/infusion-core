@@ -5,7 +5,7 @@ import SignaturePad from "../components/SignaturePad";
 import { computeSessionMaterial } from "../data/materialCatalog";
 import { normalizeMedName, findFichaMatch, findFichaMatches, isSessionC1D1, valorTexto } from "./FichasTecnicas";
 import { openPdfBlob } from "../pdfOpen";
-import { printLabel, computeVm } from "../label";
+import EtiquetaPanel, { computeVm } from "../label";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -805,6 +805,7 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
   const [labelMed, setLabelMed]           = useState(null); // medicamento para el que se está capturando la etiqueta, o null
   const [labelForm, setLabelForm]         = useState({ mgFrasco:"", mlFrasco:"", enf1:"", enf2:"" });
   const [savingLabel, setSavingLabel]     = useState(false);
+  const [viewingLabel, setViewingLabel]   = useState(null); // medicamento (ya con etiqueta) que se muestra en el panel de texto
   const openLabelModal = (med) => { setLabelMed(med); setLabelForm({ mgFrasco:"", mlFrasco:"", enf1: profile?.name || "", enf2:"" }); };
   const events     = session.events    || {};
   const medEvents  = session.medEvents || {};
@@ -812,10 +813,10 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
 
   // Guarda los datos de la etiqueta (mg/ml del frasco ya calculan el
   // volumen a retirar, más quién mezcla/aplica) en el medicamento de la
-  // sesión -- no son datos clínicos, así que no se pide reautorizar -- y
-  // de inmediato abre la etiqueta lista para imprimir. Queda guardado para
-  // poder reimprimirla después desde Historial sin volver a capturar nada.
-  const saveLabelAndPrint = async (med, data) => {
+  // sesión -- no son datos clínicos, así que no se pide reautorizar -- y de
+  // inmediato abre el panel de texto para copiar. Queda guardado para poder
+  // volver a abrirlo después desde Historial sin volver a capturar nada.
+  const saveLabelAndView = async (med, data) => {
     setSavingLabel(true);
     try {
       const etiqueta = {
@@ -825,8 +826,8 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
       };
       const updatedMeds = (session.meds || []).map(m => m.id === med.id ? { ...m, etiqueta } : m);
       await saveMeds(updatedMeds, false);
-      printLabel(session, { ...med, etiqueta });
       setLabelMed(null);
+      setViewingLabel({ ...med, etiqueta });
     } catch (e) {
       alert("Error al guardar la etiqueta: " + e.message);
     } finally {
@@ -1487,8 +1488,8 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                       )}
                       {med.category !== "domicilio" && (
                         <div style={{ padding:"0 14px 10px" }}>
-                          <button onClick={() => med.etiqueta ? printLabel(session, med) : openLabelModal(med)} style={{ width:"100%", padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
-                            🏷️ {med.etiqueta ? "Reimprimir etiqueta" : "Generar etiqueta"}
+                          <button onClick={() => med.etiqueta ? setViewingLabel(med) : openLabelModal(med)} style={{ width:"100%", padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                            🏷️ {med.etiqueta ? "Ver etiqueta" : "Generar etiqueta"}
                           </button>
                         </div>
                       )}
@@ -1626,15 +1627,16 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                   style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingLabel ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
                   Cancelar
                 </button>
-                <button onClick={() => saveLabelAndPrint(labelMed, { ...labelForm, vm })} disabled={savingLabel || vm == null}
+                <button onClick={() => saveLabelAndView(labelMed, { ...labelForm, vm })} disabled={savingLabel || vm == null}
                   style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: (savingLabel || vm == null) ? "not-allowed" : "pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: (savingLabel || vm == null) ? 0.5 : 1 }}>
-                  {savingLabel ? "Guardando…" : "✓ Generar e imprimir"}
+                  {savingLabel ? "Guardando…" : "✓ Generar etiqueta"}
                 </button>
               </div>
             </div>
           </div>
         );
       })()}
+      {viewingLabel && <EtiquetaPanel session={session} med={viewingLabel} onCerrar={() => setViewingLabel(null)} />}
     </div>
   );
 }
