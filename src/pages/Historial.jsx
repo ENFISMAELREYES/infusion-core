@@ -4,7 +4,8 @@ import { uploadSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { normalizeMedName, findFichaMatch, findFichaMatches, isSessionC1D1 } from "./FichasTecnicas";
 import { openPdfBlob } from "../pdfOpen";
-import EtiquetaPanel from "../label";
+import EtiquetaPanel, { computeVm } from "../label";
+import { parseDoseMg } from "../data/materialCatalog";
 
 import { PROJECT_ID, API_KEY, DATABASE_ID } from "../config";
 
@@ -110,6 +111,29 @@ const [editDraft, setEditDraft] = useState(null);
   // sin volver a preguntar nada. Solo aparece si ya se había generado antes.
   const [reprintingConsent, setReprintingConsent] = useState(false);
   const [viewingLabel, setViewingLabel] = useState(null); // medicamento cuya etiqueta se muestra en el panel de texto
+  const [viewingHV, setViewingHV] = useState(null); // medicamento cuya hoja de verificación se muestra
+
+  // Reimprime el PDF de la Hoja de Verificación desde los datos ya guardados
+  // (med.hojaVerificacion) -- mismo endpoint y mismo cálculo que NurseView.jsx.
+  const generateHVPdf = async (med, hv) => {
+    const vm = computeVm(med.dose, hv.mgFrasco, hv.mlFrasco);
+    const doseMg = parseDoseMg(med.dose);
+    const ve = parseFloat(hv.ve), vd = parseFloat(hv.vd);
+    const vr = (vm != null && !isNaN(ve) && !isNaN(vd)) ? (ve - vd + vm) : null;
+    const vt = (vr != null && !isNaN(ve)) ? (ve - vr + vm) : null;
+    const ct = (vt && doseMg) ? doseMg / vt : null;
+    const res = await fetch("/api/generate-hoja-verificacion", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        center: s.center, patientName: s.patientName, dob: s.dob, date: s.date,
+        medName: med.name, dose: med.dose, diluent: med.diluent,
+        hv, calculo: { c: (parseFloat(hv.mgFrasco) && parseFloat(hv.mlFrasco)) ? parseFloat(hv.mgFrasco)/parseFloat(hv.mlFrasco) : null, vm, vr, vt, ct, doseMg },
+      }),
+    });
+    if (!res.ok) throw new Error(`Error ${res.status} al generar el PDF`);
+    const blob = await res.blob();
+    openPdfBlob(blob, `HOJA_VERIFICACION_${(s.patientName || "paciente").replace(/\s+/g, "_")}.pdf`);
+  };
   const reprintConsent = async () => {
     setReprintingConsent(true);
     try {
@@ -482,8 +506,15 @@ const saveEdit = async () => {
                       {m.etiqueta && (
                         <button onClick={e => { e.stopPropagation(); setViewingLabel(m); }}
                           title={`Etiqueta generada ${new Date(m.etiqueta.printedAt).toLocaleString("es-MX")} por ${m.etiqueta.printedBy || ""}`}
-                          style={{ marginTop:6, padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                          style={{ marginTop:6, marginRight:6, padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
                           🏷️ Ver etiqueta
+                        </button>
+                      )}
+                      {m.hojaVerificacion && (
+                        <button onClick={e => { e.stopPropagation(); setViewingHV(m); }}
+                          title={m.hojaVerificacion.revisadoPor ? `Revisado por ${m.hojaVerificacion.revisadoPorName || ""}` : "Pendiente de revisión"}
+                          style={{ marginTop:6, padding:"4px 10px", borderRadius:7, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(93,202,165,0.1)", border:"1px solid rgba(93,202,165,0.3)", color:"#5DCAA5" }}>
+                          📋 {m.hojaVerificacion.revisadoPor ? "Ver hoja de verif." : "Hoja de verif. (pendiente)"}
                         </button>
                       )}
                     </div>
@@ -725,6 +756,36 @@ const saveEdit = async () => {
       )}
 
       {viewingLabel && <EtiquetaPanel session={s} med={viewingLabel} onCerrar={() => setViewingLabel(null)} />}
+      {viewingHV && (() => {
+        const hv = viewingHV.hojaVerificacion;
+        return (
+          <div onClick={() => setViewingHV(null)}
+            style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:420, maxHeight:"90vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:10 }}>
+              <div>
+                <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>📋 Hoja de verificación</div>
+                <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{viewingHV.name} {viewingHV.dose} — {s.patientName}</div>
+              </div>
+              <div style={{ fontSize:12, color:"#aaa", display:"flex", flexDirection:"column", gap:4 }}>
+                <div>Médico: {hv.medico || "—"}</div>
+                <div>Lote medicamento: {hv.loteMed || "—"} · Cad. {hv.cadMed || "—"}</div>
+                <div>Lote diluyente: {hv.loteDil || "—"} · Cad. {hv.cadDil || "—"}</div>
+                <div>Fecha de preparación: {hv.fechaPreparacion || "—"} {hv.horaPreparacion || ""}</div>
+                <div>Preparado por: {hv.preparadoPorName || "—"}{hv.preparadoAt ? ` · ${new Date(hv.preparadoAt).toLocaleString("es-MX")}` : ""}</div>
+                <div>Revisado por: {hv.revisadoPorName || "— pendiente"}{hv.revisadoAt ? ` · ${new Date(hv.revisadoAt).toLocaleString("es-MX")}` : ""}</div>
+              </div>
+              <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                <button onClick={() => setViewingHV(null)} style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>Cerrar</button>
+                <button onClick={() => generateHVPdf(viewingHV, hv).catch(e => alert(e.message))}
+                  style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff" }}>
+                  🖨️ Generar PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {dupModal && (
         <div onClick={e => { e.stopPropagation(); !duping && setDupModal(null); }}

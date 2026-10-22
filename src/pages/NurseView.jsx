@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { uploadSignature, uploadUserSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
-import { computeSessionMaterial, computeMedicationPieces, parseDiluent } from "../data/materialCatalog";
+import { computeSessionMaterial, computeMedicationPieces, parseDiluent, parseDoseMg } from "../data/materialCatalog";
 import { normalizeMedName, findFichaMatch, findFichaMatches, isSessionC1D1, valorTexto, isAlertaCritica } from "./FichasTecnicas";
 import { openPdfBlob } from "../pdfOpen";
 import EtiquetaPanel, { computeVm } from "../label";
@@ -806,32 +806,33 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
   const [labelForm, setLabelForm]         = useState({ mgFrasco:"", mlFrasco:"", enf1:"", enf2:"", piezas:"1", medico:"", loteMed:"", cadMed:"", loteDil:"", cadDil:"", altoRiesgo:false, volumenPrep:"", fechaElaboracion:"", horaElaboracion:"", fechaCadRefrigeracion:"", horaCadRefrigeracion:"", fechaEntrega:"", horaEntrega:"" });
   const [savingLabel, setSavingLabel]     = useState(false);
   const [viewingLabel, setViewingLabel]   = useState(null); // medicamento (ya con etiqueta) que se muestra en el panel de texto
-  const openLabelModal = (med) => {
-    const hoy = new Date();
-    const fechaHoy = hoy.toISOString().slice(0, 10);
-    const horaHoy  = hoy.toTimeString().slice(0, 5);
 
-    // Piezas/lote/caducidad del medicamento -- ya se capturan al confirmar
-    // asistencia (ver Insumos.jsx: asignación de lote, solo CITIO lleva
-    // trazabilidad por ahora), así que se autocompletan aquí en vez de
-    // volver a pedírselos a la enfermera. Si la dosis se cubre con más de
-    // una presentación distinta (ej. dos tamaños de frasco), piezas suma el
-    // total pero lote/caducidad se dejan en blanco para completar a mano,
-    // porque ya no hay un solo lote que aplique a todas las piezas.
+  // Datos que ya existen en alguna otra parte del sistema (lote asignado al
+  // confirmar asistencia, alerta_critica_seguridad de la ficha técnica,
+  // volumen del diluyente ya capturado en la sesión) -- se usan tanto para
+  // la etiqueta de expediente como para la Hoja de Verificación, en vez de
+  // volver a pedírselos a la enfermera cada vez. Si la dosis se cubre con
+  // más de una presentación distinta (ej. dos tamaños de frasco), piezas
+  // suma el total pero lote/caducidad se dejan en blanco para completar a
+  // mano, porque ya no hay un solo lote que aplique a todas las piezas.
+  const autoFillFromSystem = (med) => {
     const pieces = computeMedicationPieces(med.name, med.dose)?.pieces || [];
     const totalPiezas = pieces.reduce((acc, p) => acc + p.count, 0);
     const singleItem = pieces.length === 1 ? pieces[0].item : null;
     const lotePick = singleItem
       ? (session.lotAssignments || []).find(a => a.item === singleItem)?.picks?.find(p => p.lote)
       : null;
-
-    // Alto riesgo -- de la ficha técnica (alerta_critica_seguridad), no se
-    // vuelve a decidir a mano cada vez.
     const ficha = findFichaMatch(med.name, fichasByName);
     const altoRiesgo = ficha ? isAlertaCritica(ficha.alerta_critica_seguridad) : false;
-
-    // Volumen de preparación -- del propio diluyente ya capturado en la sesión.
     const parsedDil = parseDiluent(med.diluent);
+    return { totalPiezas, lotePick, altoRiesgo, parsedDil };
+  };
+
+  const openLabelModal = (med) => {
+    const hoy = new Date();
+    const fechaHoy = hoy.toISOString().slice(0, 10);
+    const horaHoy  = hoy.toTimeString().slice(0, 5);
+    const { totalPiezas, lotePick, altoRiesgo, parsedDil } = autoFillFromSystem(med);
 
     setLabelMed(med);
     setLabelForm({
@@ -844,6 +845,56 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
       fechaEntrega: fechaHoy, horaEntrega: horaHoy,
     });
   };
+
+  // Hoja de Verificación -- orden de preparación de mezcla (fórmulas
+  // C/Vm/Vr/Vt/Ct) + checklist de verificación, con dos firmas (preparado
+  // por / revisado por, nunca la misma persona). Vive en
+  // med.hojaVerificacion, separado de med.etiqueta (la etiqueta de bolsa
+  // sigue siendo de una sola persona, sin esperar un segundo firmante,
+  // porque se necesita de inmediato al mezclar). La Etiqueta de expediente
+  // (ver label.jsx) lee lote/caducidad/piezas/alto riesgo/fechas de aquí
+  // cuando ya existe.
+  const [hvMed, setHvMed]       = useState(null); // medicamento para el que se está viendo/capturando la hoja, o null
+  const [hvForm, setHvForm]     = useState(null);
+  const [savingHV, setSavingHV] = useState(false);
+  const openHVModal = (med) => {
+    if (med.hojaVerificacion) { setHvMed(med); setHvForm({ ...med.hojaVerificacion }); return; }
+    const hoy = new Date();
+    const fechaHoy = hoy.toISOString().slice(0, 10);
+    const horaHoy  = hoy.toTimeString().slice(0, 5);
+    const { totalPiezas, lotePick, altoRiesgo, parsedDil } = autoFillFromSystem(med);
+    setHvMed(med);
+    setHvForm({
+      mgFrasco: med.etiqueta?.mgFrasco || "", mlFrasco: med.etiqueta?.mlFrasco || "",
+      piezas: totalPiezas ? String(totalPiezas) : "1",
+      ve: parsedDil?.vol ? String(parsedDil.vol) : "", vd: parsedDil?.vol ? String(parsedDil.vol) : "",
+      medico:"", loteMed: lotePick?.lote || "", cadMed: lotePick?.caducidad || "", loteDil:"", cadDil:"",
+      altoRiesgo,
+      fechaPreparacion: fechaHoy, horaPreparacion: horaHoy,
+      homogeniza: null, libreParticulas: null,
+      fechaExpiracion:"", horaExpiracion:"", condicionAlmacenamiento:"refrigeracion",
+    });
+  };
+  const signHV = async (step) => { // step: "preparado" | "revisado"
+    setSavingHV(true);
+    try {
+      const now = new Date().toISOString();
+      const hojaVerificacion = {
+        ...hvForm,
+        ...(step === "preparado"
+          ? { preparadoPor: user?.uid || "", preparadoPorName: profile?.name || "", preparadoAt: now, preparadoSignatureUrl: profile?.signatureUrl || null }
+          : { revisadoPor: user?.uid || "", revisadoPorName: profile?.name || "", revisadoAt: now, revisadoSignatureUrl: profile?.signatureUrl || null }),
+      };
+      const updatedMeds = (session.meds || []).map(m => m.id === hvMed.id ? { ...m, hojaVerificacion } : m);
+      await saveMeds(updatedMeds, false);
+      setHvMed(null);
+    } catch (e) {
+      alert("Error al guardar: " + e.message);
+    } finally {
+      setSavingHV(false);
+    }
+  };
+
   const events     = session.events    || {};
   const medEvents  = session.medEvents || {};
   const washEvents = session.washEvents || {};
@@ -1155,6 +1206,30 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
       onRefresh();
     } catch(e) { alert("Error: " + e.message); }
   };
+  // Genera el PDF de la Hoja de Verificación (Orden para Preparación de
+  // Mezcla + Hoja de Verificación, igual que CEMI) en el servidor -- se le
+  // manda toda la data ya calculada/capturada, no vuelve a consultar Firestore.
+  const generateHVPdf = async (med, hv) => {
+    const vm = computeVm(med.dose, hv.mgFrasco, hv.mlFrasco);
+    const doseMg = parseDoseMg(med.dose);
+    const ve = parseFloat(hv.ve), vd = parseFloat(hv.vd);
+    const vr = (vm != null && !isNaN(ve) && !isNaN(vd)) ? (ve - vd + vm) : null;
+    const vt = (vr != null && !isNaN(ve)) ? (ve - vr + vm) : null;
+    const ct = (vt && doseMg) ? doseMg / vt : null;
+    const res = await fetch("/api/generate-hoja-verificacion", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        center: session.center,
+        patientName: session.patientName, dob: session.dob, date: session.date,
+        medName: med.name, dose: med.dose, diluent: med.diluent,
+        hv, calculo: { c: (parseFloat(hv.mgFrasco) && parseFloat(hv.mlFrasco)) ? parseFloat(hv.mgFrasco)/parseFloat(hv.mlFrasco) : null, vm, vr, vt, ct, doseMg },
+      }),
+    });
+    if (!res.ok) throw new Error(`Error ${res.status} al generar el PDF`);
+    const blob = await res.blob();
+    openPdfBlob(blob, `HOJA_VERIFICACION_${(session.patientName || "paciente").replace(/\s+/g, "_")}.pdf`);
+  };
+
   const saveMeds = async (updatedMeds, reAuth, changeNote) => {
     try {
       const freshToken = await user.getIdToken(true);
@@ -1531,9 +1606,12 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
                         </div>
                       )}
                       {med.category !== "domicilio" && (
-                        <div style={{ padding:"0 14px 10px" }}>
-                          <button onClick={() => med.etiqueta ? setViewingLabel(med) : openLabelModal(med)} style={{ width:"100%", padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
+                        <div style={{ padding:"0 14px 10px", display:"flex", gap:6 }}>
+                          <button onClick={() => med.etiqueta ? setViewingLabel(med) : openLabelModal(med)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(175,169,236,0.1)", border:"1px solid rgba(175,169,236,0.3)", color:"#AFA9EC" }}>
                             🏷️ {med.etiqueta ? "Ver etiqueta" : "Generar etiqueta"}
+                          </button>
+                          <button onClick={() => openHVModal(med)} style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(93,202,165,0.1)", border:"1px solid rgba(93,202,165,0.3)", color:"#5DCAA5" }}>
+                            📋 {med.hojaVerificacion?.revisadoPor ? "Ver hoja de verif." : med.hojaVerificacion?.preparadoPor ? "Falta revisión" : "Hoja de verificación"}
                           </button>
                         </div>
                       )}
@@ -1761,6 +1839,158 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
         );
       })()}
       {viewingLabel && <EtiquetaPanel session={session} med={viewingLabel} onCerrar={() => setViewingLabel(null)} />}
+      {hvMed && hvForm && (() => {
+        const vm = computeVm(hvMed.dose, hvForm.mgFrasco, hvForm.mlFrasco);
+        const doseMg = parseDoseMg(hvMed.dose);
+        const mg = parseFloat(hvForm.mgFrasco), ml = parseFloat(hvForm.mlFrasco);
+        const c = (mg && ml) ? mg / ml : null;
+        const ve = parseFloat(hvForm.ve), vd = parseFloat(hvForm.vd);
+        const vr = (vm != null && !isNaN(ve) && !isNaN(vd)) ? (ve - vd + vm) : null;
+        const vt = (vr != null && !isNaN(ve)) ? (ve - vr + vm) : null;
+        const ct = (vt && doseMg) ? doseMg / vt : null;
+
+        const prepared = !!hvForm.preparadoPor;
+        const reviewed = !!hvForm.revisadoPor;
+        const canReview = prepared && !reviewed && user?.uid !== hvForm.preparadoPor;
+        const readOnly = reviewed;
+        const inputStyle = { width:"100%", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 10px", color:"#f0f0f0", fontSize:13, outline:"none" };
+        const labelStyle = { display:"block", fontSize:11, color:"#666", marginBottom:4 };
+        const field = (key, extra = {}) => ({
+          value: hvForm[key] ?? "", disabled: readOnly, style: inputStyle,
+          onChange: e => setHvForm(f => ({ ...f, [key]: e.target.value })), ...extra,
+        });
+        const Toggle = ({ k, labels }) => (
+          <div style={{ display:"flex", gap:6 }}>
+            {[true, false].map(v => (
+              <button key={String(v)} disabled={readOnly} onClick={() => setHvForm(f => ({ ...f, [k]: v }))}
+                style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor: readOnly ? "default" : "pointer",
+                  background: hvForm[k] === v ? "rgba(93,202,165,0.15)" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${hvForm[k] === v ? "rgba(93,202,165,0.4)" : "rgba(255,255,255,0.08)"}`,
+                  color: hvForm[k] === v ? "#5DCAA5" : "#888" }}>
+                {v ? labels[0] : labels[1]}
+              </button>
+            ))}
+          </div>
+        );
+
+        return (
+          <div onClick={() => !savingHV && setHvMed(null)}
+            style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ background:"#161616", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:20, width:"100%", maxWidth:480, maxHeight:"90vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:14 }}>
+              <div>
+                <div style={{ fontSize:15, fontWeight:600, color:"#f0f0f0" }}>📋 Hoja de verificación</div>
+                <div style={{ fontSize:12, color:"#888", marginTop:2 }}>{hvMed.name} {hvMed.dose} — {session.patientName}</div>
+              </div>
+
+              <div style={{ fontSize:12, fontWeight:600, color:"#5DCAA5" }}>1. Orden para preparación de mezcla</div>
+              <div style={{ display:"flex", gap:10 }}>
+                <div style={{ flex:1 }}><label style={labelStyle}>MG por frasco</label><input type="number" min="0" {...field("mgFrasco")} /></div>
+                <div style={{ flex:1 }}><label style={labelStyle}>ML por frasco</label><input type="number" min="0" {...field("mlFrasco")} /></div>
+              </div>
+              <div style={{ display:"flex", gap:10 }}>
+                <div style={{ flex:1 }}><label style={labelStyle}>Volumen del envase (Ve, ml)</label><input type="number" min="0" {...field("ve")} /></div>
+                <div style={{ flex:1 }}><label style={labelStyle}>Diluyente deseado (Vd, ml)</label><input type="number" min="0" {...field("vd")} /></div>
+              </div>
+              <div style={{ padding:"8px 12px", borderRadius:8, background:"rgba(93,202,165,0.08)", border:"1px solid rgba(93,202,165,0.2)", fontSize:12, color:"#5DCAA5" }}>
+                <div>C (concentración): {c != null ? `${c.toFixed(2)} mg/ml` : "—"}</div>
+                <div>Vm (a retirar del medicamento): {vm != null ? `${vm.toFixed(2)} ml` : "—"}</div>
+                <div>Vr (a retirar del envase diluyente): {vr != null ? `${vr.toFixed(2)} ml` : "—"}</div>
+                <div>Vt (volumen total de la mezcla): {vt != null ? `${vt.toFixed(2)} ml` : "—"}</div>
+                <div>Ct (concentración final): {ct != null ? `${ct.toFixed(2)} mg/ml` : "—"}</div>
+              </div>
+
+              <div style={{ fontSize:12, fontWeight:600, color:"#5DCAA5", marginTop:4 }}>2. Datos del lote</div>
+              <div><label style={labelStyle}>Médico (área solicitante)</label><input {...field("medico")} /></div>
+              <div style={{ display:"flex", gap:10 }}>
+                <div style={{ flex:1 }}><label style={labelStyle}>Lote medicamento</label><input {...field("loteMed")} /></div>
+                <div style={{ flex:1 }}><label style={labelStyle}>Caducidad</label><input type="date" {...field("cadMed")} /></div>
+              </div>
+              <div style={{ display:"flex", gap:10 }}>
+                <div style={{ flex:1 }}><label style={labelStyle}>Lote diluyente</label><input {...field("loteDil")} /></div>
+                <div style={{ flex:1 }}><label style={labelStyle}>Caducidad</label><input type="date" {...field("cadDil")} /></div>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <input type="checkbox" checked={!!hvForm.altoRiesgo} disabled={readOnly} onChange={e => setHvForm(f => ({ ...f, altoRiesgo:e.target.checked }))} style={{ width:16, height:16 }} />
+                <span style={{ fontSize:12, color:"#ccc" }}>Alto riesgo</span>
+              </div>
+              <div style={{ display:"flex", gap:10 }}>
+                <div style={{ flex:1 }}><label style={labelStyle}>Fecha de preparación</label><input type="date" {...field("fechaPreparacion")} /></div>
+                <div style={{ flex:1 }}><label style={labelStyle}>Hora</label><input type="time" {...field("horaPreparacion")} /></div>
+              </div>
+
+              <div style={{ fontSize:12, fontWeight:600, color:"#5DCAA5", marginTop:4 }}>3. Verificación de la mezcla</div>
+              <div style={{ fontSize:12, color:"#aaa", background:"rgba(255,255,255,0.03)", borderRadius:8, padding:"8px 10px" }}>
+                Retirar {vr != null ? vr.toFixed(2) : "___"} ml del envase diluyente · Extraer {vm != null ? vm.toFixed(2) : "___"} ml del (de los) vial(es) · Inyectar y homogenizar.
+              </div>
+              <div>
+                <label style={labelStyle}>¿Se homogeniza?</label>
+                <Toggle k="homogeniza" labels={["Sí", "No"]} />
+              </div>
+              <div>
+                <label style={labelStyle}>¿Libre de partículas?</label>
+                <Toggle k="libreParticulas" labels={["Sí", "No"]} />
+              </div>
+              <div style={{ display:"flex", gap:10 }}>
+                <div style={{ flex:1 }}><label style={labelStyle}>Fecha de expiración</label><input type="date" {...field("fechaExpiracion")} /></div>
+                <div style={{ flex:1 }}><label style={labelStyle}>Hora</label><input type="time" {...field("horaExpiracion")} /></div>
+              </div>
+              <div>
+                <label style={labelStyle}>Condición de almacenamiento</label>
+                <div style={{ display:"flex", gap:6 }}>
+                  {[["refrigeracion","Refrigeración"],["ambiente","Ambiente"]].map(([v,lbl]) => (
+                    <button key={v} disabled={readOnly} onClick={() => setHvForm(f => ({ ...f, condicionAlmacenamiento:v }))}
+                      style={{ flex:1, padding:"6px", borderRadius:7, fontSize:11, cursor: readOnly ? "default" : "pointer",
+                        background: hvForm.condicionAlmacenamiento === v ? "rgba(93,202,165,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1px solid ${hvForm.condicionAlmacenamiento === v ? "rgba(93,202,165,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: hvForm.condicionAlmacenamiento === v ? "#5DCAA5" : "#888" }}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)", paddingTop:12, display:"flex", flexDirection:"column", gap:8 }}>
+                <div style={{ fontSize:12, fontWeight:600, color:"#5DCAA5" }}>Firmas</div>
+                {prepared && (
+                  <div style={{ fontSize:12, color:"#aaa" }}>Preparado por: <b style={{ color:"#f0f0f0" }}>{hvForm.preparadoPorName}</b> · {new Date(hvForm.preparadoAt).toLocaleString("es-MX")}</div>
+                )}
+                {reviewed && (
+                  <div style={{ fontSize:12, color:"#aaa" }}>Revisado por: <b style={{ color:"#f0f0f0" }}>{hvForm.revisadoPorName}</b> · {new Date(hvForm.revisadoAt).toLocaleString("es-MX")}</div>
+                )}
+                {prepared && !reviewed && !canReview && (
+                  <div style={{ fontSize:11, color:"#ffb347" }}>Falta revisión — debe firmar una persona distinta a quien preparó.</div>
+                )}
+              </div>
+
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={() => setHvMed(null)} disabled={savingHV}
+                  style={{ flex:1, padding:"10px", borderRadius:9, fontSize:13, cursor: savingHV ? "wait" : "pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#888" }}>
+                  Cerrar
+                </button>
+                {!prepared && (
+                  <button onClick={() => signHV("preparado")} disabled={savingHV || vm == null}
+                    style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor:(savingHV || vm == null) ? "not-allowed" : "pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity:(savingHV || vm == null) ? 0.5 : 1 }}>
+                    {savingHV ? "Guardando…" : `✓ Firmar como preparado por ${profile?.name || ""}`}
+                  </button>
+                )}
+                {canReview && (
+                  <button onClick={() => signHV("revisado")} disabled={savingHV}
+                    style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor: savingHV ? "wait" : "pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: savingHV ? 0.5 : 1 }}>
+                    {savingHV ? "Guardando…" : `✓ Firmar como revisado por ${profile?.name || ""}`}
+                  </button>
+                )}
+                {reviewed && (
+                  <button onClick={() => generateHVPdf(hvMed, hvForm).catch(e => alert(e.message))}
+                    style={{ flex:2, padding:"10px", borderRadius:9, fontSize:13, fontWeight:600, cursor:"pointer", background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff" }}>
+                    🖨️ Generar PDF
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

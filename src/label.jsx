@@ -78,44 +78,63 @@ function CajaCopiable({ titulo, texto }) {
 // y se archiva en el expediente físico del paciente (ver PanelEtiquetas/
 // lib/etiqueta.js de CEMI, mismo layout). Lote/caducidad de medicamento y
 // diluyente, médico solicitante, alto riesgo y las fechas de
-// elaboración/caducidad de refrigeración/entrega son datos propios de esta
-// copia -- se capturan a mano junto con mg/ml del frasco (ver NurseView.jsx)
-// y se guardan en med.etiqueta, nunca se recalculan al reimprimir.
+// elaboración/caducidad de refrigeración salen de med.hojaVerificacion
+// cuando ya existe (ver NurseView.jsx: Hoja de Verificación, con sus dos
+// firmas) -- si todavía no se ha llenado, caen a med.etiqueta (los mismos
+// campos que ya se capturaban a mano ahí) para no dejar la etiqueta en
+// blanco. Fecha de entrega sigue siendo propia de la etiqueta de bolsa,
+// no es parte de la Hoja de Verificación.
 function EtiquetaExpediente({ session, med }) {
   const e = med.etiqueta || {};
-  const vm = e.vm != null ? Number(e.vm) : null;
-  const volPrep = parseFloat(e.volumenPrep);
+  const hv = med.hojaVerificacion || null;
+  const medico = hv?.medico || e.medico || "";
+  const piezas = hv?.piezas || e.piezas || "";
+  const loteMed = hv?.loteMed || e.loteMed || "";
+  const cadMed = hv?.cadMed || e.cadMed || "";
+  const loteDil = hv?.loteDil || e.loteDil || "";
+  const cadDil = hv?.cadDil || e.cadDil || "";
+  const altoRiesgo = hv ? !!hv.altoRiesgo : !!e.altoRiesgo;
+  const vm = hv ? computeVm(med.dose, hv.mgFrasco, hv.mlFrasco) : (e.vm != null ? Number(e.vm) : null);
+  const volumenPrep = hv?.vd || e.volumenPrep || "";
+  const fechaElaboracion = hv?.fechaPreparacion || e.fechaElaboracion;
+  const horaElaboracion = hv?.horaPreparacion || e.horaElaboracion;
+  const fechaCadRefrigeracion = hv?.fechaExpiracion || e.fechaCadRefrigeracion;
+  const horaCadRefrigeracion = hv?.horaExpiracion || e.horaCadRefrigeracion;
+  const volPrep = parseFloat(volumenPrep);
   const volDilFinal = (!isNaN(volPrep) && vm != null) ? (volPrep - vm).toFixed(1) : null;
   const diluyenteUp = (med.diluent || "").toUpperCase();
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "#00d4aa" }}>Etiqueta de expediente</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "#00d4aa" }}>
+          Etiqueta de expediente
+          {hv && !hv.revisadoPor && <span style={{ color: "#ffb347", fontWeight: 500 }}> · hoja de verificación pendiente de revisión</span>}
+        </div>
         <button onClick={() => window.print()} style={{ padding: "4px 12px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", color: "#ccc" }}>
           🖨️ Imprimir
         </button>
       </div>
       <div className="etiqueta-expediente-print" style={{ position: "relative", background: "#fff", color: "#111", borderRadius: 8, padding: "14px 16px", fontFamily: "'Times New Roman', serif", fontSize: 11.5, lineHeight: 1.55 }}>
-        {e.altoRiesgo && (
+        {altoRiesgo && (
           <div style={{ position: "absolute", top: 10, right: 12, width: 58, height: 58, borderRadius: "50%", background: "#D11A2A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", fontWeight: 700, fontSize: 9.5, lineHeight: 1.15 }}>
             ALTO<br />RIESGO
           </div>
         )}
         <div style={{ fontWeight: 700 }}>{(session.patientName || "").toUpperCase()}</div>
         <div style={{ textAlign: "right", marginTop: -14 }}>F.N. {fmtFecha(session.dob)}</div>
-        <div style={{ marginTop: 6 }}><b>Á</b>rea solicitante: {e.medico || ""}</div>
-        <div><b>A</b>ctivo: {med.name} {med.dose}{e.piezas ? ` - ${e.piezas} Fco(s).` : ""}</div>
-        <div style={{ paddingLeft: 13 }}>Lote: {e.loteMed || ""} Cad. {fmtFecha(e.cadMed)}</div>
+        <div style={{ marginTop: 6 }}><b>Á</b>rea solicitante: {medico}</div>
+        <div><b>A</b>ctivo: {med.name} {med.dose}{piezas ? ` - ${piezas} Fco(s).` : ""}</div>
+        <div style={{ paddingLeft: 13 }}>Lote: {loteMed} Cad. {fmtFecha(cadMed)}</div>
         <div><b>D</b>iluyente: {med.diluent || "—"}</div>
-        <div style={{ paddingLeft: 14 }}>Lote: {e.loteDil || ""}&nbsp;&nbsp;&nbsp;F.Cad. {fmtFecha(e.cadDil)}</div>
+        <div style={{ paddingLeft: 14 }}>Lote: {loteDil}&nbsp;&nbsp;&nbsp;F.Cad. {fmtFecha(cadDil)}</div>
 
         <div style={{ marginTop: 8 }}><b>P</b>reparación:</div>
         <div style={{ fontWeight: 700 }}>{med.name} {med.dose} /</div>
         <div style={{ fontWeight: 700 }}>{diluyenteUp}{volDilFinal != null ? ` ${volDilFinal} ML` : ""}</div>
-        <div><b>V</b>olumen Preparación: {e.volumenPrep ? <b>{e.volumenPrep}&nbsp;&nbsp;ml</b> : ""}</div>
-        <div><b>F</b>echa de Elaboración: <b>{fmtFechaLarga(e.fechaElaboracion)}</b>{e.horaElaboracion ? `    ${fmtHora(e.horaElaboracion)}` : ""}</div>
-        <div style={{ color: "#B91C1C" }}>Fecha de Cad. Refrigeración: <b>{fmtFechaLarga(e.fechaCadRefrigeracion)}</b>{e.horaCadRefrigeracion ? `  ${fmtHora(e.horaCadRefrigeracion)}` : ""}</div>
+        <div><b>V</b>olumen Preparación: {volumenPrep ? <b>{volumenPrep}&nbsp;&nbsp;ml</b> : ""}</div>
+        <div><b>F</b>echa de Elaboración: <b>{fmtFechaLarga(fechaElaboracion)}</b>{horaElaboracion ? `    ${fmtHora(horaElaboracion)}` : ""}</div>
+        <div style={{ color: "#B91C1C" }}>Fecha de Cad. Refrigeración: <b>{fmtFechaLarga(fechaCadRefrigeracion)}</b>{horaCadRefrigeracion ? `  ${fmtHora(horaCadRefrigeracion)}` : ""}</div>
         <div><b>F</b>echa de Entrega: {fmtFechaLarga(e.fechaEntrega)}{e.horaEntrega ? `    ${fmtHora(e.horaEntrega)}` : ""}</div>
       </div>
     </div>
