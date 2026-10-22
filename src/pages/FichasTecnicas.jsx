@@ -194,6 +194,97 @@ export function nombresComerciales(f) {
   return (f.productos_comerciales || []).map(p => p.marca).filter(Boolean).join(", ");
 }
 
+// ---- Estabilidad estructurada por marca (Fase 2 de la Hoja de
+// Verificación, mismo criterio que lib/fichasTecnicas.js de CEMI) ----
+// Cada entrada de productos_comerciales puede traer, además de lo que ya
+// existía (laboratorio/registro/estabilidad_post_dilucion en texto libre),
+// horas_temperatura_ambiente/horas_refrigerado -- con eso se puede
+// SUGERIR la fecha/hora de caducidad (en vez de solo mostrarla como texto)
+// y ADVERTIR si lo capturado a mano excede lo que esa marca aguanta. Si la
+// ficha no trae estos campos, las funciones de abajo devuelven null/[] y
+// no se muestra nada -- es una ayuda, no un requisito.
+// Horas entre dos momentos (fecha+hora de preparación → fecha+hora de
+// expiración capturada) -- para cruzar contra lo que aguanta esa marca.
+export function horasEntre(fecha1, hora1, fecha2, hora2) {
+  if (!fecha1 || !hora1 || !fecha2 || !hora2) return null;
+  const d1 = new Date(`${fecha1}T${hora1}`);
+  const d2 = new Date(`${fecha2}T${hora2}`);
+  if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return null;
+  return (d2.getTime() - d1.getTime()) / 3600000;
+}
+
+function buscarProductoComercial(ficha, marca) {
+  const lista = ficha?.productos_comerciales || [];
+  const m = (marca || "").trim().toUpperCase();
+  if (!m || lista.length === 0) return null;
+  return lista.find(p => p.marca && (m.includes(p.marca.toUpperCase()) || p.marca.toUpperCase().includes(m))) || null;
+}
+
+// horasTranscurridas: horas entre la preparación y la caducidad ya
+// capturada -- se compara contra lo que esa marca aguanta, según la
+// condición de almacenamiento elegida. null si falta la marca en la ficha,
+// si esa marca no trae el dato, o si falta algún valor para comparar.
+export function evaluarEstabilidad(ficha, marca, condicionAlmacenamiento, horasTranscurridas) {
+  if (horasTranscurridas === null || horasTranscurridas === undefined || isNaN(horasTranscurridas)) return null;
+  const producto = buscarProductoComercial(ficha, marca);
+  if (!producto) return null;
+  const limite = condicionAlmacenamiento === "ambiente" ? producto.horas_temperatura_ambiente : producto.horas_refrigerado;
+  if (limite === null || limite === undefined || limite === "") return null;
+  const ok = horasTranscurridas <= Number(limite);
+  const condTxt = condicionAlmacenamiento === "ambiente" ? "a temperatura ambiente" : "en refrigeración";
+  return {
+    ok,
+    mensaje: ok
+      ? `Estabilidad OK para ${producto.marca} (${limite}h ${condTxt})`
+      : `La caducidad capturada excede lo que aguanta ${producto.marca} ${condTxt}: ${horasTranscurridas.toFixed(1)}h capturadas vs. ${limite}h de estabilidad`,
+  };
+}
+
+function fechaHoraMasHoras(fechaPreparacion, horaPreparacion, horas) {
+  const base = new Date(`${fechaPreparacion}T${horaPreparacion}`);
+  if (isNaN(base.getTime())) return null;
+  const expira = new Date(base.getTime() + Number(horas) * 3600000);
+  const pad = (n) => String(n).padStart(2, "0");
+  return {
+    fecha: `${expira.getFullYear()}-${pad(expira.getMonth() + 1)}-${pad(expira.getDate())}`,
+    hora: `${pad(expira.getHours())}:${pad(expira.getMinutes())}`,
+  };
+}
+
+// Sugiere fecha/hora de expiración a partir de la fecha+hora de
+// preparación más lo que aguanta esa marca en la condición de
+// almacenamiento ya elegida -- un punto de partida editable, nunca se
+// guarda solo. null si la marca capturada no coincide con ninguna de la
+// ficha (ver sugerirExpiracionOpciones para ese caso).
+export function sugerirExpiracion(ficha, marca, condicionAlmacenamiento, fechaPreparacion, horaPreparacion) {
+  if (!fechaPreparacion || !horaPreparacion || !condicionAlmacenamiento) return null;
+  const producto = buscarProductoComercial(ficha, marca);
+  if (!producto) return null;
+  const limite = condicionAlmacenamiento === "ambiente" ? producto.horas_temperatura_ambiente : producto.horas_refrigerado;
+  if (limite === null || limite === undefined || limite === "") return null;
+  const calculo = fechaHoraMasHoras(fechaPreparacion, horaPreparacion, limite);
+  if (!calculo) return null;
+  return { ...calculo, marca: producto.marca, horas: Number(limite) };
+}
+
+// Cuando todavía no hay marca capturada, o lo que se escribió no coincide
+// con ninguna de la ficha, sugerirExpiracion no puede elegir una sola --
+// esto devuelve TODAS las marcas conocidas de la ficha con su fecha/hora
+// ya calculada, para elegir cuál aplica.
+export function sugerirExpiracionOpciones(ficha, condicionAlmacenamiento, fechaPreparacion, horaPreparacion) {
+  if (!fechaPreparacion || !horaPreparacion || !condicionAlmacenamiento) return [];
+  const lista = ficha?.productos_comerciales || [];
+  const opciones = [];
+  for (const producto of lista) {
+    if (!producto.marca) continue;
+    const limite = condicionAlmacenamiento === "ambiente" ? producto.horas_temperatura_ambiente : producto.horas_refrigerado;
+    if (limite === null || limite === undefined || limite === "") continue;
+    const calculo = fechaHoraMasHoras(fechaPreparacion, horaPreparacion, limite);
+    if (calculo) opciones.push({ ...calculo, marca: producto.marca, horas: Number(limite) });
+  }
+  return opciones;
+}
+
 const SECTIONS = [
   { title: "Información clínica", fields: [
     ["nombre_comercial","Nombre comercial"], ["productos_comerciales","Productos comerciales"],
@@ -758,6 +849,11 @@ export default function FichasTecnicas() {
                                         {p.registro_sanitario && <span style={{ color:"#666" }}> · Reg. {p.registro_sanitario}</span>}
                                         {p.presentacion && <div>Presentación: {p.presentacion}</div>}
                                         {p.estabilidad_post_dilucion && <div>Estabilidad: {valorTexto(p.estabilidad_post_dilucion)}</div>}
+                                        {(p.horas_temperatura_ambiente || p.horas_refrigerado) && (
+                                          <div style={{ color:"#5DCAA5" }}>
+                                            Estabilidad estructurada: {p.horas_temperatura_ambiente ? `${p.horas_temperatura_ambiente}h ambiente` : ""}{p.horas_temperatura_ambiente && p.horas_refrigerado ? " · " : ""}{p.horas_refrigerado ? `${p.horas_refrigerado}h refrigerado` : ""}
+                                          </div>
+                                        )}
                                         {p.disponibilidad && <div style={{ color:"#666" }}>Disponibilidad: {p.disponibilidad}</div>}
                                       </div>
                                     ))}

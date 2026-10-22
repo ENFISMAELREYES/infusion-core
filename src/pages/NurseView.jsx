@@ -3,7 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { uploadSignature, uploadUserSignature } from "../firebase";
 import SignaturePad from "../components/SignaturePad";
 import { computeSessionMaterial, computeMedicationPieces, parseDiluent, parseDoseMg } from "../data/materialCatalog";
-import { normalizeMedName, findFichaMatch, findFichaMatches, isSessionC1D1, valorTexto, isAlertaCritica } from "./FichasTecnicas";
+import { normalizeMedName, findFichaMatch, findFichaMatches, isSessionC1D1, valorTexto, isAlertaCritica, sugerirExpiracion, sugerirExpiracionOpciones, evaluarEstabilidad, horasEntre } from "./FichasTecnicas";
 import { openPdfBlob } from "../pdfOpen";
 import EtiquetaPanel, { computeVm } from "../label";
 
@@ -380,7 +380,7 @@ function EditMedForm({ med, onSave, onCancel }) {
 }
 
 // Tarjeta para sesiones pendientes y programadas (no del día)
-function PendingSessionCard({ session, user, onRefresh }) {
+function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
   const { profile } = useAuth();
   const [open, setOpen]     = useState(false);
   const [editDate, setEditDate] = useState(session.date || "");
@@ -410,8 +410,12 @@ function PendingSessionCard({ session, user, onRefresh }) {
       piezas: totalPiezas ? String(totalPiezas) : "1",
       ve: parsedDil?.vol ? String(parsedDil.vol) : "", vd: parsedDil?.vol ? String(parsedDil.vol) : "",
       // Médico -- ya se captura al crear la sesión (session.physician), no
-      // se vuelve a pedir aquí.
-      medico: session.physician || "", loteMed: lotePick?.lote || "", cadMed: lotePick?.caducidad || "", loteDil:"", cadDil:"",
+      // se vuelve a pedir aquí. Marca del medicamento -- ya se captura al
+      // asignar el lote en Insumos (session.lotAssignments), tampoco se
+      // vuelve a pedir; la del diluyente sí sigue manual, las soluciones no
+      // llevan trazabilidad por lote.
+      medico: session.physician || "", loteMed: lotePick?.lote || "", cadMed: lotePick?.caducidad || "", marcaMed: lotePick?.marca || "",
+      loteDil:"", cadDil:"", marcaDil:"",
       altoRiesgo,
       fechaPreparacion: fechaHoy, horaPreparacion: horaHoy,
       fechaExpiracion:"", horaExpiracion:"", condicionAlmacenamiento:"refrigeracion",
@@ -713,6 +717,7 @@ function PendingSessionCard({ session, user, onRefresh }) {
         </div>
       )}
       {hvMed && hvForm && (() => {
+        const ficha = findFichaMatch(hvMed.name, fichasByName);
         const vm = computeVm(hvMed.dose, hvForm.mgFrasco, hvForm.mlFrasco);
         const doseMg = parseDoseMg(hvMed.dose);
         const mg = parseFloat(hvForm.mgFrasco), ml = parseFloat(hvForm.mlFrasco);
@@ -765,10 +770,12 @@ function PendingSessionCard({ session, user, onRefresh }) {
                 <div style={{ flex:1 }}><label style={labelStyle}>Lote medicamento</label><input {...field("loteMed")} /></div>
                 <div style={{ flex:1 }}><label style={labelStyle}>Caducidad</label><input type="date" {...field("cadMed")} /></div>
               </div>
+              <div><label style={labelStyle}>Marca (fabricante) medicamento</label><input {...field("marcaMed")} /></div>
               <div style={{ display:"flex", gap:10 }}>
                 <div style={{ flex:1 }}><label style={labelStyle}>Lote diluyente</label><input {...field("loteDil")} /></div>
                 <div style={{ flex:1 }}><label style={labelStyle}>Caducidad</label><input type="date" {...field("cadDil")} /></div>
               </div>
+              <div><label style={labelStyle}>Marca (fabricante) diluyente</label><input {...field("marcaDil")} /></div>
               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                 <input type="checkbox" checked={!!hvForm.altoRiesgo} disabled={readOnly} onChange={e => setHvForm(f => ({ ...f, altoRiesgo:e.target.checked }))} style={{ width:16, height:16 }} />
                 <span style={{ fontSize:12, color:"#ccc" }}>Alto riesgo</span>
@@ -786,10 +793,6 @@ function PendingSessionCard({ session, user, onRefresh }) {
                     momento de mezclar, así que se imprimen en blanco en el
                     PDF para llenarse a mano (mismo criterio que CEMI). */}
               </div>
-              <div style={{ display:"flex", gap:10 }}>
-                <div style={{ flex:1 }}><label style={labelStyle}>Fecha de expiración</label><input type="date" {...field("fechaExpiracion")} /></div>
-                <div style={{ flex:1 }}><label style={labelStyle}>Hora</label><input type="time" {...field("horaExpiracion")} /></div>
-              </div>
               <div>
                 <label style={labelStyle}>Condición de almacenamiento</label>
                 <div style={{ display:"flex", gap:6 }}>
@@ -804,6 +807,47 @@ function PendingSessionCard({ session, user, onRefresh }) {
                   ))}
                 </div>
               </div>
+              {/* Fase 2: si la ficha técnica trae estabilidad estructurada
+                  por marca (horas_temperatura_ambiente/horas_refrigerado en
+                  productos_comerciales), se sugiere la caducidad sola --
+                  siempre editable, nunca se guarda sin que se confirme. */}
+              {!readOnly && (() => {
+                const sugerencia = sugerirExpiracion(ficha, hvForm.marcaMed, hvForm.condicionAlmacenamiento, hvForm.fechaPreparacion, hvForm.horaPreparacion);
+                if (sugerencia) {
+                  return (
+                    <div style={{ fontSize:11, color:"#5DCAA5", background:"rgba(93,202,165,0.08)", border:"1px solid rgba(93,202,165,0.2)", borderRadius:7, padding:"6px 8px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                      <span>Sugerencia: caduca {sugerencia.fecha} {sugerencia.hora} hrs ({sugerencia.horas}h para {sugerencia.marca})</span>
+                      <button onClick={() => setHvForm(f => ({ ...f, fechaExpiracion: sugerencia.fecha, horaExpiracion: sugerencia.hora }))} style={{ fontSize:11, fontWeight:600, color:"#5DCAA5", background:"none", border:"none", textDecoration:"underline", cursor:"pointer" }}>Usar esta</button>
+                    </div>
+                  );
+                }
+                const opciones = sugerirExpiracionOpciones(ficha, hvForm.condicionAlmacenamiento, hvForm.fechaPreparacion, hvForm.horaPreparacion);
+                if (opciones.length === 0) return null;
+                return (
+                  <div style={{ fontSize:11, color:"#5DCAA5", background:"rgba(93,202,165,0.08)", border:"1px solid rgba(93,202,165,0.2)", borderRadius:7, padding:"6px 8px", display:"flex", flexDirection:"column", gap:4 }}>
+                    <div>{hvForm.marcaMed?.trim() ? `"${hvForm.marcaMed}" no coincide con ninguna marca de la ficha técnica — elige la que aplica:` : "Elige la marca para sugerir su caducidad:"}</div>
+                    {opciones.map((op, i) => (
+                      <button key={i} onClick={() => setHvForm(f => ({ ...f, marcaMed: op.marca, fechaExpiracion: op.fecha, horaExpiracion: op.hora }))}
+                        style={{ textAlign:"left", fontSize:11, fontWeight:600, color:"#5DCAA5", background:"none", border:"none", textDecoration:"underline", cursor:"pointer" }}>
+                        {op.marca}: caduca {op.fecha} {op.hora} hrs ({op.horas}h)
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+              <div style={{ display:"flex", gap:10 }}>
+                <div style={{ flex:1 }}><label style={labelStyle}>Fecha de expiración</label><input type="date" {...field("fechaExpiracion")} /></div>
+                <div style={{ flex:1 }}><label style={labelStyle}>Hora</label><input type="time" {...field("horaExpiracion")} /></div>
+              </div>
+              {(() => {
+                const chequeo = evaluarEstabilidad(ficha, hvForm.marcaMed, hvForm.condicionAlmacenamiento, horasEntre(hvForm.fechaPreparacion, hvForm.horaPreparacion, hvForm.fechaExpiracion, hvForm.horaExpiracion));
+                if (!chequeo) return null;
+                return (
+                  <div style={{ fontSize:11, fontWeight:600, color: chequeo.ok ? "#5DCAA5" : "#ff6b6b", background: chequeo.ok ? "rgba(93,202,165,0.08)" : "rgba(255,107,107,0.08)", border:`1px solid ${chequeo.ok ? "rgba(93,202,165,0.2)" : "rgba(255,107,107,0.25)"}`, borderRadius:7, padding:"6px 8px" }}>
+                    {chequeo.ok ? "✓" : "⚠️"} {chequeo.mensaje}
+                  </div>
+                );
+              })()}
 
               <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)", paddingTop:12, display:"flex", flexDirection:"column", gap:8 }}>
                 <div style={{ fontSize:12, fontWeight:600, color:"#5DCAA5" }}>Firmas</div>
@@ -2144,7 +2188,7 @@ const scheduled = nurseData.filter(s => s.authorized && s.date !== today && s.st
               <div style={{ color:"#444", fontSize:14, padding:40, textAlign:"center", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:14 }}>
                 No hay sesiones pendientes de autorización.
               </div>
-            ) : pendingSessions.map(s => <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} />)
+            ) : pendingSessions.map(s => <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} fichasByName={fichasByName} />)
           )}
 
           {tab === "programados" && (
@@ -2155,7 +2199,7 @@ const scheduled = nurseData.filter(s => s.authorized && s.date !== today && s.st
             ) : scheduledSessions.map(s => 
                 s.status === "en_curso" 
                   ? <SessionCard key={s.id} session={s} token={token} onRefresh={load} user={user} fichasByName={fichasByName} />
-                  : <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} />
+                  : <PendingSessionCard key={s.id} session={s} user={user} onRefresh={load} fichasByName={fichasByName} />
               )
           )}
         </>
