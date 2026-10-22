@@ -66,11 +66,13 @@ export default async function handler(req, res) {
 
     // ---- Helpers de dibujo, estilo CEMI (lib/pdf/CalculoVerificacionPdf.jsx):
     // tablas con encabezado gris, cajas con barra de título gris, y valores
-    // de fórmula en pequeñas cajas subrayadas en vez de texto corrido. ----
+    // de fórmula en pequeñas cajas subrayadas en vez de texto corrido --
+    // cada bloque (1.1-1.3, 2.1-2.2, 3, verificación) lleva su propio marco,
+    // igual que en los PDF de referencia. ----
 
     const sectionTitle = (label, y, size = 11) => {
-      doc.fontSize(size).fillColor(NAVY).font("Helvetica-Bold").text(label, 45, y, { width: W, align: size > 9 ? "left" : "center" });
-      return y + (size > 9 ? 16 : 14);
+      doc.fontSize(size).fillColor(NAVY).font("Helvetica-Bold").text(label, 45, y, { width: W, align: "left" });
+      return y + 16;
     };
 
     // Tabla simple: un encabezado gris + N filas, columnas de ancho fijo.
@@ -93,8 +95,8 @@ export default async function handler(req, res) {
     // Renglón de fórmula con valores en cajita subrayada (como los "Valor"
     // de CEMI) en vez de texto corrido -- deja clarísimo cuál es cada dato
     // capturado/calculado dentro de la fórmula.
-    function formulaRow(segs, y) {
-      let x = 50;
+    function formulaRow(segs, y, x0 = 50) {
+      let x = x0;
       segs.forEach(seg => {
         if (seg.v !== undefined) {
           doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#000");
@@ -118,10 +120,44 @@ export default async function handler(req, res) {
     }
 
     const bodyLine = (txt, y, opts = {}) => {
+      const x = opts.x || 45;
+      const width = opts.width || (45 + W - x);
       doc.fontSize(opts.size || 8.2).fillColor(opts.color || "#333").font(opts.bold ? "Helvetica-Bold" : "Helvetica");
-      doc.text(txt, 45, y, { width: W });
+      doc.text(txt, x, y, { width });
       return doc.y + 3;
     };
+
+    // Caja con marco (solo borde, sin barra de título) -- para los bloques
+    // 1.1-1.3 y 2.1-2.2, que en CEMI van en su propio recuadro aparte de la
+    // tabla de arriba. bodyFn recibe el x/y ya con el padding aplicado.
+    function caja(y, bodyFn, pad = 6) {
+      const startY = y;
+      const endY = bodyFn(y + pad, 45 + pad);
+      doc.rect(45, startY, W, (endY + pad) - startY).stroke(LINE);
+      return endY + pad;
+    }
+
+    // Caja con barra de título gris + marco alrededor del cuerpo, igual que
+    // CajaSeccion de CEMI -- usada para "3. Calculo..." y para el bloque
+    // completo de "Verificación de la mezcla" en la página 2.
+    function cajaSeccion(y, titulo, bodyFn, pad = 6) {
+      const startY = y;
+      const bodyStartY = startY + 16;
+      const endY = bodyFn(bodyStartY + pad, 45 + pad);
+      const totalH = (endY + pad) - startY;
+      doc.rect(45, startY, W, totalH).stroke(LINE);
+      doc.rect(45, startY, W, 16).fillAndStroke(HEAD_BG, LINE);
+      doc.fontSize(9).fillColor("#000").font("Helvetica-Bold").text(titulo, 45 + 5, startY + 4, { width: W - 10 });
+      return endY + pad;
+    }
+
+    // Barra de título angosta sin cuerpo propio -- CEMI usa esto como
+    // encabezado de sección suelto, antes de la tabla Medicamento/Dosis.
+    function barraTitulo(y, texto) {
+      doc.rect(45, y, W, 16).fillAndStroke(HEAD_BG, LINE);
+      doc.fontSize(9).fillColor("#000").font("Helvetica-Bold").text(texto, 45 + 5, y + 4, { width: W - 10 });
+      return y + 16;
+    }
 
     const drawHeader = (title) => {
       drawWatermark();
@@ -145,17 +181,6 @@ export default async function handler(req, res) {
       doc.fontSize(14).fillColor(NAVY).font("Helvetica-Bold").text(title, 45, 50, { width: W, align: "center" });
       doc.fontSize(8).fillColor(TEAL).font("Helvetica").text(centerKey, 45, 68, { width: W, align: "center" });
       let y = Math.max(logoBottom, 86);
-      const infoStartY = y;
-
-      // Sello de alto riesgo -- junto al bloque de datos (como en la
-      // referencia), con ancho angosto para no encimarse con "Diluyente:"
-      // (ese renglón usa width:460 de los W≈522 disponibles).
-      if (hv.altoRiesgo) {
-        const bx = 45 + W - 26, by = infoStartY + 16;
-        doc.circle(bx, by, 22).fillAndStroke("#D11A2A", "#D11A2A");
-        doc.fontSize(7.5).fillColor("#fff").font("Helvetica-Bold").text("ALTO", bx - 22, by - 8, { width: 44, align: "center" });
-        doc.text("RIESGO", bx - 22, by + 2, { width: 44, align: "center" });
-      }
 
       doc.fontSize(9.5).fillColor("#000").font("Helvetica-Bold").text("Paciente:", 45, y, { continued: true }).font("Helvetica").text(`  ${patientName || ""}`, { width: 250 });
       doc.font("Helvetica-Bold").text("F. Nac:", 320, y, { continued: true }).font("Helvetica").text(`  ${fmtFechaCorta(dob)}`);
@@ -184,47 +209,55 @@ export default async function handler(req, res) {
       [[activo, dose || "", diluyenteUp, hv.vd ? `${hv.vd} ML` : ""]]);
     y += 10;
 
-    y = sectionTitle("CÁLCULO DE MEZCLA", y, 11);
+    y = sectionTitle("CALCULO DE MEZCLA", y, 11);
     y += 2;
+    y = barraTitulo(y, "1. Calculo de volumen de medicamento.");
     y = tabla(y, [{ label: "Medicamento", w: W * 0.7 }, { label: "Dosis", w: W * 0.3 }], [[activo, dose || ""]]);
-    y += 6;
-    y = bodyLine("1.1 Presentación y volumen medicamento:", y, { bold: true });
-    y = formulaRow([
-      { t: "1.- " },
-      { v: num(hv.mgFrasco, 0), u: "mg" }, { t: " / " }, { v: num(hv.mlFrasco, 0), u: "ml" },
-      { t: "   Piezas " }, { v: hv.piezas || "1" },
-      { t: "   P" }, { v: num(hv.mgFrasco, 0), u: "mg" }, { t: " % V" }, { v: num(hv.mlFrasco, 0), u: "ml" },
-      { t: " = C" }, { v: num(calculo.c), u: "mg/ml" },
-    ], y);
-    y = bodyLine("1.2 Concentración medicamento: P presentación (mg) % V volumen (ml) = C concentración (mg/ml)", y + 2);
+    y = caja(y, (yy, x0) => {
+      yy = bodyLine("1.1 Presentación y volumen medicamento:", yy, { bold: true, x: x0 });
+      yy = formulaRow([
+        { t: "1.- " },
+        { v: num(hv.mgFrasco, 0), u: "mg" }, { t: " / " }, { v: num(hv.mlFrasco, 0), u: "ml" },
+        { t: "   Piezas " }, { v: hv.piezas || "1" },
+        { t: "   P" }, { v: num(hv.mgFrasco, 0), u: "mg" }, { t: " % V" }, { v: num(hv.mlFrasco, 0), u: "ml" },
+        { t: " = C" }, { v: num(calculo.c), u: "mg/ml" },
+      ], yy, x0);
+      yy = bodyLine("1.2 Concentración medicamento: P presentación (mg) % V volumen (ml) = C concentración (mg/ml)", yy, { x: x0 });
+      yy += 4;
+      yy = bodyLine(`1.3 Calculo de volumen de ${activo} a retirar: D dosis medicamento (mg) % C concentración (mg/ml) = Vm volumen de medicamento`, yy, { x: x0 });
+      yy = formulaRow([
+        { t: "D" }, { v: num(calculo.doseMg, 1), u: "mg" }, { t: " % C" }, { v: num(calculo.c), u: "mg/ml" },
+        { t: " = Vm" }, { v: num(calculo.vm), u: "ml" },
+      ], yy, x0);
+      return yy;
+    });
     y += 4;
-    y = bodyLine(`1.3 Calculo de volumen de ${activo} a retirar: D dosis medicamento (mg) % C concentración (mg/ml) = Vm volumen de medicamento`, y, { bold: true });
-    y = formulaRow([
-      { t: "D" }, { v: num(calculo.doseMg, 1), u: "mg" }, { t: " % C" }, { v: num(calculo.c), u: "mg/ml" },
-      { t: " = Vm" }, { v: num(calculo.vm), u: "ml" },
-    ], y);
-    y += 6;
 
     y = tabla(y, [{ label: "Diluyente", w: W * 0.7 }, { label: "Vol. Total", w: W * 0.3 }], [[diluyenteUp, hv.vd ? `${hv.vd} ML` : ""]]);
-    y += 6;
-    y = bodyLine("2.1 Volumen a retirar en el envase diluyente: Ve volumen envase – Vd volumen diluyente + Vm volumen de medicamento (ml) = Vr volumen a retirar", y, { bold: true });
-    y = formulaRow([
-      { t: "Ve" }, { v: num(hv.ve, 0), u: "ml" }, { t: " -  Vd" }, { v: num(hv.vd, 0), u: "ml" },
-      { t: " +  Vm" }, { v: num(calculo.vm), u: "ml" }, { t: " =  Vr" }, { v: num(calculo.vr), u: "ml" },
-    ], y);
-    y = bodyLine("2.2 Calculo del volumen total en el envase mezclado medicamento/diluyente: Ve volumen envase – Vr volumen retirado + Vm Volumen medicamento = Vt volumen total", y + 2, { bold: true });
-    y = formulaRow([
-      { t: "Ve" }, { v: num(hv.ve, 0), u: "ml" }, { t: " -  Vr" }, { v: num(calculo.vr), u: "ml" },
-      { t: " +  Vm" }, { v: num(calculo.vm), u: "ml" }, { t: " =  Vt" }, { v: num(calculo.vt), u: "ml" },
-    ], y);
-    y += 6;
+    y = caja(y, (yy, x0) => {
+      yy = bodyLine("2.1 Volumen a retirar en el envase diluyente: Ve volumen envase - Vd volumen diluyente + Vm volumen de medicamento (ml) = Vr volumen a retirar", yy, { x: x0 });
+      yy = formulaRow([
+        { t: "Ve" }, { v: num(hv.ve, 0), u: "ml" }, { t: " -  Vd" }, { v: num(hv.vd, 0), u: "ml" },
+        { t: " +  Vm" }, { v: num(calculo.vm), u: "ml" }, { t: " =  Vr" }, { v: num(calculo.vr), u: "ml" },
+      ], yy, x0);
+      yy += 2;
+      yy = bodyLine("2.2 Calculo del volumen total en el envase mezclado medicamento/diluyente: Ve volumen envase - Vr volumen retirado + Vm Volumen medicamento = Vt volumen total", yy, { x: x0 });
+      yy = formulaRow([
+        { t: "Ve" }, { v: num(hv.ve, 0), u: "ml" }, { t: " -  Vr" }, { v: num(calculo.vr), u: "ml" },
+        { t: " +  Vm" }, { v: num(calculo.vm), u: "ml" }, { t: " =  Vt" }, { v: num(calculo.vt), u: "ml" },
+      ], yy, x0);
+      return yy;
+    });
+    y += 4;
 
-    y = sectionTitle("3. Calculo de la concentración del producto mezclado", y, 9.5);
-    y = bodyLine("D dosis del paciente (mg) % Vt volumen total = Ct Concentración Total", y);
-    y = formulaRow([
-      { t: "D" }, { v: num(calculo.doseMg, 1), u: "mg" }, { t: " % Vt" }, { v: num(calculo.vt), u: "ml" },
-      { t: " = Ct" }, { v: num(calculo.ct), u: "mg/ml" },
-    ], y);
+    y = cajaSeccion(y, "3. Calculo de la concentración del producto mezclado", (yy, x0) => {
+      yy = bodyLine("D dosis del paciente (mg) % Vt volumen total = Ct Concentración Total", yy, { x: x0 });
+      yy = formulaRow([
+        { t: "D" }, { v: num(calculo.doseMg, 1), u: "mg" }, { t: " % Vt" }, { v: num(calculo.vt), u: "ml" },
+        { t: " = Ct" }, { v: num(calculo.ct), u: "mg/ml" },
+      ], yy, x0);
+      return yy;
+    });
 
     // Firma de página 1 -- renglón de texto simple (igual que CEMI: aquí
     // no lleva imagen de firma, esa va en la Hoja de Verificación, página
@@ -260,28 +293,88 @@ export default async function handler(req, res) {
     ]);
     y += 12;
 
-    y = sectionTitle("VERIFICACIÓN DE LA MEZCLA", y, 11);
-    y += 2;
-    y = bodyLine("Antes de la mezcla:", y, { bold: true, color: "#000" });
-    y = bodyLine("1. Realizar técnica de lavado de manos antes de ingresar al área de mezclado.", y);
-    y = bodyLine("2. Preparar material necesario para la mezcla.", y);
-    y = bodyLine("3. Verificar el adecuado funcionamiento del gabinete de bioseguridad.", y);
-    y = bodyLine("4. Colocarse equipo de protección para resguardar la seguridad personal y procedimiento aséptico.", y);
-    y += 6;
+    // Sub-fila de encabezado gris dentro del marco de verificación (varias
+    // columnas, con separadores verticales).
+    function subHeaderRow(yy, x0, cols) {
+      const rowW = cols.reduce((a, c) => a + c.w, 0);
+      doc.rect(x0, yy, rowW, 13).fillAndStroke(HEAD_BG, LINE);
+      let x = x0;
+      doc.fontSize(7.8).font("Helvetica-Bold").fillColor("#000");
+      cols.forEach(c => { doc.text(c.label, x + 3, yy + 3, { width: c.w - 6, lineBreak: false }); x += c.w; });
+      x = x0;
+      cols.forEach((c, i) => { if (i > 0) doc.moveTo(x, yy).lineTo(x, yy + 13).lineWidth(0.75).strokeColor(LINE).stroke(); x += c.w; });
+      return yy + 13;
+    }
+    // Sub-fila de contenido, columnas con bordes propios y alto según la
+    // celda más alta (texto en varias líneas o una sola, según la celda).
+    function subContentRow(yy, x0, cells) {
+      doc.fontSize(7.8).font("Helvetica");
+      // Alto real por celda (algunas líneas envuelven a dos renglones
+      // dentro de columnas angostas, un alto fijo por línea las recortaba).
+      const heights = cells.map(c => {
+        if (!c.lines) return 14;
+        let h = 6;
+        c.lines.forEach(l => { h += doc.heightOfString(l, { width: c.w - 6 }) + 2; });
+        return h;
+      });
+      const h = Math.max(...heights, 14);
+      let x = x0;
+      cells.forEach(c => {
+        doc.rect(x, yy, c.w, h).stroke(LINE);
+        doc.fontSize(7.8).font("Helvetica").fillColor("#333");
+        if (c.lines) {
+          let ly = yy + 3;
+          c.lines.forEach(l => { doc.text(l, x + 3, ly, { width: c.w - 6 }); ly = doc.y + 2; });
+        } else {
+          doc.text(c.text || "", x + 3, yy + 3, { width: c.w - 6 });
+        }
+        x += c.w;
+      });
+      return yy + h;
+    }
 
-    y = bodyLine("Durante la mezcla:", y, { bold: true, color: "#000" });
-    y = bodyLine(`1. Retirar ${num(calculo.vr)} ml del envase diluyente.`, y);
-    y = bodyLine(`2. Extraer ${num(calculo.vm)} ml del (de los) vial(es) de medicamento.`, y);
     // "¿Se homogeniza?" y "¿Libre de partículas?" se imprimen en blanco a
     // propósito -- esa verificación se hace presencial, al momento de
     // mezclar, no se captura digitalmente (mismo criterio que CEMI).
-    y = bodyLine("3. Inyectar el volumen de medicamento en el diluyente y homogenizar.  ¿Se homogeniza?  Sí: ___  No: ___", y);
-    y += 6;
+    // Condición de almacenamiento sí se capturó digitalmente, así que se
+    // marca cuál de las dos ya quedó elegida.
+    const revisadoName = hv.revisadoPorName || "";
+    y = cajaSeccion(y, "VERIFICACIÓN DE LA MEZCLA", (yy, x0) => {
+      const insideW = W, colRev = insideW * 0.18, colMain = insideW - colRev;
+      yy = subHeaderRow(yy, x0, [{ label: "Antes de la mezcla", w: colMain }, { label: "Revisado por:", w: colRev }]);
+      yy = subContentRow(yy, x0, [
+        { w: colMain, lines: [
+          "1. Realizar técnica de lavado de manos antes de ingresar al área de mezclado.",
+          "2. Preparar material necesario para la mezcla.",
+          "3. Verificar el adecuado funcionamiento del gabinete de bioseguridad.",
+          "4. Colocarse equipo de protección para resguardar la seguridad personal y procedimiento aséptico de la mezcla.",
+        ] },
+        { w: colRev, text: revisadoName },
+      ]);
 
-    y = bodyLine("Posterior a la mezcla:", y, { bold: true, color: "#000" });
-    y = bodyLine("1. La mezcla está libre de partículas, homogeneizada:  Sí: ___  No: ___", y);
-    y = bodyLine(`2. Fecha y hora de expiración:  ${fmtFechaCorta(hv.fechaExpiracion)}  ${hv.horaExpiracion || ""} HRS`, y);
-    y = bodyLine(`3. Condición de almacenamiento:  ${hv.condicionAlmacenamiento === "ambiente" ? "Ambiente" : "Refrigeración"}`, y);
+      const colA = colMain / 2, colB = colMain / 2;
+      yy = subHeaderRow(yy, x0, [{ label: "Durante la mezcla", w: colA }, { label: "Al término de la mezcla", w: colB }, { label: "Revisado por:", w: colRev }]);
+      yy = subContentRow(yy, x0, [
+        { w: colA, lines: [
+          `1. Retirar ${num(calculo.vr)} ml del envase diluyente.`,
+          `2. Extraer ${num(calculo.vm)} ml del (de los) vial(es) de medicamento.`,
+          "3. Inyectar el volumen de medicamento en el diluyente y homogenizar.",
+        ] },
+        { w: colB, lines: ["____________ ml retirados", "____________ ml extraídos", "¿Se homogeniza?  Sí: ___  No: ___"] },
+        { w: colRev, text: revisadoName },
+      ]);
+
+      yy = subHeaderRow(yy, x0, [{ label: "Posterior a la mezcla", w: colMain }, { label: "Revisado por:", w: colRev }]);
+      yy = subContentRow(yy, x0, [
+        { w: colMain, lines: [
+          "1. La mezcla está libre de partículas, homogeneizada   Sí: ___   No: ___",
+          `2. Fecha y hora de expiración  ${fmtFechaCorta(hv.fechaExpiracion)} (dd/mm/aa)   ${hv.horaExpiracion || ""} (hh:mm)`,
+          `3. Condición de almacenamiento de la mezcla   Ambiente: ${hv.condicionAlmacenamiento === "ambiente" ? "X" : "___"}   Refrigeración: ${hv.condicionAlmacenamiento === "refrigeracion" ? "X" : "___"}`,
+        ] },
+        { w: colRev, text: revisadoName },
+      ]);
+      return yy;
+    }, 0);
 
     // Firmas: preparado por / revisado por -- mismo patrón que
     // generate-material-order.js (imagen de firma + nombre debajo).

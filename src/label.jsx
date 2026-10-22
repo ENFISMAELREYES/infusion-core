@@ -77,13 +77,13 @@ function CajaCopiable({ titulo, texto }) {
 // Etiqueta de expediente -- NO es para la bolsa, es la copia que se imprime
 // y se archiva en el expediente físico del paciente (ver PanelEtiquetas/
 // lib/etiqueta.js de CEMI, mismo layout). Lote/caducidad de medicamento y
-// diluyente, médico solicitante, alto riesgo y las fechas de
-// elaboración/caducidad de refrigeración salen de med.hojaVerificacion
-// cuando ya existe (ver NurseView.jsx: Hoja de Verificación, con sus dos
-// firmas) -- si todavía no se ha llenado, caen a med.etiqueta (los mismos
-// campos que ya se capturaban a mano ahí) para no dejar la etiqueta en
-// blanco. Fecha de entrega sigue siendo propia de la etiqueta de bolsa,
-// no es parte de la Hoja de Verificación.
+// diluyente, médico solicitante, y las fechas de elaboración/caducidad de
+// refrigeración salen de med.hojaVerificacion cuando ya existe (ver
+// NurseView.jsx: Hoja de Verificación, con sus dos firmas) -- si todavía
+// no se ha llenado, caen a med.etiqueta (los mismos campos que ya se
+// capturaban a mano ahí) para no dejar la etiqueta en blanco. Fecha de
+// entrega sigue siendo propia de la etiqueta de bolsa, no es parte de la
+// Hoja de Verificación.
 function EtiquetaExpediente({ session, med }) {
   const e = med.etiqueta || {};
   const hv = med.hojaVerificacion || null;
@@ -93,7 +93,6 @@ function EtiquetaExpediente({ session, med }) {
   const cadMed = hv?.cadMed || e.cadMed || "";
   const loteDil = hv?.loteDil || e.loteDil || "";
   const cadDil = hv?.cadDil || e.cadDil || "";
-  const altoRiesgo = hv ? !!hv.altoRiesgo : !!e.altoRiesgo;
   const vm = hv ? computeVm(med.dose, hv.mgFrasco, hv.mlFrasco) : (e.vm != null ? Number(e.vm) : null);
   const volumenPrep = hv?.vd || e.volumenPrep || "";
   const fechaElaboracion = hv?.fechaPreparacion || e.fechaElaboracion;
@@ -115,12 +114,7 @@ function EtiquetaExpediente({ session, med }) {
           🖨️ Imprimir
         </button>
       </div>
-      <div className="etiqueta-expediente-print" style={{ position: "relative", background: "#fff", color: "#111", borderRadius: 8, padding: "14px 16px", fontFamily: "'Times New Roman', serif", fontSize: 11.5, lineHeight: 1.55 }}>
-        {altoRiesgo && (
-          <div style={{ position: "absolute", top: 10, right: 12, width: 58, height: 58, borderRadius: "50%", background: "#D11A2A", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", fontWeight: 700, fontSize: 9.5, lineHeight: 1.15 }}>
-            ALTO<br />RIESGO
-          </div>
-        )}
+      <div className="etiqueta-expediente-print" style={{ background: "#fff", color: "#111", borderRadius: 8, padding: "14px 16px", fontFamily: "'Times New Roman', serif", fontSize: 11.5, lineHeight: 1.55 }}>
         <div style={{ fontWeight: 700 }}>{(session.patientName || "").toUpperCase()}</div>
         <div style={{ textAlign: "right", marginTop: -14 }}>F.N. {fmtFecha(session.dob)}</div>
         <div style={{ marginTop: 6 }}><b>Á</b>rea solicitante: {medico}</div>

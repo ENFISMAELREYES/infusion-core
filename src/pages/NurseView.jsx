@@ -403,7 +403,7 @@ function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
     const hoy = new Date();
     const fechaHoy = hoy.toISOString().slice(0, 10);
     const horaHoy  = hoy.toTimeString().slice(0, 5);
-    const { totalPiezas, lotePick, altoRiesgo, parsedDil } = autoFillFromSystem(session, med);
+    const { totalPiezas, lotePick, parsedDil } = autoFillFromSystem(session, med);
     setHvMed(med);
     setHvForm({
       mgFrasco: med.etiqueta?.mgFrasco || "", mlFrasco: med.etiqueta?.mlFrasco || "",
@@ -416,7 +416,6 @@ function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
       // llevan trazabilidad por lote.
       medico: session.physician || "", loteMed: lotePick?.lote || "", cadMed: lotePick?.caducidad || "", marcaMed: lotePick?.marca || "",
       loteDil:"", cadDil:"", marcaDil:"",
-      altoRiesgo,
       fechaPreparacion: fechaHoy, horaPreparacion: horaHoy,
       fechaExpiracion:"", horaExpiracion:"", condicionAlmacenamiento:"refrigeracion",
     });
@@ -776,10 +775,6 @@ function PendingSessionCard({ session, user, onRefresh, fichasByName }) {
                 <div style={{ flex:1 }}><label style={labelStyle}>Caducidad</label><input type="date" {...field("cadDil")} /></div>
               </div>
               <div><label style={labelStyle}>Marca (fabricante) diluyente</label><input {...field("marcaDil")} /></div>
-              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                <input type="checkbox" checked={!!hvForm.altoRiesgo} disabled={readOnly} onChange={e => setHvForm(f => ({ ...f, altoRiesgo:e.target.checked }))} style={{ width:16, height:16 }} />
-                <span style={{ fontSize:12, color:"#ccc" }}>Alto riesgo</span>
-              </div>
               <div style={{ display:"flex", gap:10 }}>
                 <div style={{ flex:1 }}><label style={labelStyle}>Fecha de preparación</label><input type="date" {...field("fechaPreparacion")} /></div>
                 <div style={{ flex:1 }}><label style={labelStyle}>Hora</label><input type="time" {...field("horaPreparacion")} /></div>
@@ -1081,13 +1076,8 @@ function autoFillFromSystem(session, med) {
   const lotePick = singleItem
     ? (session.lotAssignments || []).find(a => a.item === singleItem)?.picks?.find(p => p.lote)
     : null;
-  // Alto riesgo -- estándar en todos los medicamentos de quimio/sesión
-  // mezclada (decisión explícita: más vale el sello de más que confiar en
-  // que la ficha técnica de cada fármaco ya tenga el campo lleno). Sigue
-  // editable por si algún día hace falta una excepción.
-  const altoRiesgo = true;
   const parsedDil = parseDiluent(med.diluent);
-  return { totalPiezas, lotePick, altoRiesgo, parsedDil };
+  return { totalPiezas, lotePick, parsedDil };
 }
 
 // Genera el PDF de la Hoja de Verificación (Orden para Preparación de
@@ -1124,7 +1114,7 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
   const [sigEnfermeria, setSigEnfermeria] = useState(null);
   const [signing, setSigning]             = useState(false);
   const [labelMed, setLabelMed]           = useState(null); // medicamento para el que se está capturando la etiqueta, o null
-  const [labelForm, setLabelForm]         = useState({ mgFrasco:"", mlFrasco:"", enf1:"", enf2:"", piezas:"1", medico:"", loteMed:"", cadMed:"", loteDil:"", cadDil:"", altoRiesgo:false, volumenPrep:"", fechaElaboracion:"", horaElaboracion:"", fechaCadRefrigeracion:"", horaCadRefrigeracion:"", fechaEntrega:"", horaEntrega:"" });
+  const [labelForm, setLabelForm]         = useState({ mgFrasco:"", mlFrasco:"", enf1:"", enf2:"", piezas:"1", medico:"", loteMed:"", cadMed:"", loteDil:"", cadDil:"", volumenPrep:"", fechaElaboracion:"", horaElaboracion:"", fechaCadRefrigeracion:"", horaCadRefrigeracion:"", fechaEntrega:"", horaEntrega:"" });
   const [savingLabel, setSavingLabel]     = useState(false);
   const [viewingLabel, setViewingLabel]   = useState(null); // medicamento (ya con etiqueta) que se muestra en el panel de texto
 
@@ -1132,14 +1122,14 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
     const hoy = new Date();
     const fechaHoy = hoy.toISOString().slice(0, 10);
     const horaHoy  = hoy.toTimeString().slice(0, 5);
-    const { totalPiezas, lotePick, altoRiesgo, parsedDil } = autoFillFromSystem(session, med, fichasByName);
+    const { totalPiezas, lotePick, parsedDil } = autoFillFromSystem(session, med, fichasByName);
 
     setLabelMed(med);
     setLabelForm({
       mgFrasco:"", mlFrasco:"", enf1: profile?.name || "", enf2:"",
       piezas: totalPiezas ? String(totalPiezas) : "1", medico:"",
       loteMed: lotePick?.lote || "", cadMed: lotePick?.caducidad || "", loteDil:"", cadDil:"",
-      altoRiesgo, volumenPrep: parsedDil?.vol ? String(parsedDil.vol) : "",
+      volumenPrep: parsedDil?.vol ? String(parsedDil.vol) : "",
       fechaElaboracion: fechaHoy, horaElaboracion: horaHoy,
       fechaCadRefrigeracion:"", horaCadRefrigeracion:"",
       fechaEntrega: fechaHoy, horaEntrega: horaHoy,
@@ -1164,7 +1154,7 @@ function SessionCard({ session, token, onRefresh, user, fichasByName }) {
         piezas: data.piezas || "", medico: data.medico || "",
         loteMed: data.loteMed || "", cadMed: data.cadMed || "",
         loteDil: data.loteDil || "", cadDil: data.cadDil || "",
-        altoRiesgo: !!data.altoRiesgo, volumenPrep: data.volumenPrep || "",
+        volumenPrep: data.volumenPrep || "",
         fechaElaboracion: data.fechaElaboracion || "", horaElaboracion: data.horaElaboracion || "",
         fechaCadRefrigeracion: data.fechaCadRefrigeracion || "", horaCadRefrigeracion: data.horaCadRefrigeracion || "",
         fechaEntrega: data.fechaEntrega || "", horaEntrega: data.horaEntrega || "",
@@ -1984,15 +1974,9 @@ const totalTimed = (session.meds||[]).filter(m => m.time || m.category === "domi
 
               <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)", paddingTop:12, display:"flex", flexDirection:"column", gap:10 }}>
                 <div style={{ fontSize:12, fontWeight:600, color:"#AFA9EC" }}>Datos para etiqueta de expediente (opcional)</div>
-                <div style={{ display:"flex", gap:10 }}>
-                  <div style={{ flex:1 }}>
-                    <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Fco(s).</label>
-                    <input type="number" min="0" value={labelForm.piezas} onChange={e => setLabelForm(f => ({ ...f, piezas:e.target.value }))} style={inputStyle} />
-                  </div>
-                  <div style={{ flex:2, display:"flex", alignItems:"flex-end", gap:6, paddingBottom:8 }}>
-                    <input type="checkbox" checked={labelForm.altoRiesgo} onChange={e => setLabelForm(f => ({ ...f, altoRiesgo:e.target.checked }))} style={{ width:16, height:16 }} />
-                    <span style={{ fontSize:12, color:"#ccc" }}>Alto riesgo</span>
-                  </div>
+                <div>
+                  <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Fco(s).</label>
+                  <input type="number" min="0" value={labelForm.piezas} onChange={e => setLabelForm(f => ({ ...f, piezas:e.target.value }))} style={{ ...inputStyle, maxWidth:120 }} />
                 </div>
                 <div>
                   <label style={{ display:"block", fontSize:11, color:"#666", marginBottom:4 }}>Médico (área solicitante)</label>
