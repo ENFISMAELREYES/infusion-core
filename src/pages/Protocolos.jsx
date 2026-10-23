@@ -121,7 +121,7 @@ const nowTimeStr = () => new Date().toLocaleTimeString("en-GB", { timeZone: "Ame
 
 const fmtMaterial = (arr) => (arr || []).map(m => `${m.item} ×${m.qty}`).join(", ") || "—";
 const fmtMuestras = (arr) => (arr || []).map(m => `${m.tipo}${m.cantidad ? ` ×${m.cantidad}` : ""}${m.hora ? ` (${m.hora})` : ""}`).join(", ") || "—";
-const fmtMedicamento = (arr) => (arr || []).map(m => `${m.item}${m.dosis ? ` ${m.dosis}` : ""}${m.qty ? ` ×${m.qty}` : ""}`).join(", ") || "—";
+const fmtMedicamento = (arr) => (arr || []).map(m => `${m.item}${m.dosis ? ` ${m.dosis}` : ""}${m.qty ? ` ×${m.qty}` : ""}${m.hora ? ` (${m.hora})` : ""}`).join(", ") || "—";
 
 function openPrintWindow(title, bodyHtml) {
   const win = window.open("", "_blank", "width=850,height=900");
@@ -302,7 +302,7 @@ function CapturaForm({ token, profile, isJefe, visits, protocolo, insumoOptions,
   };
   const addMedicamento = () => {
     if (!draftMed.trim()) return;
-    setMedicamento(prev => [...prev, { item: draftMed.trim().toUpperCase(), dosis: "", qty: 1 }]);
+    setMedicamento(prev => [...prev, { item: draftMed.trim().toUpperCase(), dosis: "", qty: 1, hora: "" }]);
     setDraftMed("");
   };
   const addMuestra = () => setMuestras(prev => [...prev, { tipo: "", cantidad: 1, hora: "" }]);
@@ -500,6 +500,11 @@ function CapturaForm({ token, profile, isJefe, visits, protocolo, insumoOptions,
               style={{ ...inputStyle, width: 90 }} />
             <input type="number" min="1" value={m.qty} onChange={e => setMedicamento(prev => prev.map((x, xi) => xi === i ? { ...x, qty: Math.max(1, Number(e.target.value)) } : x))}
               style={{ ...inputStyle, width: 60 }} />
+            <input type="time" value={m.hora || ""} onChange={e => setMedicamento(prev => prev.map((x, xi) => xi === i ? { ...x, hora: e.target.value } : x))} style={{ ...inputStyle, width: 90 }} />
+            <button onClick={() => setMedicamento(prev => prev.map((x, xi) => xi === i ? { ...x, hora: nowTimeStr() } : x))} title="Registrar la hora de ahora, sin teclearla"
+              style={{ padding: "6px 10px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "rgba(0,212,170,0.1)", border: "1px solid rgba(0,212,170,0.3)", color: "#00d4aa", whiteSpace: "nowrap" }}>
+              🕐 Ahora
+            </button>
             <button onClick={() => setMedicamento(prev => prev.filter((_, xi) => xi !== i))} style={removeBtnStyle}>✕</button>
           </div>
         ))}
