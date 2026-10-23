@@ -104,7 +104,7 @@ async function fetchInventoryAggregate(token) {
       body: JSON.stringify({ structuredQuery: {
         from: [{ collectionId: "inventory" }],
         where: { fieldFilter: { field: { fieldPath: "warehouse" }, op: "IN",
-          value: { arrayValue: { values: [{ stringValue: "CITIO" }, { stringValue: "CIPI_PRO" }, { stringValue: "CIPI_PED" }] } } } },
+          value: { arrayValue: { values: [{ stringValue: "CITIO" }, { stringValue: "CIPI_PRO" }, { stringValue: "CIPI_PED" }, { stringValue: "QUAL_CITIO" }, { stringValue: "QUAL_CIPI" }] } } } },
         limit: 2000,
       }})
     }
@@ -1480,15 +1480,27 @@ export default function Insumos() {
 
   // Cuánto hay ya en inventario de cada artículo -- solo de los almacenes
   // que aplican al centro que se está viendo ahora mismo (no se vuelve a
-  // consultar Firestore al cambiar el filtro, inventoryAgg ya trae CITIO +
-  // CIPI_PRO + CIPI_PED de una vez).
+  // consultar Firestore al cambiar el filtro, inventoryAgg ya trae todos los
+  // almacenes relevantes de una vez). Material/insumos/soluciones se
+  // comparan contra el almacén del centro (CITIO/CIPI_PRO/CIPI_PED) porque
+  // ahí es donde ya está lo que se puede usar de inmediato. Medicamentos en
+  // cambio se comparan contra su Qual correspondiente -- CITIO/CIPI PRO/PED
+  // normalmente solo tienen jalado lo que ya se fue a usar pronto, Qual es
+  // el fondo real del que se puede surtir cuando llegue el momento (mismo
+  // criterio que QUAL_FOR_WAREHOUSE en Inventario.jsx).
   const inventoryWarehousesForFilter = centerFilter === "Todos" ? ["CITIO", "CIPI_PRO", "CIPI_PED"]
     : centerFilter === "CIPI PRO" ? ["CIPI_PRO"]
     : centerFilter === "CIPI PED" ? ["CIPI_PED"]
     : [centerFilter]; // "CITIO"
-  const inventoryQtyFor = (item) => inventoryAgg
-    .filter(i => inventoryWarehousesForFilter.includes(i.warehouse) && i.item === item)
-    .reduce((acc, i) => acc + (i.currentStock || 0), 0);
+  const qualWarehousesForFilter = centerFilter === "Todos" ? ["QUAL_CITIO", "QUAL_CIPI"]
+    : centerFilter === "CIPI PRO" || centerFilter === "CIPI PED" ? ["QUAL_CIPI"]
+    : ["QUAL_CITIO"]; // "CITIO"
+  const inventoryQtyFor = (item) => {
+    const warehouses = categorizeItem(item) === "MEDICAMENTOS" ? qualWarehousesForFilter : inventoryWarehousesForFilter;
+    return inventoryAgg
+      .filter(i => warehouses.includes(i.warehouse) && i.item === item)
+      .reduce((acc, i) => acc + (i.currentStock || 0), 0);
+  };
 
   const downloadPharmacyOrder = async (s, material, note, cipiVariant, scope = "todo") => {
     const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
