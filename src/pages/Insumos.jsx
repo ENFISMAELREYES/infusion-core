@@ -93,6 +93,25 @@ async function fetchLots(token) {
   return (data.filter(d => d.document) || []).map(d => parseDoc(d.document));
 }
 
+// Existencia agregada (currentStock) por artículo/almacén -- se usa en el
+// Total consolidado para mostrar cuánto hay ya en inventario junto a lo
+// que se necesita, sin tener que ir a Inventario a comparar aparte.
+async function fetchInventoryAggregate(token) {
+  const res = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery`,
+    { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ structuredQuery: {
+        from: [{ collectionId: "inventory" }],
+        where: { fieldFilter: { field: { fieldPath: "warehouse" }, op: "IN",
+          value: { arrayValue: { values: [{ stringValue: "CITIO" }, { stringValue: "CIPI_PRO" }, { stringValue: "CIPI_PED" }] } } } },
+        limit: 2000,
+      }})
+    }
+  );
+  const data = await res.json();
+  return (data.filter(d => d.document) || []).map(d => parseDoc(d.document));
+}
+
 // Mismo criterio que inventoryDocId (duplicado localmente en cada función de
 // este archivo), pero con el lote en el ID -- igual que en Inventario.jsx.
 function inventoryLotDocId(warehouse, item, lote) {
@@ -1333,6 +1352,7 @@ export default function Insumos() {
   const [token, setToken] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [allLots, setAllLots] = useState([]); // lotes de CITIO + Qual·CITIO (Fase 3) -- ver fetchLots
+  const [inventoryAgg, setInventoryAgg] = useState([]); // existencia agregada por almacén -- ver fetchInventoryAggregate
   const allowedCenters = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI PRO","CIPI PED"] : [profile?.center || "CITIO"]);
   const [centerFilter, setCenterFilter] = useState(() => canSeeAllCenters ? "Todos" : (allowedCenters?.[0] || "CITIO"));
   useEffect(() => {
@@ -1349,6 +1369,7 @@ export default function Insumos() {
   const [overrides, setOverrides] = useState({ extraCatalog: [], extraDefaults: {} });
   const [loading, setLoading] = useState(true);
   const [expandedPatient, setExpandedPatient] = useState(null);
+  const [consolidadoFiltro, setConsolidadoFiltro] = useState("todo"); // "todo" | "medicamentos" | "material" -- qué se ve en pantalla y qué se imprime
 
   const [newCatItem, setNewCatItem] = useState("");
   const [newCatCategory, setNewCatCategory] = useState("Insumos");
@@ -1384,7 +1405,7 @@ export default function Insumos() {
     // 180 días atrás -- antes solo se pedía desde "hoy", por eso al navegar
     // a fechas pasadas no aparecía nada (nunca se habían traído del todo).
     const fromDate = (() => { const d = new Date(); d.setDate(d.getDate() - 180); return d.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" }); })();
-    const [s, ov, lots] = await Promise.all([fetchUpcomingSessions(token, fromDate), fetchOverrides(token), fetchLots(token)]);
+    const [s, ov, lots, inv] = await Promise.all([fetchUpcomingSessions(token, fromDate), fetchOverrides(token), fetchLots(token), fetchInventoryAggregate(token)]);
     // Antes se excluía cualquier sesión sin medicamentos -- los procedimientos
     // suelen no llevar medicamentos capturados de la misma forma, pero sí
     // pueden necesitar material (insumos del procedimiento), así que siempre
@@ -1392,6 +1413,7 @@ export default function Insumos() {
     setSessions(s.filter(x => (Array.isArray(x.meds) && x.meds.length > 0) || x.sessionType === "procedimiento"));
     setOverrides(ov);
     setAllLots(lots);
+    setInventoryAgg(inv);
     setLoading(false);
     setHasLoadedOnce(true);
   };
@@ -1443,9 +1465,23 @@ export default function Insumos() {
   const grandTotalList = Object.entries(grandTotal).map(([item, qty]) => ({ item, qty })).sort((a,b) => a.item.localeCompare(b.item));
 
   // Clasificar el consolidado general en Medicamentos vs Material (soluciones
-  // + insumos), para poder imprimirlos por separado.
+  // + insumos), para poder filtrar la vista/impresión por separado.
   const grandTotalMeds = grandTotalList.filter(t => categorizeItem(t.item) === "MEDICAMENTOS");
   const grandTotalMaterial = grandTotalList.filter(t => categorizeItem(t.item) !== "MEDICAMENTOS");
+  const consolidadoList = consolidadoFiltro === "medicamentos" ? grandTotalMeds : consolidadoFiltro === "material" ? grandTotalMaterial : grandTotalList;
+  const consolidadoLabel = consolidadoFiltro === "medicamentos" ? "Medicamentos" : consolidadoFiltro === "material" ? "Material" : "Todo";
+
+  // Cuánto hay ya en inventario de cada artículo -- solo de los almacenes
+  // que aplican al centro que se está viendo ahora mismo (no se vuelve a
+  // consultar Firestore al cambiar el filtro, inventoryAgg ya trae CITIO +
+  // CIPI_PRO + CIPI_PED de una vez).
+  const inventoryWarehousesForFilter = centerFilter === "Todos" ? ["CITIO", "CIPI_PRO", "CIPI_PED"]
+    : centerFilter === "CIPI PRO" ? ["CIPI_PRO"]
+    : centerFilter === "CIPI PED" ? ["CIPI_PED"]
+    : [centerFilter]; // "CITIO"
+  const inventoryQtyFor = (item) => inventoryAgg
+    .filter(i => inventoryWarehousesForFilter.includes(i.warehouse) && i.item === item)
+    .reduce((acc, i) => acc + (i.currentStock || 0), 0);
 
   const downloadPharmacyOrder = async (s, material, note, cipiVariant, scope = "todo") => {
     const groups = { MEDICAMENTOS: [], SOLUCIONES: [], INSUMOS: [] };
@@ -1846,39 +1882,59 @@ export default function Insumos() {
 
           <div style={{ background:"rgba(0,212,170,0.05)", border:"1px solid rgba(0,212,170,0.2)", borderRadius:14, padding:16, marginBottom:20 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:8 }}>
-              <div style={{ fontSize:13, color:"#00d4aa", fontWeight:600 }}>Total consolidado ({grandTotalList.length} artículos)</div>
-              <div style={{ display:"flex", gap:6 }}>
-                {[["💊 Medicamentos", grandTotalMeds], ["🧰 Material", grandTotalMaterial], ["📎 Todo", grandTotalList]].map(([label, list]) => (
-                  <button key={label} onClick={() => {
-                      const rows = list.map(t => `<tr><td>${t.item}</td><td style="text-align:right;font-weight:bold;">${t.qty}</td></tr>`).join("");
-                      const win = window.open("", "_blank", "width=700,height=900");
-                      win.document.write(`<!DOCTYPE html><html><head><title>Total consolidado</title><style>
-                        body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;}
-                        h1{font-size:18px;margin-bottom:2px;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
-                        table{width:100%;border-collapse:collapse;font-size:12px;}
-                        td{padding:6px 8px;border-bottom:1px solid #ddd;}
-                      </style></head><body>
-                        <h1>Total consolidado -- ${label.replace(/^\S+\s/, "")}</h1>
-                        <p>${centerFilter} · ${dateFilter === "todas" ? (todasMode === "todo" ? "Con solicitud generada (todas las fechas)" : todasMode === "rango" ? `Con solicitud generada · ${rangeFrom} a ${rangeTo}` : `Con solicitud generada · ${selectedDay}`) : dateFilter === "hoy" ? selectedDay : `${rangeFrom} a ${rangeTo}`} · Generado ${new Date().toLocaleString("es-MX")}</p>
-                        <table>${rows}</table>
-                        <script>window.onload = () => window.print();<\/script>
-                      </body></html>`);
-                      win.document.close();
-                    }}
-                    style={{ padding:"6px 14px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>
-                    🖨️ {label}
+              <div style={{ fontSize:13, color:"#00d4aa", fontWeight:600 }}>Total consolidado ({consolidadoList.length} artículos)</div>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                {/* Estos tres ya no imprimen directo -- solo filtran lo que
+                    se ve abajo (y lo que luego imprime "Imprimir"), para
+                    poder revisarlo antes de mandarlo a la impresora. */}
+                {[["medicamentos", "💊 Medicamentos"], ["material", "🧰 Material"], ["todo", "📎 Todo"]].map(([key, label]) => (
+                  <button key={key} onClick={() => setConsolidadoFiltro(key)}
+                    style={{ padding:"6px 14px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer",
+                      background: consolidadoFiltro === key ? "rgba(0,212,170,0.15)" : "rgba(255,255,255,0.05)",
+                      border: `1px solid ${consolidadoFiltro === key ? "rgba(0,212,170,0.4)" : "rgba(255,255,255,0.09)"}`,
+                      color: consolidadoFiltro === key ? "#00d4aa" : "#ccc" }}>
+                    {label}
                   </button>
                 ))}
+                <button onClick={() => {
+                    const rows = consolidadoList.map(t => {
+                      const disp = inventoryQtyFor(t.item);
+                      return `<tr><td>${t.item}</td><td style="text-align:right;font-weight:bold;">${t.qty}</td><td style="text-align:right;color:${disp < t.qty ? "#c94848" : "#333"};">${disp}</td></tr>`;
+                    }).join("");
+                    const win = window.open("", "_blank", "width=700,height=900");
+                    win.document.write(`<!DOCTYPE html><html><head><title>Total consolidado</title><style>
+                      body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;}
+                      h1{font-size:18px;margin-bottom:2px;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
+                      table{width:100%;border-collapse:collapse;font-size:12px;}
+                      th{text-align:left;padding:6px 8px;border-bottom:2px solid #333;} td{padding:6px 8px;border-bottom:1px solid #ddd;}
+                    </style></head><body>
+                      <h1>Total consolidado -- ${consolidadoLabel}</h1>
+                      <p>${centerFilter} · ${dateFilter === "todas" ? (todasMode === "todo" ? "Con solicitud generada (todas las fechas)" : todasMode === "rango" ? `Con solicitud generada · ${rangeFrom} a ${rangeTo}` : `Con solicitud generada · ${selectedDay}`) : dateFilter === "hoy" ? selectedDay : `${rangeFrom} a ${rangeTo}`} · Generado ${new Date().toLocaleString("es-MX")}</p>
+                      <table><thead><tr><th>Artículo</th><th style="text-align:right;">Se necesita</th><th style="text-align:right;">En inventario</th></tr></thead><tbody>${rows}</tbody></table>
+                      <script>window.onload = () => window.print();<\/script>
+                    </body></html>`);
+                    win.document.close();
+                  }}
+                  style={{ padding:"6px 14px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
+                  🖨️ Imprimir
+                </button>
               </div>
             </div>
             <div style={{ maxHeight:280, overflowY:"auto", display:"flex", flexDirection:"column", gap:4 }}>
-              {grandTotalList.map((t,i) => (
-                <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"6px 10px", borderRadius:7, background:"rgba(255,255,255,0.03)", fontSize:12 }}>
-                  <span style={{ color:"#ccc" }}>{t.item}</span>
-                  <span style={{ color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace", fontWeight:600 }}>{t.qty}</span>
-                </div>
-              ))}
-              {grandTotalList.length === 0 && <div style={{ fontSize:12, color:"#444", textAlign:"center", padding:16 }}>Sin sesiones con medicamentos en este rango.</div>}
+              {consolidadoList.map((t,i) => {
+                const disp = inventoryQtyFor(t.item);
+                const falta = disp < t.qty;
+                return (
+                  <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 10px", borderRadius:7, background:"rgba(255,255,255,0.03)", fontSize:12 }}>
+                    <span style={{ color:"#ccc" }}>{t.item}</span>
+                    <div style={{ display:"flex", gap:14, alignItems:"center" }}>
+                      <span title="En inventario" style={{ color: falta ? "#ff6b6b" : "#777", fontFamily:"'IBM Plex Mono', monospace", fontSize:11 }}>📦 {disp}</span>
+                      <span title="Se necesita" style={{ color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace", fontWeight:600, minWidth:28, textAlign:"right" }}>{t.qty}</span>
+                    </div>
+                  </div>
+                );
+              })}
+              {consolidadoList.length === 0 && <div style={{ fontSize:12, color:"#444", textAlign:"center", padding:16 }}>Sin sesiones con medicamentos en este rango.</div>}
             </div>
           </div>
 
