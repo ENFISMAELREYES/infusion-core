@@ -146,6 +146,7 @@ export default function Inventario() {
   // CIPI con Qual·CIPI.
   const allowedWarehouses = canSeeAllCenters ? null : (profile?.center === "CIPI" ? ["CIPI_PRO","CIPI_PED","QUAL_CIPI"] : ["CITIO","QUAL_CITIO"]);
   const [tab, setTab] = useState("existencias"); // "existencias" | "movimientos"
+  const [movSubTab, setMovSubTab] = useState("historial"); // "historial" | "conteos" -- sub-pestaña dentro de Movimientos, para no saturar la barra principal con el historial de conteos físicos aparte
   const [warehouse, setWarehouse] = useState(() => canSeeAllCenters ? "CITIO" : (allowedWarehouses?.[0] || "CITIO"));
   useEffect(() => {
     if (allowedWarehouses && !allowedWarehouses.includes(warehouse)) {
@@ -1596,7 +1597,7 @@ export default function Inventario() {
       </div>
 
       <div style={{ display:"flex", gap:8, marginBottom:20, borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-        {[["existencias","Existencias"],["movimientos","Movimientos"],["conteo","📋 Conteo físico"],["historialConteos","🗂️ Historial de conteos"],["compras","🧾 Solicitudes de compra"],...(isJefe ? [["general","Vista general"]] : [])].map(([val,label]) => (
+        {[["existencias","Existencias"],["movimientos","Movimientos"],["conteo","📋 Conteo físico"],["compras","🧾 Solicitudes de compra"],...(isJefe ? [["general","Vista general"]] : [])].map(([val,label]) => (
           <button key={val} onClick={() => setTab(val)} style={{
             padding:"10px 16px", fontSize:13, fontWeight:600, cursor:"pointer", background:"none", border:"none",
             borderBottom: tab===val ? "2px solid #00d4aa" : "2px solid transparent",
@@ -1870,7 +1871,20 @@ export default function Inventario() {
         );
       })()}
 
-      {tab === "historialConteos" && (() => {
+      {tab === "movimientos" && (
+        <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+          {[["historial","Historial"],["conteos","🗂️ Conteos físicos"]].map(([val,label]) => (
+            <button key={val} onClick={() => setMovSubTab(val)} style={{
+              padding:"6px 14px", borderRadius:99, fontSize:11.5, fontWeight:600, cursor:"pointer",
+              background: movSubTab === val ? "rgba(0,212,170,0.12)" : "rgba(255,255,255,0.03)",
+              border: `1px solid ${movSubTab === val ? "rgba(0,212,170,0.3)" : "rgba(255,255,255,0.08)"}`,
+              color: movSubTab === val ? "#00d4aa" : "#888",
+            }}>{label}</button>
+          ))}
+        </div>
+      )}
+
+      {tab === "movimientos" && movSubTab === "conteos" && (() => {
         const printCountReport = (count) => {
           const rows = [...count.items].sort((a, b) => a.item.localeCompare(b.item) || (a.lote || "").localeCompare(b.lote || ""))
             .map(it => it.contado === null
@@ -1943,7 +1957,7 @@ export default function Inventario() {
         );
       })()}
 
-      {tab === "movimientos" && (() => {
+      {tab === "movimientos" && movSubTab === "historial" && (() => {
         const warehouseEvents = events.filter(e => e.warehouse === warehouse
           && (!catFilterActive || (Array.isArray(e.items) ? e.items : []).some(it => catFilter === "medicamentos" ? isMedItem(it.item) : !isMedItem(it.item))));
         return (
