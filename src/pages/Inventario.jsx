@@ -279,6 +279,70 @@ export default function Inventario() {
     }
   };
 
+  // Inventario físico -- conteo periódico por almacén contra lo que dice el
+  // sistema, con ajuste. Se captura lo contado artículo por artículo (lo
+  // que no se toca se deja fuera, no se asume 0); al guardar, cada artículo
+  // con diferencia se ajusta con el mismo patchInventoryDoc de siempre
+  // (updateMask, nunca pisa mínimos/máximos) y queda su propio evento de
+  // entrada/salida -- mismo criterio que cualquier otro movimiento, para
+  // que el historial de Movimientos lo muestre igual. Además se guarda un
+  // registro aparte en inventory_counts con TODO lo contado (incluso lo que
+  // no tuvo diferencia), como bitácora del conteo en sí.
+  const [conteoDraft, setConteoDraft] = useState({}); // { [inventoryDocId]: "texto capturado" }
+  const [savingConteo, setSavingConteo] = useState(false);
+  const guardarConteo = async (rows) => {
+    const contados = rows.filter(r => r.contado !== null);
+    if (contados.length === 0) { alert("Captura al menos un conteo."); return; }
+    const conDiferencia = contados.filter(r => r.diferencia !== 0);
+    if (conDiferencia.length > 0 && !confirm(`Vas a ajustar ${conDiferencia.length} artículo(s) al conteo físico capturado (el resto, sin diferencia, no se toca). ¿Continuar?`)) return;
+    setSavingConteo(true);
+    try {
+      const entradaItems = [], salidaItems = [];
+      for (const r of conDiferencia) {
+        const res = await patchInventoryDoc(token, r.id, r, { currentStock: r.contado, lastUpdated: new Date().toISOString() });
+        if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(`"${r.item}": ${err.error?.message || `Error ${res.status}`}`); }
+        if (r.diferencia > 0) entradaItems.push({ item: r.item, qty: r.diferencia });
+        else salidaItems.push({ item: r.item, qty: -r.diferencia });
+      }
+      const logEvent = async (type, items) => {
+        if (items.length === 0) return;
+        await fetch(`${FIRESTORE_BASE_URL}/inventory_events`, {
+          method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ fields: {
+            type: { stringValue: type }, warehouse: { stringValue: warehouse },
+            items: toFV(items),
+            reason: { stringValue: "Ajuste por conteo físico" },
+            userEmail: { stringValue: profile?.email || user?.email || "" },
+            createdAt: { stringValue: new Date().toISOString() },
+          } }),
+        });
+      };
+      await logEvent("entrada", entradaItems);
+      await logEvent("salida", salidaItems);
+
+      await fetch(`${FIRESTORE_BASE_URL}/inventory_counts`, {
+        method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ fields: {
+          warehouse: { stringValue: warehouse },
+          items: toFV(contados.map(r => ({ item: r.item, sistema: r.currentStock || 0, contado: r.contado, diferencia: r.diferencia }))),
+          countedBy: { stringValue: user?.uid || "" }, countedByName: { stringValue: profile?.name || "" },
+          countedAt: { stringValue: new Date().toISOString() },
+        } }),
+      });
+
+      setInventory(prev => prev.map(x => {
+        const r = conDiferencia.find(c => c.id === x.id);
+        return r ? { ...x, currentStock: r.contado } : x;
+      }));
+      setConteoDraft({});
+      alert(conDiferencia.length > 0 ? `Conteo guardado. Se ajustaron ${conDiferencia.length} artículo(s).` : "Conteo guardado. Ningún artículo tuvo diferencia.");
+    } catch (e) {
+      alert("Error al guardar el conteo: " + e.message);
+    } finally {
+      setSavingConteo(false);
+    }
+  };
+
   const [loading, setLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [search, setSearch] = useState("");
@@ -1498,7 +1562,7 @@ export default function Inventario() {
       </div>
 
       <div style={{ display:"flex", gap:8, marginBottom:20, borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-        {[["existencias","Existencias"],["movimientos","Movimientos"],["compras","🧾 Solicitudes de compra"],...(isJefe ? [["general","Vista general"]] : [])].map(([val,label]) => (
+        {[["existencias","Existencias"],["movimientos","Movimientos"],["conteo","📋 Conteo físico"],["compras","🧾 Solicitudes de compra"],...(isJefe ? [["general","Vista general"]] : [])].map(([val,label]) => (
           <button key={val} onClick={() => setTab(val)} style={{
             padding:"10px 16px", fontSize:13, fontWeight:600, cursor:"pointer", background:"none", border:"none",
             borderBottom: tab===val ? "2px solid #00d4aa" : "2px solid transparent",
@@ -1659,6 +1723,51 @@ export default function Inventario() {
           )}
         </div>
       )}
+
+      {tab === "conteo" && (() => {
+        const conteoRows = filteredInventory.map(i => {
+          const raw = conteoDraft[i.id];
+          const contado = raw === undefined || raw === "" ? null : parseFloat(raw);
+          const diferencia = contado === null || isNaN(contado) ? null : contado - (i.currentStock || 0);
+          return { ...i, contado: isNaN(contado) ? null : contado, diferencia };
+        }).sort((a, b) => a.item.localeCompare(b.item));
+        const contadosCount = conteoRows.filter(r => r.contado !== null).length;
+        return (
+          <div>
+            <div style={{ fontSize:12, color:"#888", marginBottom:14, lineHeight:1.5 }}>
+              Captura lo que realmente hay en anaquel de {warehouseLabel(warehouse)}. Lo que no se toca se deja en blanco y no se ajusta -- solo se corrige lo que de verdad se contó.
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:16 }}>
+              <div style={{ display:"flex", gap:10, padding:"6px 10px", fontSize:11, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>
+                <div style={{ flex:1 }}>Artículo</div>
+                <div style={{ width:90, textAlign:"right" }}>Sistema</div>
+                <div style={{ width:110, textAlign:"right" }}>Conteo físico</div>
+                <div style={{ width:90, textAlign:"right" }}>Diferencia</div>
+              </div>
+              {conteoRows.map(r => (
+                <div key={r.id} style={{ display:"flex", gap:10, alignItems:"center", padding:"6px 10px", borderRadius:8, background: r.contado !== null ? "rgba(0,212,170,0.04)" : "rgba(255,255,255,0.02)" }}>
+                  <div style={{ flex:1, fontSize:12.5, color:"#ddd" }}>{r.item}</div>
+                  <div style={{ width:90, textAlign:"right", fontSize:12, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{r.currentStock ?? 0} {r.unit}</div>
+                  <div style={{ width:110 }}>
+                    <input type="number" placeholder="—" value={conteoDraft[r.id] ?? ""} onChange={e => setConteoDraft(d => ({ ...d, [r.id]: e.target.value }))}
+                      style={{ width:"100%", textAlign:"right", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"5px 8px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                  </div>
+                  <div style={{ width:90, textAlign:"right", fontSize:12, fontWeight:600, fontFamily:"'IBM Plex Mono', monospace",
+                    color: r.diferencia === null ? "#444" : r.diferencia === 0 ? "#888" : r.diferencia > 0 ? "#00d4aa" : "#ff6b6b" }}>
+                    {r.diferencia === null ? "—" : r.diferencia > 0 ? `+${r.diferencia}` : r.diferencia}
+                  </div>
+                </div>
+              ))}
+              {conteoRows.length === 0 && <div style={{ fontSize:12, color:"#444", textAlign:"center", padding:16 }}>Sin artículos en este almacén{search.trim() ? " que coincidan con la búsqueda" : ""}.</div>}
+            </div>
+            <button onClick={() => guardarConteo(conteoRows)} disabled={savingConteo || contadosCount === 0}
+              style={{ padding:"10px 20px", borderRadius:10, fontSize:13, fontWeight:600, cursor: (savingConteo || contadosCount === 0) ? "not-allowed" : "pointer",
+                background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: (savingConteo || contadosCount === 0) ? 0.5 : 1 }}>
+              {savingConteo ? "Guardando…" : `💾 Guardar conteo${contadosCount > 0 ? ` (${contadosCount} artículo${contadosCount !== 1 ? "s" : ""})` : ""}`}
+            </button>
+          </div>
+        );
+      })()}
 
       {tab === "movimientos" && (() => {
         const warehouseEvents = events.filter(e => e.warehouse === warehouse
