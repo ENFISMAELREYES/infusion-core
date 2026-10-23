@@ -168,6 +168,7 @@ export default function Inventario() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [extraCatalog, setExtraCatalog] = useState([]); // artículos dados de alta desde Insumos o desde aquí mismo (settings/materialCatalog)
   const [inventoryLots, setInventoryLots] = useState([]); // lotes de medicamento (Fase 2 de trazabilidad, solo CITIO por ahora)
+  const [inventoryCounts, setInventoryCounts] = useState([]); // bitácora de conteos físicos (ver guardarConteo) -- un registro por conteo guardado
   // Regularizar cotización (Fase 3): un lote de CITIO en rojo significa que
   // ya se usó en una sesión antes de que CITIO lo comprara formalmente
   // (ver Insumos.jsx, dar de baja). Cuando llega la cotización, esto solo
@@ -406,15 +407,20 @@ export default function Inventario() {
       await logEvent("entrada", entradaItems);
       await logEvent("salida", salidaItems);
 
-      await fetch(`${FIRESTORE_BASE_URL}/inventory_counts`, {
+      const countedAt = new Date().toISOString();
+      const countItems = contados.map(r => ({ item: r.item, lote: r.lote || "", marca: r.marca || "", sistema: r.sistema, contado: r.contado, diferencia: r.diferencia }));
+      const countRes = await fetch(`${FIRESTORE_BASE_URL}/inventory_counts`, {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ fields: {
           warehouse: { stringValue: warehouse },
-          items: toFV(contados.map(r => ({ item: r.item, lote: r.lote || "", marca: r.marca || "", sistema: r.sistema, contado: r.contado, diferencia: r.diferencia }))),
+          items: toFV(countItems),
           countedBy: { stringValue: user?.uid || "" }, countedByName: { stringValue: profile?.name || "" },
-          countedAt: { stringValue: new Date().toISOString() },
+          countedAt: { stringValue: countedAt },
         } }),
       });
+      const countDoc = await countRes.json().catch(() => null);
+      const countId = countDoc?.name ? countDoc.name.split("/").pop() : `local_${Date.now()}`;
+      setInventoryCounts(prev => [{ id: countId, warehouse, items: countItems, countedBy: user?.uid || "", countedByName: profile?.name || "", countedAt }, ...prev]);
 
       setInventoryLots(prev => [
         ...prev.map(l => updatedLotsMap[l.id] !== undefined ? { ...l, cantidadDisponible: updatedLotsMap[l.id] } : l),
@@ -444,6 +450,7 @@ export default function Inventario() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [search, setSearch] = useState("");
   const [expandedEvent, setExpandedEvent] = useState(null);
+  const [expandedCount, setExpandedCount] = useState(null);
   const [expandedPO, setExpandedPO] = useState(null);
   const [savingPOAction, setSavingPOAction] = useState(null); // id de la solicitud que se está guardando, o null
 
@@ -470,18 +477,20 @@ export default function Inventario() {
     try {
       const t = await user.getIdToken(true);
       setToken(t);
-      const [inv, ev, po, extraCat, lots] = await Promise.all([
+      const [inv, ev, po, extraCat, lots, counts] = await Promise.all([
         fetchCollection(t, "inventory"),
         fetchCollection(t, "inventory_events"),
         fetchCollection(t, "purchase_orders"),
         fetchExtraCatalog(t),
         fetchCollection(t, "inventory_lots"),
+        fetchCollection(t, "inventory_counts"),
       ]);
       setInventory(inv);
       setEvents(ev.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")));
       setPurchaseOrders(po.sort((a, b) => (b.requestedAt || "").localeCompare(a.requestedAt || "")));
       setExtraCatalog(extraCat);
       setInventoryLots(lots);
+      setInventoryCounts(counts.sort((a, b) => (b.countedAt || "").localeCompare(a.countedAt || "")));
     } catch (e) {
       console.error(e);
     } finally {
@@ -1659,7 +1668,7 @@ export default function Inventario() {
       </div>
 
       <div style={{ display:"flex", gap:8, marginBottom:20, borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-        {[["existencias","Existencias"],["movimientos","Movimientos"],["conteo","📋 Conteo físico"],["compras","🧾 Solicitudes de compra"],...(isJefe ? [["general","Vista general"]] : [])].map(([val,label]) => (
+        {[["existencias","Existencias"],["movimientos","Movimientos"],["conteo","📋 Conteo físico"],["historialConteos","🗂️ Historial de conteos"],["compras","🧾 Solicitudes de compra"],...(isJefe ? [["general","Vista general"]] : [])].map(([val,label]) => (
           <button key={val} onClick={() => setTab(val)} style={{
             padding:"10px 16px", fontSize:13, fontWeight:600, cursor:"pointer", background:"none", border:"none",
             borderBottom: tab===val ? "2px solid #00d4aa" : "2px solid transparent",
@@ -1929,6 +1938,69 @@ export default function Inventario() {
                 background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: (savingConteo || contadosCount === 0) ? 0.5 : 1 }}>
               {savingConteo ? "Guardando…" : `💾 Guardar conteo${contadosCount > 0 ? ` (${contadosCount} renglón${contadosCount !== 1 ? "es" : ""})` : ""}`}
             </button>
+          </div>
+        );
+      })()}
+
+      {tab === "historialConteos" && (() => {
+        const printCountReport = (count) => {
+          const rows = [...count.items].sort((a, b) => a.item.localeCompare(b.item) || (a.lote || "").localeCompare(b.lote || ""))
+            .map(it => `<tr><td>${it.item}</td><td>${it.lote || "—"}</td><td>${it.marca || "—"}</td><td style="text-align:right;">${it.sistema}</td><td style="text-align:right;font-weight:bold;">${it.contado}</td><td style="text-align:right;color:${it.diferencia === 0 ? "#333" : it.diferencia > 0 ? "#0a7" : "#c94848"};font-weight:bold;">${it.diferencia > 0 ? `+${it.diferencia}` : it.diferencia}</td></tr>`).join("");
+          const win = window.open("", "_blank", "width=800,height=900");
+          win.document.write(`<!DOCTYPE html><html><head><title>Conteo físico -- ${warehouseLabel(count.warehouse)}</title><style>
+            body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;}
+            h1{font-size:18px;margin-bottom:2px;} p{font-size:12px;color:#555;margin-top:0;margin-bottom:16px;}
+            table{width:100%;border-collapse:collapse;font-size:11px;}
+            th{text-align:left;padding:6px 8px;border-bottom:2px solid #333;}
+            td{padding:5px 8px;border-bottom:1px solid #ddd;}
+          </style></head><body>
+            <h1>Conteo físico -- ${warehouseLabel(count.warehouse)}</h1>
+            <p>${count.items.length} renglón(es) · Contado por ${count.countedByName || "—"} · ${new Date(count.countedAt).toLocaleString("es-MX")}</p>
+            <table><thead><tr><th>Artículo</th><th>Lote</th><th>Marca</th><th style="text-align:right;">Sistema</th><th style="text-align:right;">Contado</th><th style="text-align:right;">Diferencia</th></tr></thead><tbody>${rows}</tbody></table>
+            <script>window.onload = () => window.print();<\/script>
+          </body></html>`);
+          win.document.close();
+        };
+        const warehouseCounts = inventoryCounts.filter(c => c.warehouse === warehouse);
+        return (
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {warehouseCounts.length === 0 && <div style={{ fontSize:12, color:"#444", textAlign:"center", padding:16 }}>Sin conteos físicos guardados todavía en {warehouseLabel(warehouse)}.</div>}
+            {warehouseCounts.map(c => {
+              const conDif = (c.items || []).filter(it => it.diferencia !== 0).length;
+              const isOpen = expandedCount === c.id;
+              return (
+                <div key={c.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
+                  <div onClick={() => setExpandedCount(isOpen ? null : c.id)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{new Date(c.countedAt).toLocaleString("es-MX")}</div>
+                      <div style={{ fontSize:11, color:"#888", marginTop:2 }}>{c.countedByName || "—"} · {(c.items || []).length} renglón{(c.items||[]).length !== 1 ? "es" : ""}{conDif > 0 ? ` · ${conDif} con diferencia` : ""}</div>
+                    </div>
+                    <button onClick={e => { e.stopPropagation(); printCountReport(c); }} style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>
+                      🖨️ Imprimir
+                    </button>
+                    <span style={{ color:"#555" }}>{isOpen ? "▲" : "▼"}</span>
+                  </div>
+                  {isOpen && (
+                    <div style={{ padding:"0 16px 14px", display:"flex", flexDirection:"column", gap:3 }}>
+                      {[...(c.items || [])].sort((a,b) => a.item.localeCompare(b.item) || (a.lote||"").localeCompare(b.lote||"")).map((it, i) => (
+                        <div key={i} style={{ display:"flex", gap:10, alignItems:"center", padding:"5px 10px", borderRadius:7, background:"rgba(255,255,255,0.02)", fontSize:12 }}>
+                          <div style={{ flex:1 }}>
+                            <span style={{ color:"#ccc" }}>{it.item}</span>
+                            {it.lote && <span style={{ color:"#888", fontSize:10 }}> · 🏷️ {it.lote}{it.marca ? ` · ${it.marca}` : ""}</span>}
+                          </div>
+                          <span style={{ width:70, textAlign:"right", color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{it.sistema}</span>
+                          <span style={{ width:70, textAlign:"right", color:"#f0f0f0", fontWeight:600, fontFamily:"'IBM Plex Mono', monospace" }}>{it.contado}</span>
+                          <span style={{ width:70, textAlign:"right", fontWeight:600, fontFamily:"'IBM Plex Mono', monospace",
+                            color: it.diferencia === 0 ? "#888" : it.diferencia > 0 ? "#00d4aa" : "#ff6b6b" }}>
+                            {it.diferencia > 0 ? `+${it.diferencia}` : it.diferencia}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         );
       })()}
