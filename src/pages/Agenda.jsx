@@ -520,6 +520,10 @@ export default function Agenda() {
   const { user, profile } = useAuth();
 const isJefe = profile?.role === "jefe";
 const isVisualizador = profile?.role === "visualizador";
+// Asignar/editar esquemas (de paciente y de catálogo) -- enfermería tiene
+// el mismo acceso que jefe aquí, a diferencia del resto de la app donde
+// jefe sigue siendo el único que autoriza/corrige.
+const puedeEditarEsquemas = isJefe || profile?.role === "enfermera";
   const [schemes, setSchemes]               = useState([]);
   const [patientSchemes, setPatientSchemes] = useState([]);
   const [sessions, setSessions]             = useState([]);
@@ -798,7 +802,7 @@ const handleDeleteScheme = async (id) => {
           <h1 style={{ fontFamily:"'DM Serif Display', serif", fontSize:24, color:"#fff", marginBottom:4 }}>Agenda de ciclos</h1>
           <p style={{ fontSize:13, color:"#555" }}>{patientSchemes.filter(p=>p.active).length} pacientes activos · {schemes.length} esquemas disponibles</p>
         </div>
-       {isJefe && (
+       {puedeEditarEsquemas && (
           <button onClick={() => { setShowForm(true); setEditing(null); }} style={{ padding:"9px 18px", borderRadius:10, fontSize:13, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
             + Asignar esquema
           </button>
@@ -1018,7 +1022,7 @@ const handleDeleteScheme = async (id) => {
                           </div>
                         )}
                       </div>
-                      {isJefe && (
+                      {puedeEditarEsquemas && (
                         <div style={{ display:"flex", gap:6 }}>
                           {nextDates.length === 0 && scheme && (
                             <button onClick={async () => {
@@ -1047,7 +1051,7 @@ const handleDeleteScheme = async (id) => {
   <div>
     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
       <div style={{ fontSize:11, color:"#555", letterSpacing:2, textTransform:"uppercase" }}>{schemes.length} esquemas registrados</div>
-      {isJefe && (
+      {puedeEditarEsquemas && (
         <button onClick={() => { setShowSchemeForm(true); setEditingScheme(null); }} style={{ padding:"7px 16px", borderRadius:9, fontSize:12, fontWeight:600, cursor:"pointer", background:"rgba(0,212,170,0.12)", border:"1px solid rgba(0,212,170,0.3)", color:"#00d4aa" }}>
           + Nuevo esquema
         </button>
@@ -1079,7 +1083,7 @@ const handleDeleteScheme = async (id) => {
               </button>
             )}
           </div>
-           {isJefe && (
+           {puedeEditarEsquemas && (
             <div style={{ display:"flex", gap:6 }}>
               <button onClick={() => { setEditingScheme(s); setShowSchemeForm(true); }} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,179,71,0.1)", border:"1px solid rgba(255,179,71,0.25)", color:"#ffb347" }}>✏️</button>
               <button onClick={() => handleDeleteScheme(s.id)} style={{ padding:"5px 10px", borderRadius:7, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>🗑</button>
@@ -1112,7 +1116,7 @@ const handleDeleteScheme = async (id) => {
                   <span style={{ color:"#666", fontFamily:"'IBM Plex Mono', monospace" }}>Fin: {lastDate || "—"}</span>
                   <span style={{ fontSize:10, color:"#1D9E75" }}>{confirmed.length}/{myAppts.length} confirmadas</span>
                   {myAppts.length > 0 && <span style={{ color:"#555" }}>{cardsOpen ? "▲" : "▼"}</span>}
-                  {isJefe && (
+                  {puedeEditarEsquemas && (
                     <button onClick={e => { e.stopPropagation(); handleDelete(ps.id); }}
                       title="Quitar este esquema del paciente (para poder asignarle otro)"
                       style={{ padding:"3px 9px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.25)", color:"#ff6b6b" }}>
@@ -1137,7 +1141,7 @@ const handleDeleteScheme = async (id) => {
                           </div>
                           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:6 }}>
                             <span style={{ fontSize:9, padding:"2px 8px", borderRadius:99, background:`${sm.color}22`, color:sm.color, fontWeight:600 }}>{sm.label}</span>
-                            {!isVisualizador && isJefe && a.status !== "confirmed" && (
+                            {!isVisualizador && puedeEditarEsquemas && a.status !== "confirmed" && (
                               <button onClick={() => correctAppointmentDate(a)} title="Corregir fecha"
                                 style={{ padding:"2px 6px", borderRadius:6, fontSize:11, cursor:"pointer", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"#ccc" }}>
                                 ✏️
