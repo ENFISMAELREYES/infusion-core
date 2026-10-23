@@ -289,18 +289,28 @@ export default function Inventario() {
   // Además se guarda un registro aparte en inventory_counts con TODO lo
   // contado (incluso lo que no tuvo diferencia, lote o agregado), como
   // bitácora del conteo en sí.
-  const [conteoDraft, setConteoDraft] = useState({}); // { [lotId o inventoryDocId]: "texto capturado" }
+  const [conteoDraft, setConteoDraft] = useState({}); // { [lotId, inventoryDocId o key de lote nuevo]: "texto capturado" }
   const [savingConteo, setSavingConteo] = useState(false);
+  // Lotes nuevos anexados durante el conteo -- para cuando físicamente hay
+  // más lotes distintos de un artículo que los que ya tiene registrados el
+  // sistema (ej. el sistema trae un solo lote con 6, pero físicamente son
+  // dos lotes distintos de 4 y 2) -- en vez de forzar todo a un solo
+  // renglón, se puede anexar uno o más lotes nuevos con su propio
+  // lote/marca/caducidad, sin tocar los que ya existen.
+  const [conteoNuevosLotes, setConteoNuevosLotes] = useState([]); // [{ key, item, lote, marca, caducidad }]
   const guardarConteo = async (rows) => {
     const contados = rows.filter(r => r.contado !== null);
     if (contados.length === 0) { alert("Captura al menos un conteo."); return; }
     const conDiferencia = contados.filter(r => r.diferencia !== 0);
-    if (conDiferencia.length > 0 && !confirm(`Vas a ajustar ${conDiferencia.length} renglón(es) (lote o artículo) al conteo físico capturado (el resto, sin diferencia, no se toca). ¿Continuar?`)) return;
+    const newLotRows = conDiferencia.filter(r => r.kind === "newlot");
+    const sinLote = newLotRows.find(r => !r.lote || !r.lote.trim());
+    if (sinLote) { alert(`Falta el número de lote del lote nuevo que anexaste para "${sinLote.item}".`); return; }
+    if (conDiferencia.length > 0 && !confirm(`Vas a ajustar/anexar ${conDiferencia.length} renglón(es) (lote o artículo) al conteo físico capturado (el resto, sin diferencia, no se toca). ¿Continuar?`)) return;
     setSavingConteo(true);
     try {
       const entradaItems = [], salidaItems = [];
 
-      // 1. Lotes con diferencia -- reemplaza cantidadDisponible.
+      // 1. Lotes existentes con diferencia -- reemplaza cantidadDisponible.
       const lotRows = conDiferencia.filter(r => r.kind === "lot");
       const updatedLotsMap = {}; // lotId -> nueva cantidad
       for (const r of lotRows) {
@@ -318,12 +328,34 @@ export default function Inventario() {
         updatedLotsMap[r.id] = r.contado;
       }
 
+      // 1b. Lotes nuevos anexados durante el conteo -- se crean (no se
+      //     corrige nada existente), mismo criterio de ID que el resto de
+      //     la app (inventoryLotDocId).
+      const newLots = [];
+      for (const r of newLotRows) {
+        const lotId = inventoryLotDocId(warehouse, r.item, r.lote);
+        const lotRes = await fetch(`${FIRESTORE_BASE_URL}/inventory_lots/${lotId}`,
+          { method: "PATCH", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({ fields: {
+              warehouse: { stringValue: warehouse }, item: { stringValue: r.item },
+              lote: { stringValue: r.lote }, caducidad: { stringValue: r.caducidad || "" }, marca: { stringValue: r.marca || "" },
+              cantidadInicial: toFV(r.contado), cantidadDisponible: toFV(r.contado),
+              lastUpdated: { stringValue: new Date().toISOString() },
+            } }) });
+        if (!lotRes.ok) { const err = await lotRes.json().catch(() => ({})); throw new Error(`Lote nuevo "${r.item}" ${r.lote}: ${err.error?.message || `Error ${lotRes.status}`}`); }
+        updatedLotsMap[lotId] = r.contado;
+        newLots.push({ id: lotId, warehouse, item: r.item, lote: r.lote, marca: r.marca, caducidad: r.caducidad, cantidadDisponible: r.contado, cantidadInicial: r.contado });
+      }
+
       // 2. Recalcular y guardar la existencia agregada de cada artículo que
-      //    tuvo al menos un lote corregido -- suma de TODOS sus lotes, no
-      //    solo los que se contaron.
-      const itemsWithLotChanges = [...new Set(lotRows.map(r => r.item))];
+      //    tuvo al menos un lote corregido o anexado -- suma de TODOS sus
+      //    lotes, no solo los que se tocaron.
+      const itemsWithLotChanges = [...new Set([...lotRows.map(r => r.item), ...newLotRows.map(r => r.item)])];
       for (const item of itemsWithLotChanges) {
-        const allLotsForItem = inventoryLots.filter(l => l.warehouse === warehouse && l.item === item);
+        const allLotsForItem = [
+          ...inventoryLots.filter(l => l.warehouse === warehouse && l.item === item),
+          ...newLots.filter(l => l.item === item),
+        ];
         const sumForItem = allLotsForItem.reduce((acc, l) => acc + (updatedLotsMap[l.id] !== undefined ? updatedLotsMap[l.id] : (l.cantidadDisponible || 0)), 0);
         const docId = inventoryDocId(warehouse, item);
         const existingInv = inventory.find(i => i.id === docId);
@@ -374,19 +406,23 @@ export default function Inventario() {
         } }),
       });
 
-      setInventoryLots(prev => prev.map(l => updatedLotsMap[l.id] !== undefined ? { ...l, cantidadDisponible: updatedLotsMap[l.id] } : l));
+      setInventoryLots(prev => [
+        ...prev.map(l => updatedLotsMap[l.id] !== undefined ? { ...l, cantidadDisponible: updatedLotsMap[l.id] } : l),
+        ...newLots,
+      ]);
       setInventory(prev => prev.map(x => {
         const aggMatch = aggRows.find(r => r.id === x.id);
         if (aggMatch) return { ...x, currentStock: aggMatch.contado };
         if (x.warehouse === warehouse && itemsWithLotChanges.includes(x.item)) {
-          const allLotsForItem = inventoryLots.filter(l => l.warehouse === warehouse && l.item === x.item);
+          const allLotsForItem = [...inventoryLots.filter(l => l.warehouse === warehouse && l.item === x.item), ...newLots.filter(l => l.item === x.item)];
           const sumForItem = allLotsForItem.reduce((acc, l) => acc + (updatedLotsMap[l.id] !== undefined ? updatedLotsMap[l.id] : (l.cantidadDisponible || 0)), 0);
           return { ...x, currentStock: sumForItem };
         }
         return x;
       }));
       setConteoDraft({});
-      alert(conDiferencia.length > 0 ? `Conteo guardado. Se ajustaron ${conDiferencia.length} renglón(es).` : "Conteo guardado. Ningún renglón tuvo diferencia.");
+      setConteoNuevosLotes([]);
+      alert(conDiferencia.length > 0 ? `Conteo guardado. Se ajustaron/anexaron ${conDiferencia.length} renglón(es).` : "Conteo guardado. Ningún renglón tuvo diferencia.");
     } catch (e) {
       alert("Error al guardar el conteo: " + e.message);
     } finally {
@@ -1691,33 +1727,58 @@ export default function Inventario() {
       )}
 
       {tab === "conteo" && (() => {
-        // Un renglón por lote (lote/marca/caducidad) si el artículo lleva
-        // trazabilidad por lote en este almacén -- mismo criterio que ya
-        // usa "Existencias" para decidir si desglosar; si no tiene ningún
-        // lote registrado, un solo renglón agregado, como antes.
-        const conteoRows = [];
-        filteredInventory.forEach(i => {
-          const lots = inventoryLots.filter(l => l.warehouse === warehouse && l.item === i.item);
-          if (lots.length > 0) {
-            lots.sort((a, b) => (a.caducidad || "").localeCompare(b.caducidad || "")).forEach(l => {
-              const raw = conteoDraft[l.id];
-              const contado = raw === undefined || raw === "" ? null : parseFloat(raw);
-              const diferencia = contado === null || isNaN(contado) ? null : contado - (l.cantidadDisponible || 0);
-              conteoRows.push({ kind:"lot", id:l.id, item:i.item, lote:l.lote, marca:l.marca, caducidad:l.caducidad, sistema:l.cantidadDisponible || 0, unit:i.unit, contado: isNaN(contado) ? null : contado, diferencia });
-            });
-          } else {
+        const addNuevoLote = (item) => {
+          const key = `new_${item}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          setConteoNuevosLotes(prev => [...prev, { key, item, lote: "", marca: "", caducidad: "" }]);
+        };
+        const quitarNuevoLote = (key) => {
+          setConteoNuevosLotes(prev => prev.filter(n => n.key !== key));
+          setConteoDraft(d => { const n = { ...d }; delete n[key]; return n; });
+        };
+        const updateNuevoLote = (key, field, value) => {
+          setConteoNuevosLotes(prev => prev.map(n => n.key === key ? { ...n, [field]: value } : n));
+        };
+
+        // Un grupo por artículo. Si lleva trazabilidad por lote en este
+        // almacén (mismo criterio que "Existencias"), se desglosa lote por
+        // lote (más los lotes nuevos que se hayan anexado para físicamente
+        // encontrar más lotes distintos de los que ya registra el sistema
+        // -- ej. el sistema trae un solo lote con 6, pero físicamente son
+        // dos lotes de 4 y 2). Si no tiene ningún lote, un solo renglón
+        // agregado, como antes.
+        const groups = filteredInventory.map(i => {
+          const lots = inventoryLots.filter(l => l.warehouse === warehouse && l.item === i.item)
+            .sort((a, b) => (a.caducidad || "").localeCompare(b.caducidad || ""));
+          const nuevos = conteoNuevosLotes.filter(n => n.item === i.item);
+          const hasLots = lots.length > 0 || nuevos.length > 0;
+          if (!hasLots) {
             const raw = conteoDraft[i.id];
             const contado = raw === undefined || raw === "" ? null : parseFloat(raw);
             const diferencia = contado === null || isNaN(contado) ? null : contado - (i.currentStock || 0);
-            conteoRows.push({ kind:"agg", id:i.id, item:i.item, lote:null, marca:null, caducidad:null, sistema:i.currentStock || 0, unit:i.unit, contado: isNaN(contado) ? null : contado, diferencia });
+            return { item: i.item, hasLots, rows: [{ kind:"agg", id:i.id, item:i.item, sistema:i.currentStock || 0, unit:i.unit, contado: isNaN(contado) ? null : contado, diferencia }] };
           }
-        });
-        conteoRows.sort((a, b) => a.item.localeCompare(b.item) || (a.lote || "").localeCompare(b.lote || ""));
-        const contadosCount = conteoRows.filter(r => r.contado !== null).length;
+          const lotRows = lots.map(l => {
+            const raw = conteoDraft[l.id];
+            const contado = raw === undefined || raw === "" ? null : parseFloat(raw);
+            const diferencia = contado === null || isNaN(contado) ? null : contado - (l.cantidadDisponible || 0);
+            return { kind:"lot", id:l.id, item:i.item, lote:l.lote, marca:l.marca, caducidad:l.caducidad, sistema:l.cantidadDisponible || 0, unit:i.unit, contado: isNaN(contado) ? null : contado, diferencia };
+          });
+          const nuevoRows = nuevos.map(n => {
+            const raw = conteoDraft[n.key];
+            const contado = raw === undefined || raw === "" ? null : parseFloat(raw);
+            return { kind:"newlot", id:n.key, item:i.item, lote:n.lote, marca:n.marca, caducidad:n.caducidad, sistema:0, unit:i.unit, contado: isNaN(contado) ? null : contado, diferencia: isNaN(contado) ? null : contado };
+          });
+          return { item: i.item, hasLots, rows: [...lotRows, ...nuevoRows] };
+        }).sort((a, b) => a.item.localeCompare(b.item));
+        const allRows = groups.flatMap(g => g.rows);
+        const contadosCount = allRows.filter(r => r.contado !== null).length;
+
+        const inputStyleSmall = { fontSize:11, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:5, padding:"3px 6px", color:"#f0f0f0", outline:"none" };
+
         return (
           <div>
             <div style={{ fontSize:12, color:"#888", marginBottom:14, lineHeight:1.5 }}>
-              Captura lo que realmente hay en anaquel de {warehouseLabel(warehouse)} -- por lote cuando el artículo lleva trazabilidad, agregado cuando no. Lo que no se toca se deja en blanco y no se ajusta -- solo se corrige lo que de verdad se contó.
+              Captura lo que realmente hay en anaquel de {warehouseLabel(warehouse)} -- por lote cuando el artículo lleva trazabilidad, agregado cuando no. Si físicamente hay más lotes distintos de los que ya registra el sistema, usa "+ Anexar lote" para capturar el lote nuevo aparte, sin tocar los que ya existen. Lo que no se toca se deja en blanco y no se ajusta.
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:16 }}>
               <div style={{ display:"flex", gap:10, padding:"6px 10px", fontSize:11, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>
@@ -1726,26 +1787,49 @@ export default function Inventario() {
                 <div style={{ width:110, textAlign:"right" }}>Conteo físico</div>
                 <div style={{ width:90, textAlign:"right" }}>Diferencia</div>
               </div>
-              {conteoRows.map(r => (
-                <div key={r.id} style={{ display:"flex", gap:10, alignItems:"center", padding:"6px 10px", borderRadius:8, background: r.contado !== null ? "rgba(0,212,170,0.04)" : "rgba(255,255,255,0.02)" }}>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:12.5, color:"#ddd" }}>{r.item}</div>
-                    {r.kind === "lot" && <div style={{ fontSize:10, color:"#888", marginTop:1 }}>🏷️ {r.lote || "sin lote"} · {r.marca || "sin marca"} · cad. {r.caducidad || "—"}</div>}
-                  </div>
-                  <div style={{ width:90, textAlign:"right", fontSize:12, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{r.sistema} {r.unit}</div>
-                  <div style={{ width:110 }}>
-                    <input type="number" placeholder="—" value={conteoDraft[r.id] ?? ""} onChange={e => setConteoDraft(d => ({ ...d, [r.id]: e.target.value }))}
-                      style={{ width:"100%", textAlign:"right", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"5px 8px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
-                  </div>
-                  <div style={{ width:90, textAlign:"right", fontSize:12, fontWeight:600, fontFamily:"'IBM Plex Mono', monospace",
-                    color: r.diferencia === null ? "#444" : r.diferencia === 0 ? "#888" : r.diferencia > 0 ? "#00d4aa" : "#ff6b6b" }}>
-                    {r.diferencia === null ? "—" : r.diferencia > 0 ? `+${r.diferencia}` : r.diferencia}
-                  </div>
+              {groups.map(g => (
+                <div key={g.item}>
+                  {g.rows.map(r => (
+                    <div key={r.id} style={{ display:"flex", gap:10, alignItems:"center", padding:"6px 10px", borderRadius:8, background: r.contado !== null ? "rgba(0,212,170,0.04)" : "rgba(255,255,255,0.02)" }}>
+                      <div style={{ flex:1 }}>
+                        {r.kind !== "newlot" ? (
+                          <>
+                            <div style={{ fontSize:12.5, color:"#ddd" }}>{r.item}</div>
+                            {r.kind === "lot" && <div style={{ fontSize:10, color:"#888", marginTop:1 }}>🏷️ {r.lote || "sin lote"} · {r.marca || "sin marca"} · cad. {r.caducidad || "—"}</div>}
+                          </>
+                        ) : (
+                          <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                            <span style={{ fontSize:10, color:"#5DCAA5" }}>🆕 lote nuevo —</span>
+                            <input placeholder="Lote" value={r.lote} onChange={e => updateNuevoLote(r.id, "lote", e.target.value)} style={{ ...inputStyleSmall, width:70 }} />
+                            <input placeholder="Marca" value={r.marca} onChange={e => updateNuevoLote(r.id, "marca", e.target.value)} style={{ ...inputStyleSmall, width:70 }} />
+                            <input type="date" value={r.caducidad} onChange={e => updateNuevoLote(r.id, "caducidad", e.target.value)} style={inputStyleSmall} />
+                            <button onClick={() => quitarNuevoLote(r.id)} title="Quitar este lote nuevo" style={{ fontSize:10, color:"#ff6b6b", background:"none", border:"none", cursor:"pointer", padding:0 }}>✕ quitar</button>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ width:90, textAlign:"right", fontSize:12, color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{r.kind === "newlot" ? "—" : `${r.sistema} ${r.unit}`}</div>
+                      <div style={{ width:110 }}>
+                        <input type="number" placeholder="—" value={conteoDraft[r.id] ?? ""} onChange={e => setConteoDraft(d => ({ ...d, [r.id]: e.target.value }))}
+                          style={{ width:"100%", textAlign:"right", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:7, padding:"5px 8px", color:"#f0f0f0", fontSize:12, outline:"none" }} />
+                      </div>
+                      <div style={{ width:90, textAlign:"right", fontSize:12, fontWeight:600, fontFamily:"'IBM Plex Mono', monospace",
+                        color: r.diferencia === null ? "#444" : r.diferencia === 0 ? "#888" : r.diferencia > 0 ? "#00d4aa" : "#ff6b6b" }}>
+                        {r.diferencia === null ? "—" : r.diferencia > 0 ? `+${r.diferencia}` : r.diferencia}
+                      </div>
+                    </div>
+                  ))}
+                  {g.hasLots && (
+                    <div style={{ padding:"2px 10px 8px" }}>
+                      <button onClick={() => addNuevoLote(g.item)} style={{ fontSize:11, fontWeight:600, color:"#5DCAA5", background:"none", border:"none", cursor:"pointer", padding:0 }}>
+                        + Anexar lote de {g.item}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
-              {conteoRows.length === 0 && <div style={{ fontSize:12, color:"#444", textAlign:"center", padding:16 }}>Sin artículos en este almacén{search.trim() ? " que coincidan con la búsqueda" : ""}.</div>}
+              {groups.length === 0 && <div style={{ fontSize:12, color:"#444", textAlign:"center", padding:16 }}>Sin artículos en este almacén{search.trim() ? " que coincidan con la búsqueda" : ""}.</div>}
             </div>
-            <button onClick={() => guardarConteo(conteoRows)} disabled={savingConteo || contadosCount === 0}
+            <button onClick={() => guardarConteo(allRows)} disabled={savingConteo || contadosCount === 0}
               style={{ padding:"10px 20px", borderRadius:10, fontSize:13, fontWeight:600, cursor: (savingConteo || contadosCount === 0) ? "not-allowed" : "pointer",
                 background:"linear-gradient(135deg,#1D9E75,#0F6E56)", border:"none", color:"#fff", opacity: (savingConteo || contadosCount === 0) ? 0.5 : 1 }}>
               {savingConteo ? "Guardando…" : `💾 Guardar conteo${contadosCount > 0 ? ` (${contadosCount} renglón${contadosCount !== 1 ? "es" : ""})` : ""}`}
