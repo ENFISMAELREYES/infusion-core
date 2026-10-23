@@ -54,7 +54,10 @@ const MED_CATEGORIES = ["Medicamentos", "Oncológicos", "Inmunoterapia"];
 // real de mayo) -- aparecen como botón de acceso rápido arriba de la lista
 // de material, para no tener que buscarlos uno por uno cada vez. Nombres
 // tal cual el catálogo oficial de la app, no como se anotaron en la hoja de
-// control (que usaba apodos del mismo insumo).
+// control (que usaba apodos del mismo insumo). Es solo el valor por defecto:
+// el jefe puede personalizar la lista (se guarda en
+// settings/materialCatalog.protocoloQuickMaterial, mismo documento que ya
+// usa el catálogo extra de Insumos/Inventario).
 const QUICK_MATERIAL = [
   "GUANTE DE LATEX MEDIANO ESTERIL",
   "CUBREBOCAS DESECHABLE",
@@ -62,6 +65,13 @@ const QUICK_MATERIAL = [
   "TOALLITAS DE ALCOHOL",
   "BANDA ADHESIVA CIRCULAR 22 MM",
 ];
+
+async function saveQuickMaterial(token, updated) {
+  await fetch(`${FIRESTORE_BASE_URL}/settings/materialCatalog?updateMask.fieldPaths=protocoloQuickMaterial`, {
+    method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ fields: { protocoloQuickMaterial: toFV(updated) } }),
+  });
+}
 
 function inventoryDocId(warehouse, item) {
   return `${warehouse}_${item}`.toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 200);
@@ -105,6 +115,9 @@ async function applyInventoryDelta(token, warehouse, item, delta) {
 }
 
 const todayStr = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+// Hora actual en HH:MM, mismo formato que el input type="time" -- para el
+// botón "Ahora" de hora de toma, en vez de teclearla a mano.
+const nowTimeStr = () => new Date().toLocaleTimeString("en-GB", { timeZone: "America/Mexico_City", hour: "2-digit", minute: "2-digit" });
 
 const fmtMaterial = (arr) => (arr || []).map(m => `${m.item} ×${m.qty}`).join(", ") || "—";
 const fmtMuestras = (arr) => (arr || []).map(m => `${m.tipo}${m.cantidad ? ` ×${m.cantidad}` : ""}${m.hora ? ` (${m.hora})` : ""}`).join(", ") || "—";
@@ -145,6 +158,7 @@ export default function Protocolos() {
   const [visits, setVisits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [extraCatalog, setExtraCatalog] = useState([]);
+  const [quickMaterial, setQuickMaterial] = useState(QUICK_MATERIAL);
 
   const loadVisits = async (t) => {
     const data = await fetchCollection(t, "protocol_visits");
@@ -157,8 +171,12 @@ export default function Protocolos() {
     if (!token) return;
     fetch(`${FIRESTORE_BASE_URL}/settings/materialCatalog`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => res.status === 404 ? null : res.json())
-      .then(doc => setExtraCatalog(doc ? (parseDoc(doc).extraCatalog || []) : []))
-      .catch(() => setExtraCatalog([]));
+      .then(doc => {
+        const parsed = doc ? parseDoc(doc) : {};
+        setExtraCatalog(parsed.extraCatalog || []);
+        setQuickMaterial(parsed.protocoloQuickMaterial?.length ? parsed.protocoloQuickMaterial : QUICK_MATERIAL);
+      })
+      .catch(() => { setExtraCatalog([]); setQuickMaterial(QUICK_MATERIAL); });
   }, [token]);
 
   const fullCatalog = [...MASTER_CATALOG, ...extraCatalog];
@@ -210,8 +228,9 @@ export default function Protocolos() {
       {loading ? <div style={{ color: "#555", padding: 40, textAlign: "center" }}>Cargando…</div> : (
         <>
           {tab === "captura" && canCapture && (
-            <CapturaForm token={token} profile={profile} visits={visitsDelProtocolo} protocolo={protocolo} insumoOptions={insumoOptions} medOptions={medOptions}
+            <CapturaForm token={token} profile={profile} isJefe={isJefe} visits={visitsDelProtocolo} protocolo={protocolo} insumoOptions={insumoOptions} medOptions={medOptions}
               patientOptions={patientOptions} editingVisit={editingVisit} onCancelEdit={() => setEditingVisit(null)}
+              quickMaterial={quickMaterial} onQuickMaterialChange={async (updated) => { await saveQuickMaterial(token, updated); setQuickMaterial(updated); }}
               onSaved={() => { setEditingVisit(null); loadVisits(token); }} />
           )}
           {tab === "paciente" && <ReportePorPaciente visits={visitsDelProtocolo} patientOptions={patientOptions} protocoloLabel={protocoloLabel} canEdit={canCapture} onEdit={startEdit} />}
@@ -223,7 +242,7 @@ export default function Protocolos() {
   );
 }
 
-function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOptions, patientOptions, editingVisit, onCancelEdit, onSaved }) {
+function CapturaForm({ token, profile, isJefe, visits, protocolo, insumoOptions, medOptions, patientOptions, editingVisit, onCancelEdit, onSaved, quickMaterial, onQuickMaterialChange }) {
   const [patientName, setPatientName] = useState("");
   const [dob, setDob] = useState("");
   const [date, setDate] = useState(todayStr());
@@ -237,6 +256,8 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [materialOpen, setMaterialOpen] = useState(true);
+  const [editingQuick, setEditingQuick] = useState(false);
+  const [savingQuick, setSavingQuick] = useState(false);
 
   // Precarga el formulario con la visita a corregir -- faltó agregar
   // material, o al final sí pasó a hidratación y hay que sumar algo más.
@@ -406,13 +427,20 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
       </div>
 
       <div>
-        <div onClick={() => setMaterialOpen(o => !o)} style={{ fontSize: 13, fontWeight: 600, color: "#f0f0f0", marginBottom: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, userSelect: "none" }}>
-          <span style={{ fontSize: 10, color: "#666" }}>{materialOpen ? "▾" : "▸"}</span>
-          🧰 Material usado
-          {material.length > 0 && <span style={{ fontSize: 11, color: "#888", fontWeight: 400 }}>({material.length})</span>}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div onClick={() => setMaterialOpen(o => !o)} style={{ fontSize: 13, fontWeight: 600, color: "#f0f0f0", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, userSelect: "none" }}>
+            <span style={{ fontSize: 10, color: "#666" }}>{materialOpen ? "▾" : "▸"}</span>
+            🧰 Material usado
+            {material.length > 0 && <span style={{ fontSize: 11, color: "#888", fontWeight: 400 }}>({material.length})</span>}
+          </div>
+          {isJefe && (
+            <button onClick={() => setEditingQuick(true)} style={{ padding: "3px 10px", borderRadius: 6, fontSize: 11, cursor: "pointer", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#888" }}>
+              ⚙️ Personalizar accesos rápidos
+            </button>
+          )}
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-          {QUICK_MATERIAL.map(item => {
+          {quickMaterial.map(item => {
             const added = material.some(m => m.item === item);
             return (
               <button key={item} onClick={() => addQuickMaterial(item)} disabled={added}
@@ -449,7 +477,11 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
               placeholder="Tipo (ej. sangre)" style={{ ...inputStyle, flex: 1 }} />
             <input type="number" min="1" value={m.cantidad} onChange={e => setMuestras(prev => prev.map((x, xi) => xi === i ? { ...x, cantidad: Math.max(1, Number(e.target.value)) } : x))}
               style={{ ...inputStyle, width: 60 }} />
-            <input type="time" value={m.hora} onChange={e => setMuestras(prev => prev.map((x, xi) => xi === i ? { ...x, hora: e.target.value } : x))} style={inputStyle} />
+            <input type="time" value={m.hora} onChange={e => setMuestras(prev => prev.map((x, xi) => xi === i ? { ...x, hora: e.target.value } : x))} style={{ ...inputStyle, width: 90 }} />
+            <button onClick={() => setMuestras(prev => prev.map((x, xi) => xi === i ? { ...x, hora: nowTimeStr() } : x))} title="Registrar la hora de ahora, sin teclearla"
+              style={{ padding: "6px 10px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "rgba(0,212,170,0.1)", border: "1px solid rgba(0,212,170,0.3)", color: "#00d4aa", whiteSpace: "nowrap" }}>
+              🕐 Ahora
+            </button>
             <button onClick={() => setMuestras(prev => prev.filter((_, xi) => xi !== i))} style={removeBtnStyle}>✕</button>
           </div>
         ))}
@@ -490,6 +522,54 @@ function CapturaForm({ token, profile, visits, protocolo, insumoOptions, medOpti
       <button onClick={editingVisit ? saveEdit : save} disabled={saving} style={{ ...btnStyle, alignSelf: "flex-start", padding: "10px 20px", fontSize: 13, cursor: saving ? "wait" : "pointer" }}>
         {saving ? "Guardando…" : editingVisit ? "Guardar cambios" : "Guardar visita"}
       </button>
+
+      {editingQuick && (
+        <QuickMaterialModal options={insumoOptions} current={quickMaterial} saving={savingQuick}
+          onClose={() => setEditingQuick(false)}
+          onSave={async (updated) => {
+            setSavingQuick(true);
+            try { await onQuickMaterialChange(updated); setEditingQuick(false); }
+            catch (e) { alert("Error al guardar: " + e.message); }
+            finally { setSavingQuick(false); }
+          }} />
+      )}
+    </div>
+  );
+}
+
+// Permite al jefe elegir qué insumos aparecen como botón de acceso rápido
+// arriba de la lista de material -- antes era una lista fija en el código
+// (QUICK_MATERIAL), ahora se guarda en settings/materialCatalog y se puede
+// ajustar sin tocar código conforme cambie lo que más se usa.
+function QuickMaterialModal({ options, current, saving, onClose, onSave }) {
+  const [selected, setSelected] = useState(current);
+  const [filter, setFilter] = useState("");
+  const toggle = (item) => setSelected(prev => prev.includes(item) ? prev.filter(x => x !== item) : [...prev, item]);
+  const filtered = options.filter(o => o.toLowerCase().includes(filter.toLowerCase()));
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#161616", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: 20, width: "100%", maxWidth: 440, maxHeight: "80vh", display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#f0f0f0" }}>Accesos rápidos de material</div>
+        <div style={{ fontSize: 12, color: "#888" }}>Elige qué insumos aparecen como botón arriba de la lista, en vez de buscarlos uno por uno.</div>
+        <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Buscar insumo…" style={{ ...inputStyle, width: "100%" }} />
+        <div style={{ overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+          {filtered.map(item => (
+            <label key={item} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 6px", borderRadius: 6, fontSize: 12, color: "#ccc", cursor: "pointer" }}>
+              <input type="checkbox" checked={selected.includes(item)} onChange={() => toggle(item)} />
+              {item}
+            </label>
+          ))}
+          {filtered.length === 0 && <div style={{ color: "#555", fontSize: 12, padding: 10, textAlign: "center" }}>Sin resultados.</div>}
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: "#666" }}>{selected.length} seleccionado{selected.length !== 1 ? "s" : ""}</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onClose} style={{ padding: "7px 14px", borderRadius: 8, fontSize: 12, cursor: "pointer", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.09)", color: "#888" }}>Cancelar</button>
+            <button onClick={() => onSave(selected)} disabled={saving} style={{ ...btnStyle, cursor: saving ? "wait" : "pointer" }}>{saving ? "Guardando…" : "Guardar"}</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
