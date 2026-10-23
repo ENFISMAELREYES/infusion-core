@@ -574,6 +574,33 @@ function QuickMaterialModal({ options, current, saving, onClose, onSave }) {
   );
 }
 
+// Celda de material como lista expandible -- antes era un renglón de texto
+// con todo separado por comas, que se volvía ilegible en cuanto una visita
+// tenía varios artículos (se encimaba con Muestras/Medicamento). Colapsada
+// solo dice cuántos artículos hay; al abrirla se ve uno por línea con su
+// cantidad a la derecha, igual que el checklist de material en Insumos.jsx.
+function MaterialCell({ material }) {
+  const [open, setOpen] = useState(false);
+  if (!material || material.length === 0) return <span style={{ color: "#AFA9EC" }}>—</span>;
+  return (
+    <div>
+      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, color: "#AFA9EC", display: "flex", alignItems: "center", gap: 4 }}>
+        <span style={{ fontSize: 9, color: "#888" }}>{open ? "▾" : "▸"}</span>
+        {material.length} artículo{material.length !== 1 ? "s" : ""}
+      </button>
+      {open && (
+        <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2, minWidth: 180 }}>
+          {material.map((m, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11, color: "#ccc" }}>
+              <span>{m.item}</span><span style={{ color: "#00d4aa" }}>×{m.qty}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function VisitTable({ rows, showPatient, canEdit, onEdit }) {
   if (rows.length === 0) return <div style={{ color: "#444", padding: 30, textAlign: "center", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 14 }}>Sin visitas para este filtro.</div>;
   return (
@@ -599,7 +626,7 @@ function VisitTable({ rows, showPatient, canEdit, onEdit }) {
               {showPatient && <td style={{ padding: "6px 8px", color: "#f0f0f0", fontWeight: 600 }}>{v.patientName}</td>}
               {showPatient && <td style={{ padding: "6px 8px", color: "#888" }}>{v.dob || "—"}</td>}
               <td style={{ padding: "6px 8px", color: "#888" }}>{v.visitNumber ?? "—"}</td>
-              <td style={{ padding: "6px 8px", color: "#AFA9EC" }}>{fmtMaterial(v.material)}</td>
+              <td style={{ padding: "6px 8px", color: "#AFA9EC" }}><MaterialCell material={v.material} /></td>
               <td style={{ padding: "6px 8px", color: "#00d4aa" }}>{fmtMuestras(v.muestras)}</td>
               <td style={{ padding: "6px 8px", color: "#ffb347" }}>{fmtMedicamento(v.medicamento)}</td>
               <td style={{ padding: "6px 8px", color: "#999" }}>{v.notas || "—"}</td>
