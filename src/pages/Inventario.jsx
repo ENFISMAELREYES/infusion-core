@@ -300,13 +300,29 @@ export default function Inventario() {
   // lote/marca/caducidad, sin tocar los que ya existen.
   const [conteoNuevosLotes, setConteoNuevosLotes] = useState([]); // [{ key, item, lote, marca, caducidad }]
   const guardarConteo = async (rows) => {
-    const contados = rows.filter(r => r.contado !== null);
+    // Un inventario físico de verdad confirma la EXISTENCIA de cada
+    // renglón -- si algo se deja en blanco, no se ajusta (correcto, no se
+    // inventa un número), pero tampoco se calla: queda guardado en el
+    // registro como "sin contar", para que quede clarísimo qué de verdad
+    // se verificó y qué no se tocó en este conteo. Los lotes nuevos que se
+    // anexaron pero se dejaron vacíos (sin captura) no cuentan como
+    // "pendiente" -- son borradores abandonados, se descartan solos.
+    const realRows = rows.filter(r => r.kind !== "newlot" || r.contado !== null);
+    const contados = realRows.filter(r => r.contado !== null);
+    const sinContar = realRows.filter(r => r.contado === null);
     if (contados.length === 0) { alert("Captura al menos un conteo."); return; }
     const conDiferencia = contados.filter(r => r.diferencia !== 0);
     const newLotRows = conDiferencia.filter(r => r.kind === "newlot");
     const sinLote = newLotRows.find(r => !r.lote || !r.lote.trim());
     if (sinLote) { alert(`Falta el número de lote del lote nuevo que anexaste para "${sinLote.item}".`); return; }
-    if (conDiferencia.length > 0 && !confirm(`Vas a ajustar/anexar ${conDiferencia.length} renglón(es) (lote o artículo) al conteo físico capturado (el resto, sin diferencia, no se toca). ¿Continuar?`)) return;
+    // Solo interrumpe con confirmación si hay algo que de verdad amerite
+    // revisarse antes de guardar (un ajuste real, o renglones que se
+    // quedaron sin confirmar) -- un conteo completo y sin diferencias se
+    // guarda directo, sin fricción de más.
+    if (conDiferencia.length > 0 || sinContar.length > 0) {
+      const resumen = `Contados: ${contados.length}${conDiferencia.length > 0 ? ` (${conDiferencia.length} con diferencia, se ajustan/anexan)` : ""}.${sinContar.length > 0 ? ` Sin contar: ${sinContar.length} (quedan en blanco, no se tocan, pero se guardan como "sin confirmar" en el registro del conteo).` : ""}`;
+      if (!confirm(`${resumen}\n\n¿Guardar este conteo?`)) return;
+    }
     setSavingConteo(true);
     try {
       const entradaItems = [], salidaItems = [];
@@ -398,7 +414,11 @@ export default function Inventario() {
       await logEvent("salida", salidaItems);
 
       const countedAt = new Date().toISOString();
-      const countItems = contados.map(r => ({ item: r.item, lote: r.lote || "", marca: r.marca || "", sistema: r.sistema, contado: r.contado, diferencia: r.diferencia }));
+      // El registro incluye TODOS los renglones reales del almacén (no solo
+      // los contados) -- contado/diferencia quedan en null para los que se
+      // dejaron en blanco, así el historial deja constancia de qué no se
+      // llegó a confirmar en este conteo, no solo de lo que sí se contó.
+      const countItems = realRows.map(r => ({ item: r.item, lote: r.lote || "", marca: r.marca || "", sistema: r.sistema, contado: r.contado, diferencia: r.diferencia }));
       const countRes = await fetch(`${FIRESTORE_BASE_URL}/inventory_counts`, {
         method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ fields: {
@@ -428,7 +448,10 @@ export default function Inventario() {
       }));
       setConteoDraft({});
       setConteoNuevosLotes([]);
-      alert(conDiferencia.length > 0 ? `Conteo guardado. Se ajustaron/anexaron ${conDiferencia.length} renglón(es).` : "Conteo guardado. Ningún renglón tuvo diferencia.");
+      alert([
+        conDiferencia.length > 0 ? `Se ajustaron/anexaron ${conDiferencia.length} renglón(es).` : "Ningún renglón tuvo diferencia.",
+        sinContar.length > 0 ? `${sinContar.length} renglón(es) quedaron sin contar.` : null,
+      ].filter(Boolean).join(" "));
     } catch (e) {
       alert("Error al guardar el conteo: " + e.message);
     } finally {
@@ -1787,7 +1810,7 @@ export default function Inventario() {
         return (
           <div>
             <div style={{ fontSize:12, color:"#888", marginBottom:14, lineHeight:1.5 }}>
-              Captura lo que realmente hay en anaquel de {warehouseLabel(warehouse)} -- por lote cuando el artículo lleva trazabilidad, agregado cuando no. Si físicamente hay más lotes distintos de los que ya registra el sistema, usa "+ Anexar lote" para capturar el lote nuevo aparte, sin tocar los que ya existen. Lo que no se toca se deja en blanco y no se ajusta.
+              Captura lo que realmente hay en anaquel de {warehouseLabel(warehouse)} -- por lote cuando el artículo lleva trazabilidad, agregado cuando no. Si físicamente hay más lotes distintos de los que ya registra el sistema, usa "+ Anexar lote" para capturar el lote nuevo aparte, sin tocar los que ya existen. Lo que no se toca se deja en blanco y no se ajusta -- pero queda guardado como "sin contar" en el registro del conteo, un inventario físico debe confirmar cada renglón, no solo corregir los que cambiaron.
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:16 }}>
               <div style={{ display:"flex", gap:10, padding:"6px 10px", fontSize:11, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>
@@ -1850,7 +1873,10 @@ export default function Inventario() {
       {tab === "historialConteos" && (() => {
         const printCountReport = (count) => {
           const rows = [...count.items].sort((a, b) => a.item.localeCompare(b.item) || (a.lote || "").localeCompare(b.lote || ""))
-            .map(it => `<tr><td>${it.item}</td><td>${it.lote || "—"}</td><td>${it.marca || "—"}</td><td style="text-align:right;">${it.sistema}</td><td style="text-align:right;font-weight:bold;">${it.contado}</td><td style="text-align:right;color:${it.diferencia === 0 ? "#333" : it.diferencia > 0 ? "#0a7" : "#c94848"};font-weight:bold;">${it.diferencia > 0 ? `+${it.diferencia}` : it.diferencia}</td></tr>`).join("");
+            .map(it => it.contado === null
+              ? `<tr style="color:#999;"><td>${it.item}</td><td>${it.lote || "—"}</td><td>${it.marca || "—"}</td><td style="text-align:right;">${it.sistema}</td><td style="text-align:right;font-style:italic;">sin contar</td><td style="text-align:right;">—</td></tr>`
+              : `<tr><td>${it.item}</td><td>${it.lote || "—"}</td><td>${it.marca || "—"}</td><td style="text-align:right;">${it.sistema}</td><td style="text-align:right;font-weight:bold;">${it.contado}</td><td style="text-align:right;color:${it.diferencia === 0 ? "#333" : it.diferencia > 0 ? "#0a7" : "#c94848"};font-weight:bold;">${it.diferencia > 0 ? `+${it.diferencia}` : it.diferencia}</td></tr>`).join("");
+          const sinContar = count.items.filter(it => it.contado === null).length;
           const win = window.open("", "_blank", "width=800,height=900");
           win.document.write(`<!DOCTYPE html><html><head><title>Conteo físico -- ${warehouseLabel(count.warehouse)}</title><style>
             body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;}
@@ -1860,7 +1886,7 @@ export default function Inventario() {
             td{padding:5px 8px;border-bottom:1px solid #ddd;}
           </style></head><body>
             <h1>Conteo físico -- ${warehouseLabel(count.warehouse)}</h1>
-            <p>${count.items.length} renglón(es) · Contado por ${count.countedByName || "—"} · ${new Date(count.countedAt).toLocaleString("es-MX")}</p>
+            <p>${count.items.length} renglón(es) · Contado por ${count.countedByName || "—"} · ${new Date(count.countedAt).toLocaleString("es-MX")}${sinContar > 0 ? ` · ${sinContar} sin contar` : ""}</p>
             <table><thead><tr><th>Artículo</th><th>Lote</th><th>Marca</th><th style="text-align:right;">Sistema</th><th style="text-align:right;">Contado</th><th style="text-align:right;">Diferencia</th></tr></thead><tbody>${rows}</tbody></table>
             <script>window.onload = () => window.print();<\/script>
           </body></html>`);
@@ -1872,13 +1898,14 @@ export default function Inventario() {
             {warehouseCounts.length === 0 && <div style={{ fontSize:12, color:"#444", textAlign:"center", padding:16 }}>Sin conteos físicos guardados todavía en {warehouseLabel(warehouse)}.</div>}
             {warehouseCounts.map(c => {
               const conDif = (c.items || []).filter(it => it.diferencia !== 0).length;
+              const sinContar = (c.items || []).filter(it => it.contado === null).length;
               const isOpen = expandedCount === c.id;
               return (
                 <div key={c.id} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, overflow:"hidden" }}>
                   <div onClick={() => setExpandedCount(isOpen ? null : c.id)} style={{ padding:"12px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, color:"#f0f0f0", fontWeight:600 }}>{new Date(c.countedAt).toLocaleString("es-MX")}</div>
-                      <div style={{ fontSize:11, color:"#888", marginTop:2 }}>{c.countedByName || "—"} · {(c.items || []).length} renglón{(c.items||[]).length !== 1 ? "es" : ""}{conDif > 0 ? ` · ${conDif} con diferencia` : ""}</div>
+                      <div style={{ fontSize:11, color:"#888", marginTop:2 }}>{c.countedByName || "—"} · {(c.items || []).length} renglón{(c.items||[]).length !== 1 ? "es" : ""}{conDif > 0 ? ` · ${conDif} con diferencia` : ""}{sinContar > 0 ? ` · ${sinContar} sin contar` : ""}</div>
                     </div>
                     <button onClick={e => { e.stopPropagation(); printCountReport(c); }} style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.09)", color:"#ccc" }}>
                       🖨️ Imprimir
@@ -1890,15 +1917,21 @@ export default function Inventario() {
                       {[...(c.items || [])].sort((a,b) => a.item.localeCompare(b.item) || (a.lote||"").localeCompare(b.lote||"")).map((it, i) => (
                         <div key={i} style={{ display:"flex", gap:10, alignItems:"center", padding:"5px 10px", borderRadius:7, background:"rgba(255,255,255,0.02)", fontSize:12 }}>
                           <div style={{ flex:1 }}>
-                            <span style={{ color:"#ccc" }}>{it.item}</span>
+                            <span style={{ color: it.contado === null ? "#666" : "#ccc" }}>{it.item}</span>
                             {it.lote && <span style={{ color:"#888", fontSize:10 }}> · 🏷️ {it.lote}{it.marca ? ` · ${it.marca}` : ""}</span>}
                           </div>
                           <span style={{ width:70, textAlign:"right", color:"#888", fontFamily:"'IBM Plex Mono', monospace" }}>{it.sistema}</span>
-                          <span style={{ width:70, textAlign:"right", color:"#f0f0f0", fontWeight:600, fontFamily:"'IBM Plex Mono', monospace" }}>{it.contado}</span>
-                          <span style={{ width:70, textAlign:"right", fontWeight:600, fontFamily:"'IBM Plex Mono', monospace",
-                            color: it.diferencia === 0 ? "#888" : it.diferencia > 0 ? "#00d4aa" : "#ff6b6b" }}>
-                            {it.diferencia > 0 ? `+${it.diferencia}` : it.diferencia}
-                          </span>
+                          {it.contado === null ? (
+                            <span style={{ width:140, textAlign:"right", fontSize:11, fontStyle:"italic", color:"#666" }}>sin contar</span>
+                          ) : (
+                            <>
+                              <span style={{ width:70, textAlign:"right", color:"#f0f0f0", fontWeight:600, fontFamily:"'IBM Plex Mono', monospace" }}>{it.contado}</span>
+                              <span style={{ width:70, textAlign:"right", fontWeight:600, fontFamily:"'IBM Plex Mono', monospace",
+                                color: it.diferencia === 0 ? "#888" : it.diferencia > 0 ? "#00d4aa" : "#ff6b6b" }}>
+                                {it.diferencia > 0 ? `+${it.diferencia}` : it.diferencia}
+                              </span>
+                            </>
+                          )}
                         </div>
                       ))}
                     </div>
