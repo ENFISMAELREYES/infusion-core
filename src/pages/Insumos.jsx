@@ -1920,17 +1920,22 @@ export default function Insumos() {
                 </button>
               </div>
             </div>
+            {consolidadoList.length > 0 && (
+              <div style={{ display:"flex", padding:"0 10px", marginBottom:4, fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:1 }}>
+                <div style={{ flex:1 }}>Artículo</div>
+                <div style={{ width:70, textAlign:"right" }}>Necesita</div>
+                <div style={{ width:70, textAlign:"right" }}>Inventario</div>
+              </div>
+            )}
             <div style={{ maxHeight:280, overflowY:"auto", display:"flex", flexDirection:"column", gap:4 }}>
               {consolidadoList.map((t,i) => {
                 const disp = inventoryQtyFor(t.item);
                 const falta = disp < t.qty;
                 return (
-                  <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 10px", borderRadius:7, background:"rgba(255,255,255,0.03)", fontSize:12 }}>
-                    <span style={{ color:"#ccc" }}>{t.item}</span>
-                    <div style={{ display:"flex", gap:14, alignItems:"center" }}>
-                      <span title="En inventario" style={{ color: falta ? "#ff6b6b" : "#777", fontFamily:"'IBM Plex Mono', monospace", fontSize:11 }}>📦 {disp}</span>
-                      <span title="Se necesita" style={{ color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace", fontWeight:600, minWidth:28, textAlign:"right" }}>{t.qty}</span>
-                    </div>
+                  <div key={i} style={{ display:"flex", alignItems:"center", padding:"6px 10px", borderRadius:7, background:"rgba(255,255,255,0.03)", fontSize:12 }}>
+                    <span style={{ flex:1, color:"#ccc" }}>{t.item}</span>
+                    <span title="Se necesita" style={{ width:70, textAlign:"right", color:"#00d4aa", fontFamily:"'IBM Plex Mono', monospace", fontWeight:600 }}>{t.qty}</span>
+                    <span title="En inventario" style={{ width:70, textAlign:"right", color: falta ? "#ff6b6b" : "#777", fontFamily:"'IBM Plex Mono', monospace" }}>📦 {disp}</span>
                   </div>
                 );
               })}
